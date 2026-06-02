@@ -31,7 +31,7 @@
       position: fixed;
       inset: 0;
       z-index: 9999;
-      background: #f7f8fc;
+      background: #fffdf7;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -41,8 +41,8 @@
     .spinner {
       width: 48px;
       height: 48px;
-      border: 4px solid #a3b8d8;
-      border-top-color: #4361a8;
+      border: 4px solid #e8d5a0;
+      border-top-color: #c9a84c;
       border-radius: 50%;
       animation: spin 0.7s linear infinite;
     }
@@ -56,20 +56,20 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --gold: #4361a8;
-      --gold-light: #a3b8d8;
-      --gold-dark: #2d4785;
-      --cream: #eef1f8;
-      --warm-white: #f7f8fc;
-      --charcoal: #1a2b57;
-      --text: #2c3e5a;
-      --text-light: #5a6b85;
-      --accent: #3955a5;
-      --sage: #4361a8;
-      --board-light: #e8edf6;
-      --board-dark: #5b76c7;
-      --shadow: rgba(30, 50, 100, 0.08);
-      --shadow-lg: rgba(30, 50, 100, 0.15);
+      --gold: #c9a84c;
+      --gold-light: #e8d5a0;
+      --gold-dark: #a07e2e;
+      --cream: #faf6ed;
+      --warm-white: #fffdf7;
+      --charcoal: #2c2c2c;
+      --text: #3d3a35;
+      --text-light: #6b6560;
+      --accent: #8b5e3c;
+      --sage: #7a8f6e;
+      --board-light: #f0d9b5;
+      --board-dark: #b58863;
+      --shadow: rgba(60, 40, 10, 0.08);
+      --shadow-lg: rgba(60, 40, 10, 0.15);
     }
 
     html { scroll-behavior: smooth; }
@@ -134,9 +134,9 @@
       left: 0;
       right: 0;
       z-index: 1000;
-      background: rgba(247, 248, 252, 0.92);
+      background: rgba(255, 253, 247, 0.92);
       backdrop-filter: blur(20px);
-      border-bottom: 1px solid rgba(67, 97, 168, 0.12);
+      border-bottom: 1px solid rgba(201, 168, 76, 0.12);
       transition: box-shadow 0.3s, padding 0.3s;
     }
 
@@ -185,6 +185,7 @@
       height: 200px;
       width: auto;
       transition: height 0.3s;
+      filter: grayscale(1) sepia(0.18) saturate(0.6) brightness(0.72) contrast(1.2);
     }
 
     .nav-links {
@@ -222,6 +223,28 @@
       border-color: var(--gold);
     }
 
+    .login-trigger {
+      border: 1px solid rgba(201, 168, 76, 0.36);
+      background: rgba(255, 253, 247, 0.72);
+      color: var(--charcoal);
+      padding: 7px 16px;
+      border-radius: 999px;
+      font: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, border-color 0.2s, background 0.2s, color 0.2s, box-shadow 0.2s;
+    }
+
+    .login-trigger:hover,
+    .login-trigger.signed-in {
+      background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+      border-color: transparent;
+      color: white;
+      box-shadow: 0 6px 18px rgba(201, 168, 76, 0.28);
+      transform: translateY(-1px);
+    }
+
     .mobile-menu-btn {
       display: none;
       background: none;
@@ -248,7 +271,7 @@
       right: -200px;
       width: 700px;
       height: 700px;
-      background: radial-gradient(circle, rgba(67, 97, 168, 0.08) 0%, transparent 70%);
+      background: radial-gradient(circle, rgba(201, 168, 76, 0.08) 0%, transparent 70%);
       pointer-events: none;
     }
 
@@ -284,8 +307,8 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      background: linear-gradient(135deg, rgba(67, 97, 168, 0.12), rgba(67, 97, 168, 0.06));
-      border: 1px solid rgba(67, 97, 168, 0.2);
+      background: linear-gradient(135deg, rgba(201, 168, 76, 0.12), rgba(201, 168, 76, 0.06));
+      border: 1px solid rgba(201, 168, 76, 0.2);
       padding: 8px 18px;
       border-radius: 100px;
       font-size: 0.85rem;
@@ -355,18 +378,18 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      box-shadow: 0 4px 15px rgba(67, 97, 168, 0.3);
+      box-shadow: 0 4px 15px rgba(201, 168, 76, 0.3);
     }
 
     .btn-primary:hover {
       transform: translateY(-2px);
-      box-shadow: 0 8px 25px rgba(67, 97, 168, 0.4);
+      box-shadow: 0 8px 25px rgba(201, 168, 76, 0.4);
     }
 
     .btn-secondary {
       background: transparent;
       color: var(--text);
-      border: 2px solid rgba(67, 97, 168, 0.3);
+      border: 2px solid rgba(201, 168, 76, 0.3);
       padding: 14px 32px;
       border-radius: 12px;
       font-size: 1rem;
@@ -381,7 +404,7 @@
 
     .btn-secondary:hover {
       border-color: var(--gold);
-      background: rgba(67, 97, 168, 0.05);
+      background: rgba(201, 168, 76, 0.05);
     }
 
     .hero-stats {
@@ -422,7 +445,7 @@
       grid-template-rows: repeat(8, 1fr);
       border-radius: 16px;
       overflow: hidden;
-      box-shadow: 0 20px 60px var(--shadow-lg), 0 0 0 4px rgba(67, 97, 168, 0.15);
+      box-shadow: 0 20px 60px var(--shadow-lg), 0 0 0 4px rgba(201, 168, 76, 0.15);
       transform: perspective(800px) rotateY(-5deg) rotateX(5deg);
       transition: transform 0.5s;
     }
@@ -484,7 +507,7 @@
     }
 
     .floating-badge .badge-icon.zoom { background: rgba(45, 140, 255, 0.1); }
-    .floating-badge .badge-icon.group { background: rgba(67, 97, 168, 0.12); }
+    .floating-badge .badge-icon.group { background: rgba(122, 143, 110, 0.15); }
 
     @keyframes float {
       0%, 100% { transform: translateY(0); }
@@ -718,7 +741,7 @@
     .service-icon {
       width: 64px;
       height: 64px;
-      background: linear-gradient(135deg, rgba(67, 97, 168, 0.12), rgba(67, 97, 168, 0.04));
+      background: linear-gradient(135deg, rgba(201, 168, 76, 0.12), rgba(201, 168, 76, 0.04));
       border-radius: 18px;
       display: flex;
       align-items: center;
@@ -904,7 +927,7 @@
 
     /* ===== CTA SECTION ===== */
     .cta-section {
-      background: linear-gradient(135deg, var(--charcoal) 0%, #0f1d3d 100%);
+      background: linear-gradient(135deg, var(--charcoal) 0%, #1a1a1a 100%);
       text-align: center;
       position: relative;
       overflow: hidden;
@@ -917,7 +940,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: radial-gradient(ellipse at center, rgba(67, 97, 168, 0.15) 0%, transparent 60%);
+      background: radial-gradient(ellipse at center, rgba(201, 168, 76, 0.1) 0%, transparent 60%);
       pointer-events: none;
     }
 
@@ -938,7 +961,7 @@
 
     /* ===== FOOTER ===== */
     footer {
-      background: #0f1d3d;
+      background: #1a1a1a;
       padding: 50px 0 30px;
       color: rgba(255, 255, 255, 0.5);
     }
@@ -964,6 +987,8 @@
     .footer-logo-img {
       height: 60px;
       width: auto;
+      filter: grayscale(1) brightness(1.7) contrast(0.9);
+      opacity: 0.9;
     }
 
     body.rtl .footer-logo {
@@ -1021,7 +1046,7 @@
       height: 72px;
       border-radius: 50%;
       border: 3px solid white;
-      background: rgba(67, 97, 168, 0.75);
+      background: rgba(201, 168, 76, 0.75);
       color: white;
       font-size: 2.2rem;
       cursor: pointer;
@@ -1036,7 +1061,7 @@
 
     .video-play-btn:hover {
       transform: translate(-50%, -50%) scale(1.12);
-      background: rgba(67, 97, 168, 0.9);
+      background: rgba(201, 168, 76, 0.9);
     }
 
     .video-wrap.playing .video-play-btn {
@@ -1050,6 +1075,315 @@
       opacity: 1;
       pointer-events: auto;
       transform: translate(-50%, -50%) scale(1);
+    }
+
+    /* ===== AUTH MODAL ===== */
+    .auth-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(26, 22, 16, 0.54);
+      backdrop-filter: blur(12px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+
+    .auth-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    body.modal-open { overflow: hidden; }
+
+    .auth-dialog {
+      width: min(520px, 100%);
+      max-height: calc(100vh - 40px);
+      overflow: hidden;
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0;
+      background: var(--warm-white);
+      border: 1px solid rgba(201, 168, 76, 0.22);
+      border-radius: 22px;
+      box-shadow: 0 30px 90px rgba(26, 22, 16, 0.28);
+      transform: translateY(14px) scale(0.98);
+      transition: transform 0.25s ease;
+    }
+
+    .auth-overlay.open .auth-dialog {
+      transform: translateY(0) scale(1);
+    }
+
+    .auth-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 38px;
+      height: 38px;
+      border: 1px solid rgba(201, 168, 76, 0.24);
+      border-radius: 50%;
+      background: rgba(255, 253, 247, 0.82);
+      color: var(--charcoal);
+      font-size: 1.4rem;
+      line-height: 1;
+      cursor: pointer;
+      z-index: 2;
+      transition: background 0.2s, transform 0.2s;
+    }
+
+    body.rtl .auth-close {
+      right: auto;
+      left: 16px;
+    }
+
+    .auth-close:hover {
+      background: white;
+      transform: rotate(8deg);
+    }
+
+    .auth-copy {
+      padding: 34px 38px 18px;
+      background:
+        linear-gradient(145deg, rgba(240, 217, 181, 0.76), rgba(255, 253, 247, 0.72)),
+        repeating-conic-gradient(from 45deg, rgba(181, 136, 99, 0.2) 0 25%, rgba(240, 217, 181, 0.18) 0 50%) 50% / 72px 72px;
+      border-radius: 22px 22px 0 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    body.rtl .auth-copy {
+      border-radius: 22px 22px 0 0;
+    }
+
+    .auth-kicker {
+      color: var(--gold-dark);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    body.rtl .auth-kicker {
+      letter-spacing: 0;
+    }
+
+    .auth-title {
+      font-family: 'Playfair Display', serif;
+      color: var(--charcoal);
+      font-size: clamp(1.9rem, 4vw, 2.6rem);
+      line-height: 1.12;
+      margin-bottom: 12px;
+    }
+
+    body.rtl .auth-title {
+      font-family: 'Heebo', sans-serif;
+    }
+
+    .auth-subtitle {
+      color: var(--text-light);
+      max-width: 420px;
+      font-size: 1rem;
+      line-height: 1.7;
+    }
+
+    .auth-panel {
+      padding: 24px 38px 34px;
+    }
+
+    .auth-form {
+      display: grid;
+      gap: 14px;
+    }
+
+    .auth-field {
+      display: grid;
+      gap: 6px;
+      color: var(--text);
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+
+    .auth-field input {
+      width: 100%;
+      border: 1px solid rgba(201, 168, 76, 0.26);
+      background: white;
+      color: var(--charcoal);
+      border-radius: 14px;
+      padding: 13px 15px;
+      font: inherit;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .auth-field input:focus {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 4px rgba(201, 168, 76, 0.14);
+    }
+
+    #authUsername {
+      direction: ltr;
+      text-align: left;
+    }
+
+    .auth-form-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 12px;
+      color: var(--text-light);
+      font-size: 0.84rem;
+    }
+
+    .auth-check {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+
+    .auth-check input {
+      accent-color: var(--gold-dark);
+    }
+
+    .auth-submit {
+      width: 100%;
+      justify-content: center;
+      margin-top: 6px;
+    }
+
+    .auth-helper {
+      color: var(--text-light);
+      font-size: 0.84rem;
+      line-height: 1.6;
+      text-align: center;
+    }
+
+    .auth-process-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(26, 22, 16, 0.48);
+      backdrop-filter: blur(10px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.22s ease;
+    }
+
+    .auth-process-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .auth-process-card {
+      width: min(360px, 100%);
+      border-radius: 20px;
+      border: 1px solid rgba(201, 168, 76, 0.22);
+      background: rgba(255, 253, 247, 0.98);
+      box-shadow: 0 26px 70px rgba(26, 22, 16, 0.24);
+      padding: 26px 24px 22px;
+      text-align: center;
+      transform: translateY(10px) scale(0.98);
+      transition: transform 0.22s ease;
+    }
+
+    .auth-process-overlay.open .auth-process-card {
+      transform: translateY(0) scale(1);
+    }
+
+    .auth-process-badge {
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      margin: 0 auto 16px;
+      position: relative;
+      background: linear-gradient(135deg, rgba(201, 168, 76, 0.16), rgba(201, 168, 76, 0.05));
+      border: 1px solid rgba(201, 168, 76, 0.2);
+    }
+
+    .auth-process-badge[data-state="success"] {
+      background: linear-gradient(135deg, rgba(102, 201, 122, 0.16), rgba(102, 201, 122, 0.05));
+      border-color: rgba(46, 159, 87, 0.2);
+    }
+
+    .auth-process-badge[data-state="error"] {
+      background: linear-gradient(135deg, rgba(196, 73, 73, 0.16), rgba(196, 73, 73, 0.06));
+      border-color: rgba(196, 73, 73, 0.22);
+    }
+
+    .auth-process-spinner {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 3px solid rgba(201, 168, 76, 0.18);
+      border-top-color: var(--gold-dark);
+      animation: authSpin 0.8s linear infinite;
+    }
+
+    .auth-process-mark {
+      color: #2e9f57;
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 1;
+      transform: scale(0.2);
+      animation: authCheckPop 0.42s cubic-bezier(0.2, 0.9, 0.2, 1.2) forwards;
+    }
+
+    .auth-process-badge[data-state="error"] .auth-process-mark {
+      color: #c44949;
+    }
+
+    .auth-process-title {
+      color: var(--charcoal);
+      font-size: 1.08rem;
+      font-weight: 800;
+      line-height: 1.3;
+      margin-bottom: 8px;
+    }
+
+    .auth-process-message {
+      color: var(--text-light);
+      font-size: 0.9rem;
+      line-height: 1.55;
+      margin: 0;
+    }
+
+    .auth-process-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .auth-process-actions .btn-primary,
+    .auth-process-actions .btn-secondary {
+      flex: 1;
+      justify-content: center;
+      padding: 12px 14px;
+      border-radius: 12px;
+    }
+
+    @keyframes authSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes authCheckPop {
+      0% { transform: scale(0.2); opacity: 0; }
+      60% { transform: scale(1.15); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
     }
 
     /* ===== RESPONSIVE ===== */
@@ -1078,6 +1412,24 @@
       .testimonials-grid { grid-template-columns: 1fr; }
       .video-testimonials { grid-template-columns: 1fr !important; }
       .steps-grid { grid-template-columns: 1fr; gap: 20px; }
+
+      .auth-dialog {
+        grid-template-columns: 1fr;
+        max-width: 520px;
+      }
+
+      .auth-copy,
+      body.rtl .auth-copy {
+        border-radius: 22px 22px 0 0;
+        min-height: auto;
+        padding: 34px;
+      }
+
+      .auth-title,
+      body.rtl .auth-title {
+        max-width: 100%;
+      }
+
     }
 
     @media (max-width: 640px) {
@@ -1090,11 +1442,11 @@
         top: 100%;
         left: 0;
         right: 0;
-        background: rgba(247, 248, 252, 0.98);
+        background: rgba(255, 253, 247, 0.98);
         backdrop-filter: blur(20px);
         padding: 20px 24px;
         gap: 16px;
-        border-bottom: 1px solid rgba(67, 97, 168, 0.12);
+        border-bottom: 1px solid rgba(201, 168, 76, 0.12);
         transform: translateY(-10px);
         opacity: 0;
         pointer-events: none;
@@ -1136,6 +1488,11 @@
         padding: 14px 24px;
       }
 
+      .login-trigger,
+      .lang-toggle {
+        width: min(220px, 100%);
+      }
+
       .chess-board-display {
         width: 220px;
         height: 220px;
@@ -1162,6 +1519,37 @@
 
       .footer-inner { flex-direction: column; text-align: center; }
       .footer-links { flex-wrap: wrap; justify-content: center; }
+
+      .auth-dialog {
+        width: 100%;
+        max-height: calc(100vh - 20px);
+        border-radius: 20px;
+      }
+
+      .auth-copy,
+      body.rtl .auth-copy {
+        padding: 24px 22px 18px;
+        border-radius: 20px 20px 0 0;
+      }
+
+      .auth-title {
+        font-size: 1.9rem;
+        margin-bottom: 10px;
+      }
+
+      .auth-subtitle {
+        font-size: 0.92rem;
+        line-height: 1.55;
+      }
+
+      .auth-panel {
+        padding: 22px 22px 24px;
+      }
+
+      .auth-form-row {
+        align-items: flex-start;
+        flex-direction: column;
+      }
 
     }
 
@@ -1192,11 +1580,60 @@
         <li><a href="#how" id="nav-how">How It Works</a></li>
         <li><a href="#services" id="nav-services">Programs</a></li>
         <li><a href="#faq" id="nav-faq">FAQ</a></li>
+        <li><button class="login-trigger" id="nav-login" onclick="openLogin()">Login</button></li>
         <li><button class="lang-toggle" id="langToggle" onclick="toggleLang()">עברית</button></li>
       </ul>
       <button class="mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMenu()">&#9776;</button>
     </div>
   </nav>
+
+  <!-- AUTH -->
+  <div class="auth-overlay" id="authOverlay" aria-hidden="true">
+    <div class="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <button class="auth-close" id="authClose" type="button" onclick="closeLogin()" aria-label="Close sign in">&times;</button>
+      <div class="auth-copy">
+        <div>
+          <div class="auth-kicker" id="authKicker">Yalla-Chess</div>
+          <div class="auth-title" id="authTitle">Login</div>
+        </div>
+      </div>
+      <div class="auth-panel">
+        <form class="auth-form" id="authForm" onsubmit="handleLogin(event)">
+          <label class="auth-field" for="authUsername">
+            <span id="authUsernameLabel">Username</span>
+            <input id="authUsername" name="username" type="text" autocomplete="username" placeholder="Username" required>
+          </label>
+          <label class="auth-field" for="authPassword">
+            <span id="authPasswordLabel">Password</span>
+            <input id="authPassword" name="password" type="password" autocomplete="current-password" placeholder="Enter your password" required>
+          </label>
+          <div class="auth-form-row">
+            <label class="auth-check" for="authRemember">
+              <input id="authRemember" type="checkbox" checked>
+              <span id="authRememberLabel">Keep me signed in</span>
+            </label>
+          </div>
+          <button class="btn-primary auth-submit" id="authSubmit" type="submit">Sign in</button>
+          <p class="auth-helper" id="authHelper">Access details are issued by the teacher after payment is confirmed.</p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="auth-process-overlay" id="authProcessOverlay" aria-hidden="true">
+    <div class="auth-process-card" id="authProcessCard" role="dialog" aria-modal="true" aria-labelledby="authProcessTitle">
+      <div class="auth-process-badge" id="authProcessBadge" aria-hidden="true">
+        <div class="auth-process-spinner" id="authProcessSpinner"></div>
+        <span class="auth-process-mark" id="authProcessMark" hidden>&#10003;</span>
+      </div>
+      <div class="auth-process-title" id="authProcessTitle">Signing in...</div>
+      <p class="auth-process-message" id="authProcessMessage">Checking your account.</p>
+      <div class="auth-process-actions" id="authProcessActions" hidden>
+        <button class="btn-secondary auth-process-retry" id="authProcessRetry" type="button">Try again</button>
+        <button class="btn-primary auth-process-cancel" id="authProcessCancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <!-- HERO -->
   <section class="hero" id="hero">
@@ -1632,6 +2069,34 @@
       link.addEventListener('click', closeMenu);
     });
 
+    document.getElementById('authOverlay').addEventListener('click', function(e) {
+      if (e.target === this) closeLogin();
+    });
+
+    document.getElementById('authProcessOverlay').addEventListener('click', function(e) {
+      if (e.target === this && authProcessState === 'error') {
+        cancelAuthProcess();
+      }
+    });
+
+    document.getElementById('authProcessRetry').addEventListener('click', retryAuthLogin);
+    document.getElementById('authProcessCancel').addEventListener('click', cancelAuthProcess);
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key !== 'Escape') {
+        return;
+      }
+
+      if (authProcessState === 'error') {
+        cancelAuthProcess();
+        return;
+      }
+
+      if (document.getElementById('authOverlay').classList.contains('open')) {
+        closeLogin();
+      }
+    });
+
     // ===== LANGUAGE / GEO =====
     let currentLang = 'en';
 
@@ -1733,6 +2198,317 @@
         footerCopy: '&copy; 2026 משחקים שח עם דולב. כל הזכויות שמורות.'
       }
     };
+
+    const authContent = {
+      en: {
+        navLogin: 'Login',
+        closeLabel: 'Close sign in',
+        kicker: 'Yalla-Chess',
+        title: 'Login',
+        usernameLabel: 'Username',
+        passwordLabel: 'Password',
+        usernamePlaceholder: 'Username',
+        passwordPlaceholder: 'Enter your password',
+        remember: 'Keep me signed in',
+        submit: 'Sign in',
+        signingIn: 'Signing in...',
+        helper: 'Credentials are issued by the teacher after payment is confirmed.',
+        processingTitle: 'Signing in...',
+        processingMessage: 'Checking your account.',
+        successTitle: 'Signed in',
+        successMessage: 'Returning you to the site...',
+        errorTitle: 'Couldn\'t sign you in',
+        errorMessage: 'Please check your credentials and try again.',
+        retry: 'Try again',
+        cancel: 'Cancel',
+        errorInvalid: 'Invalid username or password.',
+        errorNetwork: 'Could not reach the login server.'
+      },
+      he: {
+        navLogin: 'התחברות',
+        closeLabel: 'סגירת התחברות',
+        kicker: 'Yalla-Chess',
+        title: 'התחברות',
+        usernameLabel: 'שם משתמש',
+        passwordLabel: 'סיסמה',
+        usernamePlaceholder: 'שם משתמש',
+        passwordPlaceholder: 'הזינו סיסמה',
+        remember: 'השאירו אותי מחובר',
+        submit: 'התחברות',
+        signingIn: 'מתחברים...',
+        helper: 'פרטי הגישה ניתנים על ידי המורה לאחר אישור התשלום.',
+        processingTitle: 'מתחברים...',
+        processingMessage: 'בודקים את החשבון שלכם.',
+        successTitle: 'התחברתם',
+        successMessage: 'חוזרים עכשיו לאתר...',
+        errorTitle: 'לא הצלחנו להתחבר',
+        errorMessage: 'בדקו את פרטי ההתחברות ונסו שוב.',
+        retry: 'לנסות שוב',
+        cancel: 'ביטול',
+        errorInvalid: 'שם המשתמש או הסיסמה אינם נכונים.',
+        errorNetwork: 'לא הצלחנו להתחבר לשרת ההתחברות.'
+      }
+    };
+
+    let currentAuthUser = null;
+    let loginSuccessTimer = null;
+    let authBusy = false;
+    let authProcessState = 'idle';
+    let authProcessMessage = '';
+    let authRequestStartedAt = 0;
+    const AUTH_MIN_PROCESS_MS = 900;
+    const authApiBase = location.protocol === 'file:' ? 'http://127.0.0.1:8001' : '';
+    const authRequestCredentials = location.protocol === 'file:' ? 'include' : 'same-origin';
+
+    function authApi(path) {
+      return authApiBase ? `${authApiBase}${path}` : path;
+    }
+
+    function getAuthText() {
+      return authContent[currentLang === 'he' ? 'he' : 'en'];
+    }
+
+    function syncAuthBodyLock() {
+      const formOpen = document.getElementById('authOverlay').classList.contains('open');
+      const processOpen = authProcessState !== 'idle';
+      document.body.classList.toggle('modal-open', formOpen || processOpen);
+    }
+
+    function renderAuthProcess() {
+      const t = getAuthText();
+      const overlay = document.getElementById('authProcessOverlay');
+      const badge = document.getElementById('authProcessBadge');
+      const spinner = document.getElementById('authProcessSpinner');
+      const mark = document.getElementById('authProcessMark');
+      const title = document.getElementById('authProcessTitle');
+      const message = document.getElementById('authProcessMessage');
+      const actions = document.getElementById('authProcessActions');
+      const retry = document.getElementById('authProcessRetry');
+      const cancel = document.getElementById('authProcessCancel');
+      const state = authProcessState;
+      const open = state !== 'idle';
+
+      overlay.classList.toggle('open', open);
+      overlay.setAttribute('aria-hidden', String(!open));
+      badge.dataset.state = state;
+      spinner.hidden = state !== 'pending';
+      mark.hidden = state !== 'success' && state !== 'error';
+      mark.textContent = state === 'error' ? '!' : '✓';
+      title.textContent = state === 'success' ? t.successTitle : state === 'error' ? t.errorTitle : t.processingTitle;
+      message.textContent = authProcessMessage || (state === 'success' ? t.successMessage : state === 'error' ? t.errorMessage : t.processingMessage);
+      actions.hidden = state !== 'error';
+      retry.textContent = t.retry;
+      cancel.textContent = t.cancel;
+      syncAuthBodyLock();
+    }
+
+    function showAuthProcess(state, message = '') {
+      authProcessState = state;
+      authProcessMessage = message;
+      renderAuthProcess();
+    }
+
+    function hideAuthProcess() {
+      authProcessState = 'idle';
+      authProcessMessage = '';
+      renderAuthProcess();
+    }
+
+    function applyAuthTranslations() {
+      const t = getAuthText();
+      document.getElementById('authClose').setAttribute('aria-label', t.closeLabel);
+      document.getElementById('authKicker').textContent = t.kicker;
+      document.getElementById('authTitle').textContent = t.title;
+      document.getElementById('authUsernameLabel').textContent = t.usernameLabel;
+      document.getElementById('authPasswordLabel').textContent = t.passwordLabel;
+      document.getElementById('authUsername').placeholder = t.usernamePlaceholder;
+      document.getElementById('authPassword').placeholder = t.passwordPlaceholder;
+      document.getElementById('authRememberLabel').textContent = t.remember;
+      document.getElementById('authHelper').textContent = t.helper;
+      document.getElementById('authSubmit').textContent = authBusy ? t.signingIn : t.submit;
+      document.getElementById('authProcessRetry').textContent = t.retry;
+      document.getElementById('authProcessCancel').textContent = t.cancel;
+      renderAuthProcess();
+      updateAuthState();
+    }
+
+    function updateAuthState() {
+      const btn = document.getElementById('nav-login');
+      btn.textContent = getAuthText().navLogin;
+      btn.classList.toggle('signed-in', Boolean(currentAuthUser));
+      btn.title = currentAuthUser ? `${currentAuthUser.username} (${currentAuthUser.role})` : '';
+    }
+
+    function setAuthBusy(busy) {
+      authBusy = busy;
+      const t = getAuthText();
+      const submit = document.getElementById('authSubmit');
+      const username = document.getElementById('authUsername');
+      const password = document.getElementById('authPassword');
+      const remember = document.getElementById('authRemember');
+
+      submit.textContent = busy ? t.signingIn : t.submit;
+      submit.disabled = busy;
+      username.disabled = busy;
+      password.disabled = busy;
+      remember.disabled = busy;
+      submit.setAttribute('aria-busy', String(busy));
+    }
+
+    function wait(ms) {
+      return new Promise(function(resolve) {
+        window.setTimeout(resolve, ms);
+      });
+    }
+
+    async function waitForAuthFloor() {
+      const elapsed = performance.now() - authRequestStartedAt;
+      const remaining = Math.max(AUTH_MIN_PROCESS_MS - elapsed, 0);
+      if (remaining > 0) {
+        await wait(remaining);
+      }
+    }
+
+    function openLogin(options = {}) {
+      const focusField = options.focus === 'password' ? 'password' : 'username';
+      clearTimeout(loginSuccessTimer);
+      loginSuccessTimer = null;
+      hideAuthProcess();
+      closeMenu();
+      document.getElementById('authOverlay').classList.add('open');
+      document.getElementById('authOverlay').setAttribute('aria-hidden', 'false');
+      document.body.classList.add('modal-open');
+      setAuthBusy(false);
+      setTimeout(function() {
+        document.getElementById(focusField === 'password' ? 'authPassword' : 'authUsername').focus();
+      }, 80);
+    }
+
+    function closeLogin(options = {}) {
+      const resetForm = options.resetForm !== false;
+      clearTimeout(loginSuccessTimer);
+      loginSuccessTimer = null;
+      setAuthBusy(false);
+      hideAuthProcess();
+      const overlay = document.getElementById('authOverlay');
+      overlay.classList.remove('open');
+      overlay.setAttribute('aria-hidden', 'true');
+      if (resetForm) {
+        document.getElementById('authForm').reset();
+      }
+      syncAuthBodyLock();
+    }
+
+    function cancelAuthProcess() {
+      closeLogin();
+    }
+
+    function retryAuthLogin() {
+      hideAuthProcess();
+      openLogin({ focus: 'password' });
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      clearTimeout(loginSuccessTimer);
+      loginSuccessTimer = null;
+
+      const form = event.currentTarget;
+      if (!form.reportValidity()) {
+        return;
+      }
+
+      const formData = new FormData(form);
+      const username = String(formData.get('username') || '').trim();
+      const password = String(formData.get('password') || '');
+      const remember = document.getElementById('authRemember').checked;
+
+      authRequestStartedAt = performance.now();
+      setAuthBusy(true);
+      document.getElementById('authOverlay').classList.remove('open');
+      document.getElementById('authOverlay').setAttribute('aria-hidden', 'true');
+      showAuthProcess('pending');
+
+      try {
+        const response = await fetch(authApi('/api/login'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          mode: authApiBase ? 'cors' : 'same-origin',
+          credentials: authRequestCredentials,
+          body: JSON.stringify({ username, password, remember })
+        });
+
+        const data = await response.json().catch(function() {
+          return {};
+        });
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || getAuthText().errorInvalid);
+        }
+
+        currentAuthUser = data.user || { username };
+        updateAuthState();
+        setAuthBusy(false);
+        await waitForAuthFloor();
+        showAuthProcess('success');
+        loginSuccessTimer = setTimeout(function() {
+          closeLogin();
+        }, 1100);
+      } catch (error) {
+        setAuthBusy(false);
+        document.getElementById('authPassword').value = '';
+        const message = error && error.message ? error.message : getAuthText().errorNetwork;
+        await waitForAuthFloor();
+        showAuthProcess('error', message === 'Failed to fetch' ? getAuthText().errorNetwork : message);
+      }
+    }
+
+    async function signOut() {
+      try {
+        await fetch(authApi('/api/logout'), {
+          method: 'POST',
+          mode: authApiBase ? 'cors' : 'same-origin',
+          credentials: authRequestCredentials
+        });
+      } catch (error) {}
+
+      currentAuthUser = null;
+      updateAuthState();
+      closeLogin();
+    }
+
+    async function restoreAuthSession() {
+      applyAuthTranslations();
+
+      try {
+        const response = await fetch(authApi('/api/me'), {
+          method: 'GET',
+          mode: authApiBase ? 'cors' : 'same-origin',
+          credentials: authRequestCredentials,
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          currentAuthUser = null;
+          updateAuthState();
+          return;
+        }
+
+        const data = await response.json().catch(function() {
+          return {};
+        });
+        currentAuthUser = data.user || null;
+      } catch (error) {
+        currentAuthUser = null;
+      }
+
+      updateAuthState();
+    }
 
     function setLang(lang) {
       currentLang = lang;
@@ -1925,6 +2701,8 @@
         document.getElementById('foot-contact').textContent = 'Contact';
         document.getElementById('footerCopy').innerHTML = '&copy; 2026 Yalla-Chess. All rights reserved.';
       }
+
+      applyAuthTranslations();
     }
 
     function toggleLang() {
@@ -1956,6 +2734,8 @@
     if (window.__initialLang === 'he') {
       setLang('he');
     }
+
+    restoreAuthSession();
 
     function revealPage() {
       var loader = document.getElementById('loader');
