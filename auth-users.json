@@ -6,6 +6,11 @@
       "password": "admin123"
     },
     {
+      "role": "teacher",
+      "username": "Dolevkrav@gmail.com",
+      "password": "pass123"
+    },
+    {
       "role": "student",
       "username": "student",
       "password": "student123"

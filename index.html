@@ -1375,6 +1375,347 @@
       border-radius: 12px;
     }
 
+    /* ===== SETTINGS SHEET ===== */
+    .settings-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2200;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(26, 22, 16, 0.5);
+      backdrop-filter: blur(12px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+
+    .settings-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .settings-dialog {
+      width: min(920px, 100%);
+      max-height: calc(100vh - 40px);
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 286px minmax(0, 1fr);
+      position: relative;
+      background: var(--warm-white);
+      border: 1px solid rgba(201, 168, 76, 0.22);
+      border-radius: 24px;
+      box-shadow: 0 30px 90px rgba(26, 22, 16, 0.28);
+      transform: translateY(14px) scale(0.98);
+      transition: transform 0.25s ease;
+    }
+
+    .settings-overlay.open .settings-dialog {
+      transform: translateY(0) scale(1);
+    }
+
+    .settings-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 38px;
+      height: 38px;
+      border: 1px solid rgba(201, 168, 76, 0.24);
+      border-radius: 50%;
+      background: rgba(255, 253, 247, 0.82);
+      color: var(--charcoal);
+      font-size: 1.4rem;
+      line-height: 1;
+      cursor: pointer;
+      z-index: 3;
+      transition: background 0.2s, transform 0.2s;
+    }
+
+    body.rtl .settings-close {
+      right: auto;
+      left: 16px;
+    }
+
+    .settings-close:hover {
+      background: white;
+      transform: rotate(8deg);
+    }
+
+    .settings-rail {
+      padding: 34px 28px 28px;
+      background:
+        linear-gradient(145deg, rgba(240, 217, 181, 0.78), rgba(255, 253, 247, 0.72)),
+        repeating-conic-gradient(from 45deg, rgba(181, 136, 99, 0.2) 0 25%, rgba(240, 217, 181, 0.18) 0 50%) 50% / 72px 72px;
+      border-right: 1px solid rgba(201, 168, 76, 0.14);
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    body.rtl .settings-rail {
+      border-right: 0;
+      border-left: 1px solid rgba(201, 168, 76, 0.14);
+    }
+
+    .settings-kicker {
+      color: var(--gold-dark);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    body.rtl .settings-kicker {
+      letter-spacing: 0;
+    }
+
+    .settings-title {
+      font-family: 'Playfair Display', serif;
+      color: var(--charcoal);
+      font-size: clamp(1.9rem, 4vw, 2.6rem);
+      line-height: 1.12;
+      margin-bottom: 12px;
+    }
+
+    body.rtl .settings-title {
+      font-family: 'Heebo', sans-serif;
+    }
+
+    .settings-subtitle {
+      color: var(--text-light);
+      max-width: 240px;
+      font-size: 0.98rem;
+      line-height: 1.7;
+    }
+
+    .settings-tabs {
+      display: grid;
+      gap: 10px;
+    }
+
+    .settings-tab {
+      width: 100%;
+      border: 1px solid rgba(201, 168, 76, 0.2);
+      background: rgba(255, 253, 247, 0.68);
+      border-radius: 14px;
+      padding: 14px 16px;
+      color: var(--text);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: left;
+      transition: transform 0.2s, background 0.2s, border-color 0.2s, box-shadow 0.2s;
+    }
+
+    body.rtl .settings-tab {
+      text-align: right;
+    }
+
+    .settings-tab:hover {
+      border-color: rgba(201, 168, 76, 0.34);
+      background: rgba(255, 253, 247, 0.86);
+    }
+
+    .settings-tab.active {
+      background: white;
+      border-color: rgba(201, 168, 76, 0.36);
+      box-shadow: 0 10px 24px rgba(26, 22, 16, 0.08);
+      transform: translateX(4px);
+    }
+
+    body.rtl .settings-tab.active {
+      transform: translateX(-4px);
+    }
+
+    .settings-session {
+      margin-top: auto;
+      padding-top: 18px;
+      border-top: 1px solid rgba(201, 168, 76, 0.16);
+      display: grid;
+      gap: 8px;
+    }
+
+    .settings-session-label {
+      font-size: 0.76rem;
+      color: var(--gold-dark);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    body.rtl .settings-session-label {
+      letter-spacing: 0;
+    }
+
+    .settings-session-user {
+      font-size: 1.02rem;
+      font-weight: 800;
+      color: var(--charcoal);
+      direction: ltr;
+      text-align: left;
+      word-break: break-word;
+    }
+
+    .settings-session-role {
+      color: var(--text-light);
+      font-size: 0.88rem;
+    }
+
+    .settings-signout {
+      width: 100%;
+      justify-content: center;
+      margin-top: 8px;
+    }
+
+    .settings-main {
+      padding: 30px 30px 26px;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .settings-panel {
+      display: none;
+      min-width: 0;
+    }
+
+    .settings-panel.active {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .settings-panel-heading {
+      font-family: 'Playfair Display', serif;
+      color: var(--charcoal);
+      font-size: 1.45rem;
+      line-height: 1.15;
+    }
+
+    body.rtl .settings-panel-heading {
+      font-family: 'Heebo', sans-serif;
+    }
+
+    .settings-panel-desc {
+      color: var(--text-light);
+      line-height: 1.7;
+      margin: 0;
+      max-width: 560px;
+    }
+
+    .settings-summary-card {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      padding: 18px;
+      border-radius: 18px;
+      background: white;
+      border: 1px solid rgba(201, 168, 76, 0.18);
+      box-shadow: 0 8px 22px rgba(26, 22, 16, 0.06);
+    }
+
+    .settings-summary-item {
+      display: grid;
+      gap: 4px;
+    }
+
+    .settings-summary-label {
+      font-size: 0.76rem;
+      color: var(--gold-dark);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    body.rtl .settings-summary-label {
+      letter-spacing: 0;
+    }
+
+    .settings-summary-value {
+      font-size: 1rem;
+      color: var(--charcoal);
+      font-weight: 700;
+      direction: ltr;
+      text-align: left;
+      word-break: break-word;
+    }
+
+    .settings-form {
+      display: grid;
+      gap: 14px;
+    }
+
+    .settings-field {
+      display: grid;
+      gap: 6px;
+      color: var(--text);
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+
+    .settings-field input {
+      width: 100%;
+      border: 1px solid rgba(201, 168, 76, 0.26);
+      background: white;
+      color: var(--charcoal);
+      border-radius: 14px;
+      padding: 13px 15px;
+      font: inherit;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      direction: ltr;
+      text-align: left;
+    }
+
+    .settings-field input:focus {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 4px rgba(201, 168, 76, 0.14);
+    }
+
+    .settings-form-row {
+      display: flex;
+      justify-content: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .settings-save {
+      min-width: 220px;
+      justify-content: center;
+    }
+
+    .settings-status {
+      border-radius: 14px;
+      padding: 14px 16px;
+      border: 1px solid transparent;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    .settings-status[data-tone="success"] {
+      background: rgba(102, 201, 122, 0.12);
+      border-color: rgba(46, 159, 87, 0.2);
+      color: #2e9f57;
+    }
+
+    .settings-status[data-tone="error"] {
+      background: rgba(196, 73, 73, 0.12);
+      border-color: rgba(196, 73, 73, 0.22);
+      color: #c44949;
+    }
+
+    .settings-status[data-tone="info"] {
+      background: rgba(201, 168, 76, 0.12);
+      border-color: rgba(201, 168, 76, 0.18);
+      color: var(--gold-dark);
+    }
+
+    .settings-status[hidden] {
+      display: none;
+    }
+
     @keyframes authSpin {
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
@@ -1428,6 +1769,24 @@
       .auth-title,
       body.rtl .auth-title {
         max-width: 100%;
+      }
+
+      .settings-dialog {
+        grid-template-columns: 1fr;
+        max-width: 920px;
+      }
+
+      .settings-rail {
+        border-right: 0;
+        border-bottom: 1px solid rgba(201, 168, 76, 0.14);
+      }
+
+      body.rtl .settings-rail {
+        border-left: 0;
+      }
+
+      .settings-summary-card {
+        grid-template-columns: 1fr;
       }
 
     }
@@ -1551,6 +1910,45 @@
         flex-direction: column;
       }
 
+      .settings-overlay {
+        padding: 16px;
+      }
+
+      .settings-dialog {
+        width: 100%;
+        max-height: calc(100vh - 20px);
+        border-radius: 20px;
+      }
+
+      .settings-rail {
+        padding: 24px 22px 18px;
+        gap: 18px;
+      }
+
+      .settings-tabs {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .settings-session {
+        margin-top: 0;
+      }
+
+      .settings-main {
+        padding: 22px 22px 24px;
+      }
+
+      .settings-panel {
+        gap: 14px;
+      }
+
+      .settings-panel-heading {
+        font-size: 1.25rem;
+      }
+
+      .settings-save {
+        width: 100%;
+      }
+
     }
 
     /* ===== ANIMATIONS ===== */
@@ -1580,7 +1978,7 @@
         <li><a href="#how" id="nav-how">How It Works</a></li>
         <li><a href="#services" id="nav-services">Programs</a></li>
         <li><a href="#faq" id="nav-faq">FAQ</a></li>
-        <li><button class="login-trigger" id="nav-login" onclick="openLogin()">Login</button></li>
+        <li><button class="login-trigger" id="nav-login" onclick="handleNavPrimary()">Login</button></li>
         <li><button class="lang-toggle" id="langToggle" onclick="toggleLang()">עברית</button></li>
       </ul>
       <button class="mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMenu()">&#9776;</button>
@@ -1631,6 +2029,70 @@
       <div class="auth-process-actions" id="authProcessActions" hidden>
         <button class="btn-secondary auth-process-retry" id="authProcessRetry" type="button">Try again</button>
         <button class="btn-primary auth-process-cancel" id="authProcessCancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-overlay" id="settingsOverlay" aria-hidden="true">
+    <div class="settings-dialog" id="settingsDialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <button class="settings-close" id="settingsClose" type="button" onclick="closeSettings()" aria-label="Close settings">&times;</button>
+      <div class="settings-rail">
+        <div>
+          <div class="settings-kicker" id="settingsKicker">Yalla-Chess</div>
+          <div class="settings-title" id="settingsTitle">Settings</div>
+          <p class="settings-subtitle" id="settingsSubtitle">Manage your account details and security.</p>
+        </div>
+        <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+          <button class="settings-tab" id="settingsAccountTab" type="button" data-settings-tab="account" role="tab" aria-selected="false" onclick="switchSettingsTab('account')">Account</button>
+          <button class="settings-tab active" id="settingsSecurityTab" type="button" data-settings-tab="security" role="tab" aria-selected="true" onclick="switchSettingsTab('security')">Security</button>
+        </div>
+        <div class="settings-session">
+          <div class="settings-session-label" id="settingsAccountLabel">Signed in as</div>
+          <div class="settings-session-user" id="settingsAccountUser">admin</div>
+          <div class="settings-session-role" id="settingsAccountRole">Teacher account</div>
+          <button class="btn-secondary settings-signout" id="settingsSignOut" type="button" onclick="handleSettingsSignOut()">Sign out</button>
+        </div>
+      </div>
+      <div class="settings-main">
+        <div class="settings-panel" id="settingsAccountPanel" data-settings-panel="account">
+          <div class="settings-panel-heading" id="settingsAccountPanelTitle">Account overview</div>
+          <p class="settings-panel-desc" id="settingsAccountPanelDesc">This account controls access to Yalla-Chess and the password used to sign in.</p>
+          <div class="settings-summary-card">
+            <div class="settings-summary-item">
+              <div class="settings-summary-label" id="settingsAccountPanelUserLabel">Username</div>
+              <div class="settings-summary-value" id="settingsAccountPanelUser">admin</div>
+            </div>
+            <div class="settings-summary-item">
+              <div class="settings-summary-label" id="settingsAccountPanelRoleLabel">Role</div>
+              <div class="settings-summary-value" id="settingsAccountPanelRole">Teacher</div>
+            </div>
+          </div>
+          <div class="settings-form-row">
+            <button class="btn-primary settings-save" id="settingsGoSecurity" type="button" onclick="switchSettingsTab('security')">Go to security</button>
+          </div>
+        </div>
+        <div class="settings-panel active" id="settingsSecurityPanel" data-settings-panel="security">
+          <div class="settings-panel-heading" id="settingsSecurityTitle">Change password</div>
+          <p class="settings-panel-desc" id="settingsSecurityDesc">Use a new password for this account. Your current session stays active.</p>
+          <form class="settings-form" id="settingsSecurityForm" onsubmit="handleSettingsPasswordSubmit(event)">
+            <label class="settings-field" for="settingsCurrentPassword">
+              <span id="settingsCurrentPasswordLabel">Current password</span>
+              <input id="settingsCurrentPassword" name="currentPassword" type="password" autocomplete="current-password" placeholder="Current password" required>
+            </label>
+            <label class="settings-field" for="settingsNewPassword">
+              <span id="settingsNewPasswordLabel">New password</span>
+              <input id="settingsNewPassword" name="newPassword" type="password" autocomplete="new-password" placeholder="New password" minlength="6" required>
+            </label>
+            <label class="settings-field" for="settingsConfirmPassword">
+              <span id="settingsConfirmPasswordLabel">Confirm new password</span>
+              <input id="settingsConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password" placeholder="Confirm new password" minlength="6" required>
+            </label>
+            <div class="settings-form-row">
+              <button class="btn-primary settings-save" id="settingsSaveButton" type="submit">Save password</button>
+            </div>
+          </form>
+          <div class="settings-status" id="settingsStatus" hidden></div>
+        </div>
       </div>
     </div>
   </div>
@@ -2212,6 +2674,7 @@
         remember: 'Keep me signed in',
         submit: 'Sign in',
         signingIn: 'Signing in...',
+        settings: 'Settings',
         helper: 'Credentials are issued by the teacher after payment is confirmed.',
         processingTitle: 'Signing in...',
         processingMessage: 'Checking your account.',
@@ -2236,6 +2699,7 @@
         remember: 'השאירו אותי מחובר',
         submit: 'התחברות',
         signingIn: 'מתחברים...',
+        settings: 'הגדרות',
         helper: 'פרטי הגישה ניתנים על ידי המורה לאחר אישור התשלום.',
         processingTitle: 'מתחברים...',
         processingMessage: 'בודקים את החשבון שלכם.',
@@ -2250,12 +2714,76 @@
       }
     };
 
+    const settingsContent = {
+      en: {
+        title: 'Settings',
+        closeLabel: 'Close settings',
+        subtitle: 'Manage your account details and security.',
+        accountTab: 'Account',
+        securityTab: 'Security',
+        accountLabel: 'Signed in as',
+        accountRoleTeacher: 'Teacher account',
+        accountRoleStudent: 'Student account',
+        signOut: 'Sign out',
+        accountPanelTitle: 'Account overview',
+        accountPanelDesc: 'This account controls access to Yalla-Chess and the password used to sign in.',
+        accountUserLabel: 'Username',
+        accountRoleLabel: 'Role',
+        goSecurity: 'Go to security',
+        securityTitle: 'Change password',
+        securityDesc: 'Use a new password for this account. Your current session stays active.',
+        currentPasswordLabel: 'Current password',
+        newPasswordLabel: 'New password',
+        confirmPasswordLabel: 'Confirm new password',
+        save: 'Save password',
+        saving: 'Saving...',
+        success: 'Password updated successfully.',
+        errorNetwork: 'Could not reach the security server.',
+        errorCurrent: 'Current password is incorrect.',
+        errorMismatch: 'New passwords do not match.',
+        errorWeak: 'New password must be at least 6 characters long.',
+        emptyAccount: 'No account signed in'
+      },
+      he: {
+        title: 'הגדרות',
+        closeLabel: 'סגירת הגדרות',
+        subtitle: 'ניהול פרטי החשבון והאבטחה.',
+        accountTab: 'חשבון',
+        securityTab: 'אבטחה',
+        accountLabel: 'מחובר כ',
+        accountRoleTeacher: 'חשבון מורה',
+        accountRoleStudent: 'חשבון תלמיד',
+        signOut: 'התנתקות',
+        accountPanelTitle: 'סקירת חשבון',
+        accountPanelDesc: 'החשבון הזה שולט בגישה ל-Yalla-Chess ובסיסמה המשמשת להתחברות.',
+        accountUserLabel: 'שם משתמש',
+        accountRoleLabel: 'תפקיד',
+        goSecurity: 'מעבר לאבטחה',
+        securityTitle: 'שינוי סיסמה',
+        securityDesc: 'אפשר לעדכן סיסמה חדשה לחשבון הזה. ההתחברות הנוכחית נשארת פעילה.',
+        currentPasswordLabel: 'סיסמה נוכחית',
+        newPasswordLabel: 'סיסמה חדשה',
+        confirmPasswordLabel: 'אימות סיסמה חדשה',
+        save: 'שמירת סיסמה',
+        saving: 'שומר...',
+        success: 'הסיסמה עודכנה בהצלחה.',
+        errorNetwork: 'לא הצלחנו להגיע לשרת האבטחה.',
+        errorCurrent: 'הסיסמה הנוכחית אינה נכונה.',
+        errorMismatch: 'הסיסמאות החדשות אינן תואמות.',
+        errorWeak: 'הסיסמה החדשה חייבת להכיל לפחות 6 תווים.',
+        emptyAccount: 'אין חשבון מחובר'
+      }
+    };
+
     let currentAuthUser = null;
     let loginSuccessTimer = null;
     let authBusy = false;
     let authProcessState = 'idle';
     let authProcessMessage = '';
     let authRequestStartedAt = 0;
+    let settingsTab = 'security';
+    let settingsBusy = false;
+    let settingsStatus = { tone: '', message: '' };
     const AUTH_MIN_PROCESS_MS = 900;
     const authApiBase = location.protocol === 'file:' ? 'http://127.0.0.1:8001' : '';
     const authRequestCredentials = location.protocol === 'file:' ? 'include' : 'same-origin';
@@ -2271,7 +2799,8 @@
     function syncAuthBodyLock() {
       const formOpen = document.getElementById('authOverlay').classList.contains('open');
       const processOpen = authProcessState !== 'idle';
-      document.body.classList.toggle('modal-open', formOpen || processOpen);
+      const settingsOpen = document.getElementById('settingsOverlay').classList.contains('open');
+      document.body.classList.toggle('modal-open', formOpen || processOpen || settingsOpen);
     }
 
     function renderAuthProcess() {
@@ -2334,7 +2863,8 @@
 
     function updateAuthState() {
       const btn = document.getElementById('nav-login');
-      btn.textContent = getAuthText().navLogin;
+      const t = getAuthText();
+      btn.textContent = currentAuthUser ? t.settings : t.navLogin;
       btn.classList.toggle('signed-in', Boolean(currentAuthUser));
       btn.title = currentAuthUser ? `${currentAuthUser.username} (${currentAuthUser.role})` : '';
     }
@@ -2353,6 +2883,203 @@
       password.disabled = busy;
       remember.disabled = busy;
       submit.setAttribute('aria-busy', String(busy));
+    }
+
+    function getSettingsText() {
+      return settingsContent[currentLang === 'he' ? 'he' : 'en'];
+    }
+
+    function formatSettingsRole(role) {
+      const t = getSettingsText();
+      if (role === 'teacher' || role === 'admin') return t.accountRoleTeacher;
+      if (role === 'student') return t.accountRoleStudent;
+      return role || '';
+    }
+
+    function renderSettingsStatus() {
+      const status = document.getElementById('settingsStatus');
+      const hasMessage = Boolean(settingsStatus.message);
+      status.hidden = !hasMessage;
+      status.textContent = hasMessage ? settingsStatus.message : '';
+      if (hasMessage) {
+        status.dataset.tone = settingsStatus.tone || 'info';
+      } else {
+        delete status.dataset.tone;
+      }
+    }
+
+    function renderSettings() {
+      const t = getSettingsText();
+      const overlay = document.getElementById('settingsOverlay');
+      const open = overlay.classList.contains('open');
+      const userName = currentAuthUser ? currentAuthUser.username : t.emptyAccount;
+      const userRole = currentAuthUser ? formatSettingsRole(currentAuthUser.role) : '';
+
+      overlay.setAttribute('aria-hidden', String(!open));
+      document.getElementById('settingsClose').setAttribute('aria-label', t.closeLabel);
+      document.getElementById('settingsKicker').textContent = 'Yalla-Chess';
+      document.getElementById('settingsTitle').textContent = t.title;
+      document.getElementById('settingsSubtitle').textContent = t.subtitle;
+      document.getElementById('settingsAccountTab').textContent = t.accountTab;
+      document.getElementById('settingsSecurityTab').textContent = t.securityTab;
+      document.getElementById('settingsAccountLabel').textContent = t.accountLabel;
+      document.getElementById('settingsAccountUser').textContent = userName;
+      document.getElementById('settingsAccountRole').textContent = userRole;
+      document.getElementById('settingsSignOut').textContent = t.signOut;
+      document.getElementById('settingsAccountPanelTitle').textContent = t.accountPanelTitle;
+      document.getElementById('settingsAccountPanelDesc').textContent = t.accountPanelDesc;
+      document.getElementById('settingsAccountPanelUserLabel').textContent = t.accountUserLabel;
+      document.getElementById('settingsAccountPanelUser').textContent = userName;
+      document.getElementById('settingsAccountPanelRoleLabel').textContent = t.accountRoleLabel;
+      document.getElementById('settingsAccountPanelRole').textContent = userRole;
+      document.getElementById('settingsGoSecurity').textContent = t.goSecurity;
+      document.getElementById('settingsSecurityTitle').textContent = t.securityTitle;
+      document.getElementById('settingsSecurityDesc').textContent = t.securityDesc;
+      document.getElementById('settingsCurrentPasswordLabel').textContent = t.currentPasswordLabel;
+      document.getElementById('settingsNewPasswordLabel').textContent = t.newPasswordLabel;
+      document.getElementById('settingsConfirmPasswordLabel').textContent = t.confirmPasswordLabel;
+      document.getElementById('settingsCurrentPassword').placeholder = t.currentPasswordLabel;
+      document.getElementById('settingsNewPassword').placeholder = t.newPasswordLabel;
+      document.getElementById('settingsConfirmPassword').placeholder = t.confirmPasswordLabel;
+      document.getElementById('settingsSaveButton').textContent = settingsBusy ? t.saving : t.save;
+      document.getElementById('settingsSaveButton').disabled = settingsBusy;
+      document.getElementById('settingsCurrentPassword').disabled = settingsBusy;
+      document.getElementById('settingsNewPassword').disabled = settingsBusy;
+      document.getElementById('settingsConfirmPassword').disabled = settingsBusy;
+      document.getElementById('settingsGoSecurity').disabled = settingsBusy;
+      document.querySelectorAll('[data-settings-tab]').forEach(function(button) {
+        const active = button.dataset.settingsTab === settingsTab;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+      });
+      document.querySelectorAll('[data-settings-panel]').forEach(function(panel) {
+        panel.classList.toggle('active', panel.dataset.settingsPanel === settingsTab);
+      });
+      renderSettingsStatus();
+      syncAuthBodyLock();
+    }
+
+    function applySettingsTranslations() {
+      renderSettings();
+    }
+
+    function switchSettingsTab(tab) {
+      settingsTab = tab === 'account' ? 'account' : 'security';
+      renderSettings();
+    }
+
+    function openSettings(tab = 'security') {
+      if (!currentAuthUser) {
+        openLogin();
+        return;
+      }
+
+      clearTimeout(loginSuccessTimer);
+      loginSuccessTimer = null;
+      hideAuthProcess();
+      closeMenu();
+      settingsTab = tab === 'account' ? 'account' : 'security';
+      settingsStatus = { tone: '', message: '' };
+      document.getElementById('settingsSecurityForm').reset();
+      document.getElementById('settingsOverlay').classList.add('open');
+      renderSettings();
+      window.setTimeout(function() {
+        const focusTarget = settingsTab === 'account'
+          ? document.getElementById('settingsAccountTab')
+          : document.getElementById('settingsCurrentPassword');
+        if (focusTarget && typeof focusTarget.focus === 'function') {
+          focusTarget.focus({ preventScroll: true });
+        }
+      }, 60);
+    }
+
+    function closeSettings() {
+      settingsBusy = false;
+      settingsStatus = { tone: '', message: '' };
+      document.getElementById('settingsSecurityForm').reset();
+      document.getElementById('settingsOverlay').classList.remove('open');
+      renderSettings();
+    }
+
+    function handleNavPrimary() {
+      if (currentAuthUser) {
+        openSettings();
+      } else {
+        openLogin();
+      }
+    }
+
+    function handleSettingsSignOut() {
+      void signOut();
+    }
+
+    function setSettingsStatus(tone, message) {
+      settingsStatus = { tone, message };
+      renderSettings();
+    }
+
+    async function handleSettingsPasswordSubmit(event) {
+      event.preventDefault();
+
+      if (!currentAuthUser) {
+        openLogin();
+        return;
+      }
+
+      const form = event.currentTarget;
+      if (!form.reportValidity()) {
+        return;
+      }
+
+      const formData = new FormData(form);
+      const currentPassword = String(formData.get('currentPassword') || '');
+      const newPassword = String(formData.get('newPassword') || '');
+      const confirmPassword = String(formData.get('confirmPassword') || '');
+      const t = getSettingsText();
+
+      if (newPassword !== confirmPassword) {
+        setSettingsStatus('error', t.errorMismatch);
+        return;
+      }
+
+      if (newPassword.length < 6) {
+        setSettingsStatus('error', t.errorWeak);
+        return;
+      }
+
+      settingsBusy = true;
+      setSettingsStatus('', '');
+
+      try {
+        const response = await fetch(authApi('/api/password'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          mode: authApiBase ? 'cors' : 'same-origin',
+          credentials: authRequestCredentials,
+          body: JSON.stringify({ currentPassword, newPassword })
+        });
+
+        const data = await response.json().catch(function() {
+          return {};
+        });
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || t.errorNetwork);
+        }
+
+        currentAuthUser = data.user || currentAuthUser;
+        updateAuthState();
+        document.getElementById('settingsSecurityForm').reset();
+        settingsBusy = false;
+        setSettingsStatus('success', t.success);
+      } catch (error) {
+        settingsBusy = false;
+        const message = error && error.message ? error.message : t.errorNetwork;
+        setSettingsStatus('error', message === 'Failed to fetch' ? t.errorNetwork : message);
+      }
     }
 
     function wait(ms) {
@@ -2475,6 +3202,7 @@
         });
       } catch (error) {}
 
+      closeSettings();
       currentAuthUser = null;
       updateAuthState();
       closeLogin();
@@ -2482,6 +3210,7 @@
 
     async function restoreAuthSession() {
       applyAuthTranslations();
+      applySettingsTranslations();
 
       try {
         const response = await fetch(authApi('/api/me'), {
@@ -2703,6 +3432,7 @@
       }
 
       applyAuthTranslations();
+      applySettingsTranslations();
     }
 
     function toggleLang() {

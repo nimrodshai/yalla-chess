@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { extname, join, normalize, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
@@ -13,6 +13,7 @@ const sessions = new Map();
 
 const DEFAULT_USERS = [
   { role: 'teacher', username: 'admin', password: 'admin123' },
+  { role: 'teacher', username: 'Dolevkrav@gmail.com', password: 'pass123' },
   { role: 'student', username: 'student', password: 'student123' }
 ];
 
@@ -91,6 +92,18 @@ async function loadUsers() {
   } catch {
     return DEFAULT_USERS;
   }
+}
+
+async function saveUsers(users) {
+  const payload = {
+    users: users.map((user) => ({
+      role: normalizeRole(user?.role),
+      username: typeof user?.username === 'string' ? user.username : '',
+      password: typeof user?.password === 'string' ? user.password : ''
+    })).filter((user) => user.role && user.username && user.password)
+  };
+
+  await writeFile(USERS_FILE, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 }
 
 function normalizeRole(role) {
@@ -197,6 +210,53 @@ async function handleLogin(req, res) {
   });
 }
 
+async function handleChangePassword(req, res) {
+  const session = getSessionFromRequest(req);
+  if (!session) {
+    sendJson(res, 401, { ok: false, error: 'Not authenticated.' }, getCorsHeaders(req));
+    return;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(await readRequestBody(req));
+  } catch (error) {
+    sendJson(res, error.statusCode || 400, { ok: false, error: 'Invalid JSON payload.' }, getCorsHeaders(req));
+    return;
+  }
+
+  const currentPassword = typeof payload.currentPassword === 'string' ? payload.currentPassword : '';
+  const newPassword = typeof payload.newPassword === 'string' ? payload.newPassword : '';
+  const users = await loadUsers();
+  const userIndex = users.findIndex((entry) => entry.username === session.username);
+
+  if (userIndex === -1) {
+    sendJson(res, 404, { ok: false, error: 'Account not found.' }, getCorsHeaders(req));
+    return;
+  }
+
+  if (!currentPassword || users[userIndex].password !== currentPassword) {
+    sendJson(res, 401, { ok: false, error: 'Current password is incorrect.' }, getCorsHeaders(req));
+    return;
+  }
+
+  if (!newPassword || newPassword.length < 6) {
+    sendJson(res, 400, { ok: false, error: 'New password must be at least 6 characters.' }, getCorsHeaders(req));
+    return;
+  }
+
+  users[userIndex].password = newPassword;
+  await saveUsers(users);
+
+  sendJson(res, 200, {
+    ok: true,
+    user: {
+      username: users[userIndex].username,
+      role: users[userIndex].role
+    }
+  }, getCorsHeaders(req));
+}
+
 function handleMe(req, res) {
   const session = getSessionFromRequest(req);
   if (!session) {
@@ -287,6 +347,11 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === '/api/me' && req.method === 'GET') {
     handleMe(req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/password' && req.method === 'POST') {
+    await handleChangePassword(req, res);
     return;
   }
 
