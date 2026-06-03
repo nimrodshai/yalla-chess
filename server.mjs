@@ -112,6 +112,25 @@ function normalizeRole(role) {
   return null;
 }
 
+function normalizeLoginIdentifier(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function getLoginIdentifiers(username) {
+  const normalized = normalizeLoginIdentifier(username);
+  const identifiers = new Set();
+
+  if (normalized) {
+    identifiers.add(normalized);
+    const atIndex = normalized.indexOf('@');
+    if (atIndex > 0) {
+      identifiers.add(normalized.slice(0, atIndex));
+    }
+  }
+
+  return identifiers;
+}
+
 function createSession(user) {
   const id = randomBytes(24).toString('hex');
   const expiresAt = Date.now() + SESSION_TTL_MS;
@@ -177,10 +196,12 @@ async function handleLogin(req, res) {
   }
 
   const users = await loadUsers();
-  const user = users.find((entry) => (
-    entry.username === username &&
-    entry.password === password
-  ));
+  const loginIdentifiers = getLoginIdentifiers(username);
+  const user = users.find((entry) => {
+    const entryIdentifiers = getLoginIdentifiers(entry.username);
+    const usernameMatches = [...loginIdentifiers].some((identifier) => entryIdentifiers.has(identifier));
+    return usernameMatches && entry.password === password;
+  });
 
   if (!user) {
     sendJson(res, 401, { ok: false, error: 'Invalid username or password.' });
