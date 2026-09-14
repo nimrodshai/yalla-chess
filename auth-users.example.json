@@ -1,0 +1,28 @@
+{
+  "users": [
+    {
+      "role": "teacher",
+      "username": "teacher@example.test",
+      "phone": "+972500000001",
+      "contactEmail": "",
+      "firstName": "",
+      "lastName": "",
+      "paymentStatus": "paid",
+      "planName": "",
+      "paidUntil": "",
+      "notes": ""
+    },
+    {
+      "role": "student",
+      "username": "student@example.test",
+      "phone": "+972500000004",
+      "contactEmail": "",
+      "firstName": "",
+      "lastName": "",
+      "paymentStatus": "paid",
+      "planName": "Monthly group plan",
+      "paidUntil": "",
+      "notes": ""
+    }
+  ]
+}

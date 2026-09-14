@@ -1,0 +1,6 @@
+# Runtime data written by server.mjs at run time.
+# NOTE: this repo is published by GitHub Pages from the main branch root,
+# so every committed file is world-readable. Keep real user data out.
+auth-users.json
+groups.json
+contact-requests.json
