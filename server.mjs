@@ -51,10 +51,13 @@ const OTP_MAX_ATTEMPTS = config.otpMaxAttempts;
 // than making someone request a new one after a deploy.
 const otpChallenges = new Map();
 
+// Development-only seed data. Production seeds from BOOTSTRAP_TEACHER_PHONE
+// instead, so these placeholders never reach a real database. Keep real names,
+// emails and phone numbers out of here: this file is committed.
 const DEFAULT_USERS = [
   { role: 'teacher', username: 'admin@yalla-chess.test', phone: '+972500000001' },
-  { role: 'teacher', username: 'Dolevkrav@gmail.com', phone: '+972500000002' },
-  { role: 'teacher', username: 'nimrod.shai@gmail.com', phone: '+972500000003' },
+  { role: 'teacher', username: 'teacher@yalla-chess.test', phone: '+972500000002' },
+  { role: 'teacher', username: 'coach@yalla-chess.test', phone: '+972500000003' },
   { role: 'student', username: 'student@yalla-chess.test', phone: '+972500000004' }
 ];
 
@@ -76,7 +79,7 @@ const DEFAULT_GROUPS = [
   {
     id: 'tactics',
     title: { en: 'Tactics Lab', he: 'מעבדת טקטיקה' },
-    members: ['+972507322341'],
+    members: ['+972500000003'],
     schedule: {
       weekday: 3,
       startTime: '18:30',
