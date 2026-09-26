@@ -1,0 +1,12 @@
+.git
+.github
+tests
+*.db
+*.db-wal
+*.db-shm
+auth-users.json
+groups.json
+contact-requests.json
+.env
+.env.*
+!.env.example
