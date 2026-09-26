@@ -4,16 +4,31 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 import { extname, join, normalize, resolve } from 'node:path';
 import { randomBytes, randomInt } from 'node:crypto';
 
+import { config, hasTwilioCredentials, validateConfig } from './lib/config.mjs';
+import {
+  buildClearedSessionCookie,
+  buildSessionCookie,
+  checkRateLimit,
+  getClientIp,
+  getCorsHeaders,
+  getSecurityHeaders,
+  isCrossOriginRequest,
+  isForbiddenCrossSiteWrite,
+  pruneRateLimits,
+  refundRateLimit
+} from './lib/security.mjs';
+import { logError, logInfo, logWarn } from './lib/log.mjs';
+
 const ROOT = process.cwd();
-const PORT = Number(process.env.PORT || 8001);
+const PORT = config.port;
 const USERS_FILE = join(ROOT, 'auth-users.json');
 const GROUPS_FILE = join(ROOT, 'groups.json');
 const CONTACT_REQUESTS_FILE = join(ROOT, 'contact-requests.json');
-const CONTACT_NOTIFY_TO = (process.env.CONTACT_NOTIFY_TO || 'Dolevkrav@gmail.com').trim();
+const CONTACT_NOTIFY_TO = config.contactNotifyTo;
 const SESSION_COOKIE = 'yalla_session';
-const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 180;
-const OTP_TTL_MS = 1000 * 60 * 10;
-const OTP_MAX_ATTEMPTS = 5;
+const SESSION_TTL_MS = config.sessionTtlMs;
+const OTP_TTL_MS = config.otpTtlMs;
+const OTP_MAX_ATTEMPTS = config.otpMaxAttempts;
 const sessions = new Map();
 const otpChallenges = new Map();
 
@@ -113,22 +128,6 @@ function parseCookies(cookieHeader = '') {
   }, {});
 }
 
-function getCorsHeaders(req) {
-  const origin = req.headers.origin;
-  if (!origin) return {};
-  return {
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Credentials': 'true',
-    'Vary': 'Origin'
-  };
-}
-
-function isCrossOriginRequest(req) {
-  const origin = req.headers.origin;
-  if (!origin) return false;
-  return origin !== 'http://127.0.0.1:8001' && origin !== 'http://localhost:8001';
-}
-
 function parseBoolean(value, fallback = false) {
   if (value === undefined || value === null || value === '') {
     return fallback;
@@ -163,10 +162,7 @@ function getTwilioConfig() {
   const accountSid = (process.env.TWILIO_ACCOUNT_SID || '').trim();
   const authToken = (process.env.TWILIO_AUTH_TOKEN || '').trim();
   const serviceSid = (process.env.TWILIO_VERIFY_SERVICE_SID || '').trim();
-  const allowConsoleFallback = parseBoolean(
-    process.env.TWILIO_ALLOW_CONSOLE_FALLBACK,
-    process.env.NODE_ENV !== 'production'
-  );
+  const allowConsoleFallback = config.smsConsoleFallback;
   const userAgent = (process.env.TWILIO_USER_AGENT || 'Yalla-Chess/1.0').trim();
 
   return {
@@ -1225,10 +1221,35 @@ async function handleLogin(req, res) {
     return;
   }
 
+  // Each accepted request sends a billable SMS, so cap both the caller and the
+  // destination number before doing any work.
+  const ipKey = `login:ip:${getClientIp(req)}`;
+  const phoneKey = `login:phone:${normalizePhone(phone)}`;
+  const ipLimit = checkRateLimit(ipKey, config.rateLimits.loginPerIp);
+  if (!ipLimit.allowed) {
+    sendJson(res, 429, { ok: false, error: 'Too many attempts. Request a new code.' }, {
+      ...getCorsHeaders(req),
+      'Retry-After': String(ipLimit.retryAfterSeconds)
+    });
+    return;
+  }
+
+  const phoneLimit = checkRateLimit(phoneKey, config.rateLimits.loginPerPhone);
+  if (!phoneLimit.allowed) {
+    sendJson(res, 429, { ok: false, error: 'Too many attempts. Request a new code.' }, {
+      ...getCorsHeaders(req),
+      'Retry-After': String(phoneLimit.retryAfterSeconds)
+    });
+    return;
+  }
+
   const users = await loadUsers();
   const user = getUserByPhone(users, phone);
 
   if (!user) {
+    // No SMS goes out, so do not spend this number's budget; the per-IP cap
+    // still bounds enumeration attempts.
+    refundRateLimit(phoneKey);
     sendJson(res, 403, { ok: false, error: "This phone number isn't on the paid list yet." }, {
       ...getCorsHeaders(req)
     });
@@ -1258,6 +1279,8 @@ async function handleLogin(req, res) {
     }
   } catch (error) {
     otpChallenges.delete(challenge.challengeId);
+    refundRateLimit(phoneKey);
+    logError('otp.send_failed', error, { phone: userPhone });
     sendJson(res, 503, { ok: false, error: error.message || 'SMS delivery is not configured on this server.' }, {
       ...getCorsHeaders(req)
     });
@@ -1302,6 +1325,17 @@ async function handleLoginVerify(req, res) {
 
   if (!challengeId || !/^\d{6}$/.test(code)) {
     sendJson(res, 400, { ok: false, error: 'Enter the 6-digit code from your text message.' }, getCorsHeaders(req));
+    return;
+  }
+
+  // Per-challenge attempts are capped already; this bounds an attacker cycling
+  // through fresh challenges from one host.
+  const verifyLimit = checkRateLimit(`verify:ip:${getClientIp(req)}`, config.rateLimits.verifyPerIp);
+  if (!verifyLimit.allowed) {
+    sendJson(res, 429, { ok: false, error: 'Too many attempts. Request a new code.' }, {
+      ...getCorsHeaders(req),
+      'Retry-After': String(verifyLimit.retryAfterSeconds)
+    });
     return;
   }
 
@@ -1380,15 +1414,8 @@ async function handleLoginVerify(req, res) {
   otpChallenges.delete(challengeId);
 
   const session = createSession(user);
-  const crossOrigin = isCrossOriginRequest(req);
-  const cookie = [
-    `${SESSION_COOKIE}=${encodeURIComponent(session.id)}`,
-    'HttpOnly',
-    'Path=/',
-    crossOrigin ? 'SameSite=None' : 'SameSite=Lax',
-    crossOrigin ? 'Secure' : null,
-    (remember !== false && challenge.remember !== false) ? `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}` : null
-  ].filter(Boolean).join('; ');
+  const persist = remember !== false && challenge.remember !== false;
+  const cookie = buildSessionCookie(session.id, { maxAgeMs: persist ? SESSION_TTL_MS : null });
 
   sendJson(res, 200, {
     ok: true,
@@ -1400,7 +1427,7 @@ async function handleLoginVerify(req, res) {
 }
 
 function handleDebugOtp(req, res, url) {
-  if (process.env.NODE_ENV === 'production') {
+  if (!config.enableDebugEndpoints) {
     sendJson(res, 404, { ok: false, error: 'Not found.' }, getCorsHeaders(req));
     return;
   }
@@ -1431,7 +1458,7 @@ function handleDebugOtp(req, res, url) {
 }
 
 async function handleDebugSession(req, res, url) {
-  if (process.env.NODE_ENV === 'production') {
+  if (!config.enableDebugEndpoints) {
     sendJson(res, 404, { ok: false, error: 'Not found.' }, getCorsHeaders(req));
     return;
   }
@@ -1445,15 +1472,7 @@ async function handleDebugSession(req, res, url) {
   }
 
   const session = createSession(user);
-  const crossOrigin = isCrossOriginRequest(req);
-  const cookie = [
-    `${SESSION_COOKIE}=${encodeURIComponent(session.id)}`,
-    'HttpOnly',
-    'Path=/',
-    crossOrigin ? 'SameSite=None' : 'SameSite=Lax',
-    crossOrigin ? 'Secure' : null,
-    `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`
-  ].filter(Boolean).join('; ');
+  const cookie = buildSessionCookie(session.id, { maxAgeMs: SESSION_TTL_MS });
 
   sendText(res, 302, '', 'text/plain; charset=utf-8', {
     ...getCorsHeaders(req),
@@ -1534,6 +1553,15 @@ async function handleProfileUpdate(req, res) {
 }
 
 async function handleContactRequest(req, res) {
+  const contactLimit = checkRateLimit(`contact:ip:${getClientIp(req)}`, config.rateLimits.contactPerIp);
+  if (!contactLimit.allowed) {
+    sendJson(res, 429, { ok: false, error: 'Too many requests. Please try again later.' }, {
+      ...getCorsHeaders(req),
+      'Retry-After': String(contactLimit.retryAfterSeconds)
+    });
+    return;
+  }
+
   let payload;
   try {
     payload = JSON.parse(await readRequestBody(req, 32 * 1024));
@@ -2076,14 +2104,7 @@ function handleLogout(req, res) {
   if (sessionId) sessions.delete(sessionId);
 
   sendJson(res, 200, { ok: true }, {
-    'Set-Cookie': [
-    `${SESSION_COOKIE}=`,
-    'HttpOnly',
-    'Path=/',
-    isCrossOriginRequest(req) ? 'SameSite=None' : 'SameSite=Lax',
-    isCrossOriginRequest(req) ? 'Secure' : null,
-    'Max-Age=0'
-  ].join('; ')
+    'Set-Cookie': buildClearedSessionCookie()
   }, getCorsHeaders(req));
 }
 
@@ -2119,6 +2140,13 @@ async function serveStatic(req, res, pathname) {
 
 const server = createServer(async (req, res) => {
   clearExpiredSessions();
+  pruneRateLimits();
+
+  // Set before any handler writes, so every response carries them. Values
+  // passed later to writeHead take precedence over these.
+  for (const [header, value] of Object.entries(getSecurityHeaders())) {
+    res.setHeader(header, value);
+  }
 
   if (!req.url) {
     sendText(res, 400, 'Bad Request');
@@ -2126,6 +2154,16 @@ const server = createServer(async (req, res) => {
   }
 
   const url = new URL(req.url, 'http://127.0.0.1');
+
+  // The session cookie is SameSite, but reject cross-site state changes
+  // explicitly rather than relying on that alone.
+  if (url.pathname.startsWith('/api/') && req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+    if (isForbiddenCrossSiteWrite(req)) {
+      logWarn('cors.blocked_write', { path: url.pathname, origin: req.headers.origin });
+      sendJson(res, 403, { ok: false, error: 'Cross-site requests are not allowed.' });
+      return;
+    }
+  }
 
   if (url.pathname === '/api/login' && req.method === 'POST') {
     await handleLogin(req, res);
@@ -2228,6 +2266,24 @@ const server = createServer(async (req, res) => {
   sendText(res, 405, 'Method Not Allowed');
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Yalla-Chess server running at http://127.0.0.1:${PORT}`);
+const { problems, warnings } = validateConfig();
+for (const warning of warnings) {
+  logWarn('config.warning', { detail: warning });
+}
+
+if (problems.length) {
+  for (const problem of problems) {
+    logError('config.invalid', new Error(problem));
+  }
+  process.exit(78); // EX_CONFIG
+}
+
+server.listen(PORT, config.host, () => {
+  logInfo('server.listening', {
+    host: config.host,
+    port: PORT,
+    env: config.nodeEnv,
+    sms: hasTwilioCredentials() ? 'twilio' : (config.smsConsoleFallback ? 'console' : 'disabled'),
+    debugEndpoints: config.enableDebugEndpoints
+  });
 });
