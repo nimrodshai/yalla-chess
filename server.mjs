@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 import { randomBytes, randomInt } from 'node:crypto';
 
 import { config, hasTwilioCredentials, validateConfig } from './lib/config.mjs';
@@ -2098,37 +2098,148 @@ function handleLogout(req, res) {
   }, getCorsHeaders(req));
 }
 
-async function serveStatic(req, res, pathname) {
-  const requested = pathname === '/' ? '/index.html' : pathname;
-  const safePath = normalize(decodeURIComponent(requested)).replace(/^(\.\.(\/|\\|$))+/, '');
+// Long-lived caching for media, revalidation for the app shell. index.html is
+// never cached because it contains the whole application.
+function getCacheControl(type) {
+  if (type.startsWith('text/html')) return 'no-cache';
+  if (type.startsWith('video/') || type.startsWith('image/') || type.startsWith('font/')) return 'public, max-age=86400';
+  return 'no-cache';
+}
+
+function buildEtag(fileStat) {
+  return `W/"${fileStat.size.toString(16)}-${Math.floor(fileStat.mtimeMs).toString(16)}"`;
+}
+
+// Parse a single byte range. Multi-range requests are answered in full, which
+// is allowed and is all any browser needs for media seeking.
+function parseRange(header, size) {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(String(header || '').trim());
+  if (!match) return null;
+
+  const [, rawStart, rawEnd] = match;
+  if (rawStart === '' && rawEnd === '') return null;
+
+  let start;
+  let end;
+
+  if (rawStart === '') {
+    // Suffix form: the last N bytes.
+    const length = Number(rawEnd);
+    if (!Number.isFinite(length) || length <= 0) return null;
+    start = Math.max(0, size - length);
+    end = size - 1;
+  } else {
+    start = Number(rawStart);
+    end = rawEnd === '' ? size - 1 : Number(rawEnd);
+  }
+
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  if (start > end || start >= size) return { unsatisfiable: true };
+
+  return { start, end: Math.min(end, size - 1) };
+}
+
+function resolveStaticPath(pathname) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return null; // Malformed percent-encoding.
+  }
+
+  if (decoded.includes('\0')) return null;
+
+  const safePath = normalize(decoded).replace(/^(\.\.(\/|\\|$))+/, '');
   const absolute = resolve(ROOT, `.${safePath}`);
 
-  if (!absolute.startsWith(ROOT)) {
+  // Prefix alone would also match a sibling directory such as <ROOT>-backup.
+  if (absolute !== ROOT && !absolute.startsWith(ROOT + sep)) return null;
+
+  return absolute;
+}
+
+async function serveStatic(req, res, pathname) {
+  const requested = pathname === '/' ? '/index.html' : pathname;
+  const absolute = resolveStaticPath(requested);
+
+  if (!absolute) {
     sendText(res, 403, 'Forbidden');
     return;
   }
 
+  let fileStat;
   try {
-    const fileStat = await stat(absolute);
+    fileStat = await stat(absolute);
     if (!fileStat.isFile()) throw new Error('Not a file');
-    const type = MIME_TYPES[extname(absolute).toLowerCase()] || 'application/octet-stream';
-    res.writeHead(200, {
-      'Content-Type': type,
-      'Cache-Control': type.startsWith('text/') || type.includes('javascript') ? 'no-store' : 'public, max-age=3600'
-    });
-    createReadStream(absolute).pipe(res);
   } catch {
-    const indexPath = join(ROOT, 'index.html');
-    const type = MIME_TYPES['.html'];
-    res.writeHead(200, {
-      'Content-Type': type,
-      'Cache-Control': 'no-store'
-    });
-    createReadStream(indexPath).pipe(res);
+    // A request for a missing asset must be a 404, not the app shell with a
+    // 200, which hides broken references from browsers and monitoring. Paths
+    // without an extension fall through to the single-page app.
+    if (extname(absolute)) {
+      sendText(res, 404, 'Not Found');
+      return;
+    }
+
+    await serveStatic(req, res, '/index.html');
+    return;
   }
+
+  const type = MIME_TYPES[extname(absolute).toLowerCase()] || 'application/octet-stream';
+  const etag = buildEtag(fileStat);
+  const lastModified = new Date(fileStat.mtimeMs).toUTCString();
+
+  const baseHeaders = {
+    'Content-Type': type,
+    'Cache-Control': getCacheControl(type),
+    'Accept-Ranges': 'bytes',
+    ETag: etag,
+    'Last-Modified': lastModified
+  };
+
+  if (req.headers['if-none-match'] === etag) {
+    res.writeHead(304, baseHeaders);
+    res.end();
+    return;
+  }
+
+  const range = req.headers.range ? parseRange(req.headers.range, fileStat.size) : null;
+
+  if (range?.unsatisfiable) {
+    res.writeHead(416, { ...baseHeaders, 'Content-Range': `bytes */${fileStat.size}` });
+    res.end();
+    return;
+  }
+
+  // Serving the 86MB video without this means re-sending the whole file for
+  // every seek, and browsers cannot scrub at all.
+  if (range) {
+    const length = range.end - range.start + 1;
+    res.writeHead(206, {
+      ...baseHeaders,
+      'Content-Range': `bytes ${range.start}-${range.end}/${fileStat.size}`,
+      'Content-Length': String(length)
+    });
+
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+
+    createReadStream(absolute, { start: range.start, end: range.end }).pipe(res);
+    return;
+  }
+
+  res.writeHead(200, { ...baseHeaders, 'Content-Length': String(fileStat.size) });
+
+  if (req.method === 'HEAD') {
+    res.end();
+    return;
+  }
+
+  createReadStream(absolute).pipe(res);
 }
 
-const server = createServer(async (req, res) => {
+async function handleRequest(req, res) {
   clearExpiredSessions();
   pruneRateLimits();
 
@@ -2144,6 +2255,12 @@ const server = createServer(async (req, res) => {
   }
 
   const url = new URL(req.url, 'http://127.0.0.1');
+
+  // Unauthenticated liveness probe for the reverse proxy or container runtime.
+  if (url.pathname === '/healthz' && (req.method === 'GET' || req.method === 'HEAD')) {
+    sendJson(res, 200, { ok: true, status: 'ok', uptimeSeconds: Math.round(process.uptime()) });
+    return;
+  }
 
   // The session cookie is SameSite, but reject cross-site state changes
   // explicitly rather than relying on that alone.
@@ -2254,6 +2371,76 @@ const server = createServer(async (req, res) => {
   }
 
   sendText(res, 405, 'Method Not Allowed');
+}
+
+const server = createServer((req, res) => {
+  const startedAt = process.hrtime.bigint();
+
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    // Static asset noise is not worth a line each; API traffic and errors are.
+    if (req.url?.startsWith('/api/') || res.statusCode >= 400) {
+      logInfo('request', {
+        method: req.method,
+        path: req.url?.split('?')[0],
+        status: res.statusCode,
+        durationMs: Math.round(durationMs)
+      });
+    }
+  });
+
+  // Without this a throwing handler becomes an unhandled rejection, which
+  // terminates the process in Node 15 and later.
+  handleRequest(req, res).catch((error) => {
+    logError('request.failed', error, { method: req.method, path: req.url?.split('?')[0] });
+
+    if (res.headersSent) {
+      res.destroy();
+      return;
+    }
+
+    sendJson(res, 500, { ok: false, error: 'Internal server error.' });
+  });
+});
+
+// Give in-flight requests a chance to finish, then release the database so the
+// WAL is folded back into the main file.
+let shuttingDown = false;
+
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logInfo('server.shutdown', { signal });
+
+  const timer = setTimeout(() => {
+    logWarn('server.shutdown_forced', { signal });
+    closeDatabase();
+    process.exit(1);
+  }, 10_000);
+  timer.unref();
+
+  server.close(() => {
+    clearTimeout(timer);
+    closeDatabase();
+    logInfo('server.stopped', { signal });
+    process.exit(0);
+  });
+
+  server.closeIdleConnections?.();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+process.on('unhandledRejection', (reason) => {
+  logError('process.unhandled_rejection', reason instanceof Error ? reason : new Error(String(reason)));
+});
+
+// An uncaught exception leaves the process in an undefined state, so log it and
+// let the supervisor restart us rather than continuing to serve traffic.
+process.on('uncaughtException', (error) => {
+  logError('process.uncaught_exception', error);
+  shutdown('uncaughtException');
 });
 
 // Import the JSON files this app used to persist to, exactly once. They are
