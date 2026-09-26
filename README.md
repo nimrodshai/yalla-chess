@@ -10,7 +10,8 @@ No dependencies to install: the server is plain Node using `node:sqlite`.
 
 ## Requirements
 
-- Node 22.5 or newer (`node:sqlite`). Node 24 is what this is developed against.
+- Node 22.13 or newer, for `node:sqlite` without an experimental flag. Node 24 is
+  what this is developed against; CI covers 22.13.0, latest 22 and latest 24.
 - A Twilio Verify service, for sign-in codes.
 - Optionally a Resend API key, to be emailed about contact-form submissions.
 

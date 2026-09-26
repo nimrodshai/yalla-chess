@@ -21,9 +21,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # node:sqlite is the constraint. 24 is what this is developed against;
-        # 22 is here to confirm whether the engines floor in package.json holds.
-        node: ['22.x', '24.x']
+        # node:sqlite is the constraint, and it was behind a flag when it first
+        # landed in 22.5. The first entry is the exact floor claimed by the
+        # engines field in package.json, so that claim stays honest; the others
+        # are the latest of each supported line.
+        node: ['22.13.0', '22.x', '24.x']
 
     steps:
       - uses: actions/checkout@v4
