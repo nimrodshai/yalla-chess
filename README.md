@@ -1,5 +1,7 @@
 # Yalla-Chess
 
+[![CI](https://github.com/nimrodshai/yalla-chess/actions/workflows/ci.yml/badge.svg)](https://github.com/nimrodshai/yalla-chess/actions/workflows/ci.yml)
+
 Landing page and member portal for Dolev's chess school. Hebrew/English,
 phone-based sign-in, and a portal where teachers manage groups, schedules,
 Zoom links and students.
@@ -27,9 +29,13 @@ Then open http://127.0.0.1:8001 and sign in as `+972500000001` (a teacher) or
 production.
 
 ```bash
-npm test     # 27 tests against a real server on a throwaway database
+npm test      # 27 tests against a real server on a throwaway database
 npm run check # syntax check every module
 ```
+
+Both run in CI on every push and pull request, alongside a Docker image build
+and a guard job that fails the build if runtime data, a database or anything
+credential-shaped is ever committed.
 
 ## Configuration
 

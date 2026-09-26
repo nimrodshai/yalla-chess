@@ -1,0 +1,145 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least privilege: nothing here needs to write to the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # node:sqlite is the constraint. 24 is what this is developed against;
+        # 22 is here to confirm whether the engines floor in package.json holds.
+        node: ['22.x', '24.x']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # There are no dependencies, so there is deliberately no install step.
+      - name: Confirm no dependencies crept in
+        run: |
+          if [ -f package-lock.json ] || [ -d node_modules ]; then
+            echo "::error::This project is dependency-free; a lockfile or node_modules appeared."
+            exit 1
+          fi
+
+      - name: Check node:sqlite is usable without a flag
+        run: node -e "require('node:sqlite'); console.log('node:sqlite OK on', process.version)"
+
+      - name: Syntax check
+        run: npm run check
+
+      - name: Test
+        run: npm test
+
+  guard:
+    name: guard against publishing user data
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # GitHub Pages serves this repo's main branch from the root, so anything
+      # committed is downloadable. The live user database was once published
+      # this way; this job makes that mistake fail the build instead.
+      - name: No user data or secrets may be tracked
+        run: |
+          forbidden='^(auth-users\.json|groups\.json|contact-requests\.json|\.env|.*\.db|.*\.db-wal|.*\.db-shm)$'
+          if git ls-files | grep -nE "$forbidden"; then
+            echo "::error::Runtime data or secrets are tracked. These are published by GitHub Pages; keep them gitignored."
+            exit 1
+          fi
+          echo "No runtime data tracked."
+
+      - name: No credential-shaped strings in tracked files
+        run: |
+          # Twilio SIDs and auth tokens, Resend keys. .env.example holds
+          # placeholders, so it is excluded by pattern length and content.
+          if git grep -nIE '(SK[0-9a-f]{32}|AC[0-9a-f]{32}|re_[A-Za-z0-9_-]{20,})' -- . ':!.env.example'; then
+            echo "::error::A value that looks like a real credential is committed."
+            exit 1
+          fi
+          echo "No credential-shaped strings found."
+
+      - name: Secrets must come from the environment
+        run: |
+          # Every credential must be read via process.env, never inlined.
+          if git grep -nE "(authToken|apiKey|password)\s*[:=]\s*['\"][A-Za-z0-9_-]{8,}['\"]" -- '*.mjs'; then
+            echo "::error::A credential appears to be hardcoded."
+            exit 1
+          fi
+          echo "Credentials are read from the environment."
+
+  docker:
+    name: docker image builds
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: docker build -t yalla-chess:ci .
+
+      # Boot the image against a throwaway volume and confirm it serves and
+      # then shuts down cleanly on SIGTERM.
+      - name: Boot and health check
+        run: |
+          docker run -d --name yalla-ci \
+            -p 127.0.0.1:8001:8001 \
+            -e NODE_ENV=production \
+            -e PUBLIC_ORIGIN=https://yalla-chess.test \
+            -e TWILIO_VERIFY_SERVICE_SID=VAci \
+            -e TWILIO_ACCOUNT_SID=ACci \
+            -e TWILIO_AUTH_TOKEN=citoken \
+            -e BOOTSTRAP_TEACHER_PHONE=+972500000001 \
+            yalla-chess:ci
+
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8001/healthz > /dev/null 2>&1; then
+              echo "Healthy after ${attempt}s"
+              break
+            fi
+            if [ "$attempt" = "30" ]; then
+              echo "::error::Container never became healthy."
+              docker logs yalla-ci
+              exit 1
+            fi
+            sleep 1
+          done
+
+          # The debug bypass must be absent in a production image.
+          status=$(curl -s -o /dev/null -w '%{http_code}' \
+            "http://127.0.0.1:8001/api/debug/session?phone=%2B972500000001")
+          if [ "$status" != "404" ]; then
+            echo "::error::Debug endpoint reachable in the production image (got $status)."
+            exit 1
+          fi
+          echo "Debug endpoints absent, as expected."
+
+      - name: Stops cleanly on SIGTERM
+        run: |
+          docker stop --timeout 15 yalla-ci
+          if docker logs yalla-ci 2>&1 | grep -q 'server.stopped'; then
+            echo "Shut down gracefully."
+          else
+            echo "::error::No graceful shutdown recorded."
+            docker logs yalla-ci
+            exit 1
+          fi
