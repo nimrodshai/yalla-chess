@@ -18,6 +18,23 @@ import {
   refundRateLimit
 } from './lib/security.mjs';
 import { logError, logInfo, logWarn } from './lib/log.mjs';
+import {
+  closeDatabase,
+  deleteExpiredSessions,
+  deleteSession,
+  getSession,
+  insertSession,
+  listContactRequests,
+  listGroups,
+  listUsers,
+  openDatabase,
+  replaceContactRequests,
+  replaceGroups,
+  replaceUsers,
+  seedIfEmpty,
+  updateSession
+} from './lib/db.mjs';
+import { withWriteLock } from './lib/mutex.mjs';
 
 const ROOT = process.cwd();
 const PORT = config.port;
@@ -29,7 +46,9 @@ const SESSION_COOKIE = 'yalla_session';
 const SESSION_TTL_MS = config.sessionTtlMs;
 const OTP_TTL_MS = config.otpTtlMs;
 const OTP_MAX_ATTEMPTS = config.otpMaxAttempts;
-const sessions = new Map();
+// Sessions live in SQLite so they survive a restart; OTP challenges stay in
+// memory because they expire in minutes and holding codes at rest is worse
+// than making someone request a new one after a deploy.
 const otpChallenges = new Map();
 
 const DEFAULT_USERS = [
@@ -600,23 +619,14 @@ function normalizeGroupsPayload(payload) {
     .filter((group) => group.id);
 }
 
+// Reads no longer fall back to DEFAULT_GROUPS: seeding happens once at boot,
+// so deleting the last group keeps it deleted instead of resurrecting demo data.
 async function loadGroups() {
-  try {
-    const raw = await readFile(GROUPS_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    const groups = normalizeGroupsPayload(parsed);
-    return groups.length ? groups : DEFAULT_GROUPS.map(normalizeGroup);
-  } catch {
-    return DEFAULT_GROUPS.map(normalizeGroup);
-  }
+  return normalizeGroupsPayload({ groups: listGroups() });
 }
 
 async function saveGroups(groups) {
-  const payload = {
-    groups: normalizeGroupsPayload({ groups })
-  };
-
-  await writeFile(GROUPS_FILE, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  replaceGroups(normalizeGroupsPayload({ groups }));
 }
 
 function slugifyGroupId(value) {
@@ -872,25 +882,18 @@ function serializeDashboardGroup(group, session) {
   };
 }
 
+function normalizeUserList(users) {
+  return users
+    .map((user) => normalizeUserRecord(user))
+    .filter((user) => user.role && (isUserIdentifier(user.username) || isUserIdentifier(user.phone)));
+}
+
 async function loadUsers() {
-  try {
-    const raw = await readFile(USERS_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    const users = Array.isArray(parsed?.users) ? parsed.users : [];
-    return users
-      .map((user) => normalizeUserRecord(user))
-      .filter((user) => user.role && (isUserIdentifier(user.username) || isUserIdentifier(user.phone)));
-  } catch {
-    return DEFAULT_USERS.map((user) => normalizeUserRecord(user));
-  }
+  return normalizeUserList(listUsers());
 }
 
 async function saveUsers(users) {
-  const payload = {
-    users: users.map((user) => normalizeUserRecord(user)).filter((user) => user.role && (isUserIdentifier(user.username) || isUserIdentifier(user.phone)))
-  };
-
-  await writeFile(USERS_FILE, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  replaceUsers(normalizeUserList(users));
 }
 
 function normalizeContactRequest(request) {
@@ -907,27 +910,18 @@ function normalizeContactRequest(request) {
   };
 }
 
+function normalizeContactRequestList(requests) {
+  return requests
+    .map(normalizeContactRequest)
+    .filter((request) => request.id && request.createdAt && request.fullName && isEmailAddress(request.email));
+}
+
 async function loadContactRequests() {
-  try {
-    const raw = await readFile(CONTACT_REQUESTS_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    const requests = Array.isArray(parsed?.requests) ? parsed.requests : [];
-    return requests
-      .map(normalizeContactRequest)
-      .filter((request) => request.id && request.createdAt && request.fullName && isEmailAddress(request.email));
-  } catch {
-    return [];
-  }
+  return normalizeContactRequestList(listContactRequests());
 }
 
 async function saveContactRequests(requests) {
-  const payload = {
-    requests: requests
-      .map(normalizeContactRequest)
-      .filter((request) => request.id && request.createdAt && request.fullName && isEmailAddress(request.email))
-  };
-
-  await writeFile(CONTACT_REQUESTS_FILE, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  replaceContactRequests(normalizeContactRequestList(requests));
 }
 
 function normalizeRole(role) {
@@ -1150,7 +1144,8 @@ function createOtpChallenge(user, remember) {
 function createSession(user) {
   const id = randomBytes(24).toString('hex');
   const expiresAt = Date.now() + SESSION_TTL_MS;
-  sessions.set(id, {
+  insertSession({
+    id,
     username: user.username,
     role: user.role,
     phone: getUserPhone(user),
@@ -1167,22 +1162,17 @@ function getSessionFromRequest(req) {
   const cookies = parseCookies(req.headers.cookie || '');
   const sessionId = cookies[SESSION_COOKIE];
   if (!sessionId) return null;
-  const session = sessions.get(sessionId);
+  const session = getSession(sessionId);
   if (!session) return null;
   if (session.expiresAt <= Date.now()) {
-    sessions.delete(sessionId);
+    deleteSession(sessionId);
     return null;
   }
-  return { id: sessionId, ...session };
+  return session;
 }
 
 function clearExpiredSessions() {
-  const now = Date.now();
-  for (const [sessionId, session] of sessions.entries()) {
-    if (session.expiresAt <= now) {
-      sessions.delete(sessionId);
-    }
-  }
+  deleteExpiredSessions();
 }
 
 async function readRequestBody(req, limitBytes = 16 * 1024) {
@@ -1539,12 +1529,11 @@ async function handleProfileUpdate(req, res) {
   await saveUsers(users);
 
   const updatedUser = users[userIndex];
-  const activeSession = sessions.get(session.id);
-  if (activeSession) {
-    activeSession.contactEmail = getUserContactEmail(updatedUser);
-    activeSession.firstName = normalizeProfileName(updatedUser.firstName);
-    activeSession.lastName = normalizeProfileName(updatedUser.lastName);
-  }
+  updateSession(session.id, {
+    contactEmail: getUserContactEmail(updatedUser),
+    firstName: normalizeProfileName(updatedUser.firstName),
+    lastName: normalizeProfileName(updatedUser.lastName)
+  });
 
   sendJson(res, 200, {
     ok: true,
@@ -1862,14 +1851,16 @@ async function handleUserUpdate(req, res, userId) {
 
   await saveUsers(users);
 
-  const activeSession = sessions.get(session.id);
-  if (activeSession && previousIdentifiers.some((identifier) => sameUserIdentifier(identifier, activeSession.username) || sameUserIdentifier(identifier, activeSession.phone))) {
-    activeSession.username = nextUser.username;
-    activeSession.role = nextUser.role;
-    activeSession.phone = nextUser.phone;
-    activeSession.contactEmail = nextUser.contactEmail;
-    activeSession.firstName = nextUser.firstName;
-    activeSession.lastName = nextUser.lastName;
+  if (previousIdentifiers.some((identifier) => sameUserIdentifier(identifier, session.username) || sameUserIdentifier(identifier, session.phone))) {
+    updateSession(session.id, {
+      username: nextUser.username,
+      role: nextUser.role,
+      phone: nextUser.phone,
+      contactEmail: nextUser.contactEmail,
+      firstName: nextUser.firstName,
+      lastName: nextUser.lastName,
+      canManageGroups: canManageGroups(nextUser)
+    });
   }
 
   sendJson(res, 200, {
@@ -1909,9 +1900,8 @@ async function handleUserDelete(req, res, userId) {
 
   await saveUsers(users);
 
-  const activeSession = sessions.get(session.id);
-  if (activeSession && getUserIdentifierSet(removedUser).some((identifier) => sameUserIdentifier(identifier, activeSession.username) || sameUserIdentifier(identifier, activeSession.phone))) {
-    sessions.delete(session.id);
+  if (getUserIdentifierSet(removedUser).some((identifier) => sameUserIdentifier(identifier, session.username) || sameUserIdentifier(identifier, session.phone))) {
+    deleteSession(session.id);
   }
 
   sendJson(res, 200, {
@@ -2101,7 +2091,7 @@ async function handleGroupZoomLinkUpdate(req, res, groupId) {
 function handleLogout(req, res) {
   const cookies = parseCookies(req.headers.cookie || '');
   const sessionId = cookies[SESSION_COOKIE];
-  if (sessionId) sessions.delete(sessionId);
+  if (sessionId) deleteSession(sessionId);
 
   sendJson(res, 200, { ok: true }, {
     'Set-Cookie': buildClearedSessionCookie()
@@ -2206,50 +2196,50 @@ const server = createServer(async (req, res) => {
   }
 
   if (url.pathname === '/api/groups' && req.method === 'POST') {
-    await handleGroupCreate(req, res);
+    await withWriteLock(() => handleGroupCreate(req, res));
     return;
   }
 
   if (url.pathname === '/api/users' && req.method === 'POST') {
-    await handleUserCreate(req, res);
+    await withWriteLock(() => handleUserCreate(req, res));
     return;
   }
 
   const groupUpdateMatch = url.pathname.match(/^\/api\/groups\/([^/]+)$/);
   if (groupUpdateMatch && req.method === 'PATCH') {
-    await handleGroupUpdate(req, res, groupUpdateMatch[1]);
+    await withWriteLock(() => handleGroupUpdate(req, res, groupUpdateMatch[1]));
     return;
   }
 
   if (groupUpdateMatch && req.method === 'DELETE') {
-    await handleGroupDelete(req, res, groupUpdateMatch[1]);
+    await withWriteLock(() => handleGroupDelete(req, res, groupUpdateMatch[1]));
     return;
   }
 
   const zoomLinkMatch = url.pathname.match(/^\/api\/groups\/([^/]+)\/zoom-link$/);
   if (zoomLinkMatch && req.method === 'POST') {
-    await handleGroupZoomLinkUpdate(req, res, zoomLinkMatch[1]);
+    await withWriteLock(() => handleGroupZoomLinkUpdate(req, res, zoomLinkMatch[1]));
     return;
   }
 
   const userUpdateMatch = url.pathname.match(/^\/api\/users\/([^/]+)$/);
   if (userUpdateMatch && req.method === 'PATCH') {
-    await handleUserUpdate(req, res, userUpdateMatch[1]);
+    await withWriteLock(() => handleUserUpdate(req, res, userUpdateMatch[1]));
     return;
   }
 
   if (userUpdateMatch && req.method === 'DELETE') {
-    await handleUserDelete(req, res, userUpdateMatch[1]);
+    await withWriteLock(() => handleUserDelete(req, res, userUpdateMatch[1]));
     return;
   }
 
   if ((url.pathname === '/api/profile' || url.pathname === '/api/contact-email') && req.method === 'POST') {
-    await handleProfileUpdate(req, res);
+    await withWriteLock(() => handleProfileUpdate(req, res));
     return;
   }
 
   if (url.pathname === '/api/contact-request' && req.method === 'POST') {
-    await handleContactRequest(req, res);
+    await withWriteLock(() => handleContactRequest(req, res));
     return;
   }
 
@@ -2266,6 +2256,46 @@ const server = createServer(async (req, res) => {
   sendText(res, 405, 'Method Not Allowed');
 });
 
+// Import the JSON files this app used to persist to, exactly once. They are
+// read and left untouched, so the originals remain as a backup.
+async function readJsonFile(file) {
+  try {
+    return JSON.parse(await readFile(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function seedDatabase() {
+  const usersJson = await readJsonFile(USERS_FILE);
+  const groupsJson = await readJsonFile(GROUPS_FILE);
+  const contactJson = await readJsonFile(CONTACT_REQUESTS_FILE);
+
+  let seedUsers = normalizeUserList(Array.isArray(usersJson?.users) ? usersJson.users : []);
+  let seedGroups = normalizeGroupsPayload(groupsJson || {});
+  const seedContact = normalizeContactRequestList(Array.isArray(contactJson?.requests) ? contactJson.requests : []);
+  let source = 'auth-users.json';
+
+  if (!seedUsers.length) {
+    if (config.bootstrapTeacherPhone) {
+      seedUsers = normalizeUserList([{
+        role: 'teacher',
+        username: config.bootstrapTeacherPhone,
+        phone: config.bootstrapTeacherPhone
+      }]);
+      source = 'BOOTSTRAP_TEACHER_PHONE';
+    } else if (!config.isProduction) {
+      // Demo accounts are a development convenience only; their phone numbers
+      // are unroutable, but they have no business in a production database.
+      seedUsers = normalizeUserList(DEFAULT_USERS);
+      seedGroups = seedGroups.length ? seedGroups : DEFAULT_GROUPS.map(normalizeGroup);
+      source = 'built-in defaults';
+    }
+  }
+
+  return seedIfEmpty({ users: seedUsers, groups: seedGroups, contactRequests: seedContact, source });
+}
+
 const { problems, warnings } = validateConfig();
 for (const warning of warnings) {
   logWarn('config.warning', { detail: warning });
@@ -2277,6 +2307,9 @@ if (problems.length) {
   }
   process.exit(78); // EX_CONFIG
 }
+
+openDatabase();
+await seedDatabase();
 
 server.listen(PORT, config.host, () => {
   logInfo('server.listening', {

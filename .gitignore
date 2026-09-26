@@ -1,6 +1,18 @@
-# Runtime data written by server.mjs at run time.
-# NOTE: this repo is published by GitHub Pages from the main branch root,
-# so every committed file is world-readable. Keep real user data out.
+# Runtime data. NOTE: this repo is published by GitHub Pages from the main
+# branch root, so every committed file is world-readable. Keep real user
+# data out.
+
+# SQLite database (users, groups, sessions, contact requests)
+*.db
+*.db-wal
+*.db-shm
+
+# Legacy JSON store, kept on disk as a pre-migration backup
 auth-users.json
 groups.json
 contact-requests.json
+
+node_modules/
+.env
+.env.*
+!.env.example
