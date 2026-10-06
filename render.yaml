@@ -1,0 +1,54 @@
+# Render Blueprint. In the Render dashboard: New -> Blueprint -> pick this repo,
+# and Render creates the service below. Values marked `sync: false` are
+# prompted for once and stored as secrets; everything else is version-controlled.
+#
+# The database is one SQLite file, so the service needs a persistent disk.
+# Render only attaches disks to paid instances, which is why the plan is
+# `starter` and not `free`. A disk also means one instance and a short pause
+# during each deploy, both of which are fine for this site.
+services:
+  - type: web
+    name: yalla-chess
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    region: frankfurt
+    plan: starter
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    disk:
+      name: yalla-chess-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: "8001"
+      - key: DATA_DIR
+        value: /data
+      - key: PUBLIC_ORIGIN
+        value: https://yallachessacademy.com
+      # Render's proxy sets X-Forwarded-For, so rate limits see real clients.
+      - key: TRUST_PROXY
+        value: "true"
+      - key: LOG_LEVEL
+        value: info
+      # Twilio Verify, required: the server refuses to boot without it.
+      - key: TWILIO_VERIFY_SERVICE_SID
+        sync: false
+      - key: TWILIO_API_KEY_SID
+        sync: false
+      - key: TWILIO_API_KEY_SECRET
+        sync: false
+      # Contact-form email, optional. Leave blank to skip.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM
+        sync: false
+      - key: CONTACT_NOTIFY_TO
+        sync: false
+      # First teacher account. Clear this in the dashboard after the first boot.
+      - key: BOOTSTRAP_TEACHER_PHONE
+        sync: false

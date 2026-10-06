@@ -73,6 +73,36 @@ docker run -d --name yalla-chess \
   yalla-chess
 ```
 
+### Render
+
+[render.yaml](render.yaml) describes the service: Docker runtime, Frankfurt,
+a 1 GB persistent disk mounted at `/data`, health check on `/healthz`, and
+auto-deploy on every push to `main`.
+
+1. Render dashboard: **New → Blueprint**, pick this repository. Render reads
+   `render.yaml` and prompts for the secrets (Twilio, Resend, the bootstrap
+   teacher phone). The instance must be a paid plan: Render does not attach
+   persistent disks to free instances, and without one the database is lost on
+   every deploy.
+2. After the first deploy, open the service → **Settings → Custom Domains** and
+   add `yallachessacademy.com`. Render adds `www` and redirects it to the root
+   automatically.
+3. At the registrar (Porkbun → Domain Management → DNS), delete the default
+   parking records and add:
+
+   | Type | Host | Answer |
+   | --- | --- | --- |
+   | ALIAS | (root) | `yalla-chess.onrender.com` |
+   | CNAME | www | `yalla-chess.onrender.com` |
+
+   Do not add `AAAA` records; Render asks that there be none. Certificates are
+   issued automatically once the records resolve.
+4. Once signed in as the bootstrap teacher, clear `BOOTSTRAP_TEACHER_PHONE` in
+   the service's environment.
+
+`PUBLIC_ORIGIN` is set in the Blueprint to `https://yallachessacademy.com`;
+change it there if the domain ever changes.
+
 ### systemd
 
 ```ini
