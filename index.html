@@ -12386,6 +12386,28 @@
       const container = document.getElementById('portalGroups');
       if (!container) return;
 
+      // Rebuilding the list empties the container for a moment. Without a
+      // height lock the document shrinks, the window scroll is clamped back
+      // to the top, and the periodic background refresh looks like a page
+      // reload. Hold the old height while rebuilding and restore the scroll.
+      const previousHeight = container.offsetHeight;
+      const scrollX = window.scrollX;
+      const scrollY = window.scrollY;
+      if (previousHeight > 0) {
+        container.style.minHeight = `${previousHeight}px`;
+      }
+
+      try {
+        renderMemberPortalGroupsInto(container);
+      } finally {
+        container.style.minHeight = '';
+        if (window.scrollX !== scrollX || window.scrollY !== scrollY) {
+          window.scrollTo(scrollX, scrollY);
+        }
+      }
+    }
+
+    function renderMemberPortalGroupsInto(container) {
       container.innerHTML = '';
       const canManage = isPortalManager();
       const groups = sortPortalGroups(getVisiblePortalGroups());
@@ -12540,6 +12562,21 @@
       renderMemberPortal();
     }
 
+    // Stable identity of a dashboard payload for change detection. serverTime
+    // differs on every response, so it is excluded.
+    function getMemberPortalDataFingerprint(data) {
+      if (!data || typeof data !== 'object') {
+        return '';
+      }
+
+      const { serverTime, ...rest } = data;
+      try {
+        return JSON.stringify(rest);
+      } catch (error) {
+        return '';
+      }
+    }
+
     async function loadMemberPortalData(options = {}) {
       if (!currentAuthUser) {
         return;
@@ -12576,17 +12613,32 @@
           throw new Error(data.error || t.loadError);
         }
 
+        // A silent background refresh that brings back the same data must not
+        // rebuild the DOM: that resets scroll position, focus and open menus
+        // every few seconds. Only the clock needs the fresh server time.
+        const unchanged = silent &&
+          !memberPortalLoading &&
+          memberPortalStatusTone !== 'error' &&
+          getMemberPortalDataFingerprint(memberPortalData) !== '' &&
+          getMemberPortalDataFingerprint(memberPortalData) === getMemberPortalDataFingerprint(data);
+
         memberPortalData = data;
         memberPortalClockOffsetMs = Number.isFinite(Date.parse(data.serverTime)) ? Date.parse(data.serverTime) - Date.now() : 0;
-        memberPortalLoading = false;
-        memberPortalStatusTone = '';
-        memberPortalStatusMessage = '';
         if (data.user) {
           currentAuthUser = {
             ...currentAuthUser,
             ...data.user
           };
         }
+
+        if (unchanged) {
+          renderMemberPortalClock();
+          return;
+        }
+
+        memberPortalLoading = false;
+        memberPortalStatusTone = '';
+        memberPortalStatusMessage = '';
         syncPortalGroupSelection();
         syncPortalUserSelection();
         if (!isMemberPortalEditing()) {
