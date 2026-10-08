@@ -49,7 +49,8 @@ the full list. The ones that matter:
 | `PUBLIC_ORIGIN` | Required in production, must be `https://`. Session cookies are marked `Secure` based on it. |
 | `HOST` / `PORT` | `127.0.0.1` behind a local reverse proxy, `0.0.0.0` in a container. |
 | `TRUST_PROXY` | Set to `true` only when a proxy you control sets `X-Forwarded-For`, otherwise per-IP rate limits can be spoofed. |
-| `DATA_DIR` | Where the SQLite database lives. Must be a persistent volume. |
+| `DATA_DIR` | Where the SQLite database lives. A persistent volume, or an ephemeral directory plus the `LITESTREAM_*` variables below. |
+| `LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT`, `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` | Docker image only. Replicate the database to an S3-compatible bucket and restore from it at boot, for hosts without a persistent disk. Empty bucket means off. |
 | `TWILIO_VERIFY_SERVICE_SID` + API key or account token | Required in production. |
 | `BOOTSTRAP_TEACHER_PHONE` | Creates the first teacher when the database is empty. Remove after first boot. |
 
@@ -73,21 +74,45 @@ docker run -d --name yalla-chess \
   yalla-chess
 ```
 
-### Render
+### Render (free tier, no card)
 
 [render.yaml](render.yaml) describes the service: Docker runtime, Frankfurt,
-a 1 GB persistent disk mounted at `/data`, health check on `/healthz`, and
-auto-deploy on every push to `main`.
+`free` plan, health check on `/healthz`, auto-deploy on every push to `main`.
 
-1. Render dashboard: **New → Blueprint**, pick this repository. Render reads
-   `render.yaml` and prompts for the secrets (Twilio, Resend, the bootstrap
-   teacher phone). The instance must be a paid plan: Render does not attach
-   persistent disks to free instances, and without one the database is lost on
-   every deploy.
-2. After the first deploy, open the service → **Settings → Custom Domains** and
-   add `yallachessacademy.com`. Render adds `www` and redirects it to the root
+Free instances have no persistent disk and are wiped on every deploy, restart
+and spin-down, so the database is kept alive two ways:
+
+- **Litestream** inside the container restores `yalla-chess.db` from a
+  Backblaze B2 bucket at boot and streams every committed write back out
+  within a second. Config in [deploy/litestream.yml](deploy/litestream.yml),
+  boot sequence in [deploy/entrypoint.sh](deploy/entrypoint.sh). CI boots the
+  image against a throwaway MinIO bucket, stops it, boots a second copy and
+  checks the data came back.
+- **A keep-alive ping** from GitHub Actions
+  ([keepalive.yml](.github/workflows/keepalive.yml)) hits `/healthz` every ten
+  minutes, under Render's 15-minute idle timeout. GitHub switches scheduled
+  workflows off after 60 days without a commit in a public repo; any push
+  re-enables it.
+
+Hard kills lose at most the last second of writes. Reads never touch the WAL,
+so an idle site makes no B2 API calls at all.
+
+1. Backblaze: create an account (no card needed) and a **private** bucket in
+   the EU, e.g. `yalla-chess-db`. Note the bucket's S3 endpoint from its
+   details page, in the form `s3.eu-central-003.backblazeb2.com`. Then
+   **Application Keys → Add a New Application Key**, restricted to that bucket
+   with read and write access. Copy the `keyID` and `applicationKey`; the
+   latter is shown once.
+2. Render dashboard: **New → Blueprint**, pick this repository. Render reads
+   `render.yaml` and prompts for the secrets: Twilio, Resend, the bootstrap
+   teacher phone, and the four `LITESTREAM_*` values (bucket name, endpoint,
+   keyID as the access key, applicationKey as the secret).
+3. Check the first deploy's logs for `litestream.restore.empty` followed by a
+   healthy server. From the second boot on it reads `litestream.restore.done`.
+4. Open the service → **Settings → Custom Domains** and add
+   `yallachessacademy.com`. Render adds `www` and redirects it to the root
    automatically.
-3. At the registrar (Porkbun → Domain Management → DNS), delete the default
+5. At the registrar (Porkbun → Domain Management → DNS), delete the default
    parking records and add:
 
    | Type | Host | Answer |
@@ -97,11 +122,23 @@ auto-deploy on every push to `main`.
 
    Do not add `AAAA` records; Render asks that there be none. Certificates are
    issued automatically once the records resolve.
-4. Once signed in as the bootstrap teacher, clear `BOOTSTRAP_TEACHER_PHONE` in
+6. Once signed in as the bootstrap teacher, clear `BOOTSTRAP_TEACHER_PHONE` in
    the service's environment.
+7. GitHub: **Actions → Keep alive → Run workflow** once to confirm the ping
+   succeeds. It then runs on its own schedule.
 
 `PUBLIC_ORIGIN` is set in the Blueprint to `https://yallachessacademy.com`;
 change it there if the domain ever changes.
+
+Free-tier limits that matter here: 750 instance hours a month, which covers
+exactly one always-on service, and 100 GB of outbound bandwidth, which the
+86 MB homepage video can exhaust in about a thousand full plays. Re-encoding
+or externally hosting the video is the fix if traffic grows.
+
+**Moving to a paid plan later**: in `render.yaml` set `plan: starter` and
+uncomment the `disk` block. Leave the `LITESTREAM_*` variables in place: the
+entrypoint keeps a local database when one exists, so the replica becomes an
+off-site backup of the disk rather than its source.
 
 ### systemd
 
@@ -159,6 +196,17 @@ Set `TRUST_PROXY=true` so rate limiting sees real client addresses.
   ```bash
   sqlite3 /var/lib/yalla-chess/yalla-chess.db ".backup '/backups/yalla-$(date +%F).db'"
   ```
+
+  On Render the Litestream replica is the backup. To pull a copy to your
+  machine, install [litestream](https://litestream.io) and run it with the
+  same four `LITESTREAM_*` variables plus `DATA_DIR=. DB_FILE=yalla-chess.db`:
+
+  ```bash
+  litestream restore -config deploy/litestream.yml -o ./yalla-restored.db ./yalla-chess.db
+  ```
+
+  Add `-timestamp 2026-10-08T06:00:00Z` for point-in-time recovery within the
+  72-hour retention window.
 
 - **Inspecting data**: `sqlite3 /var/lib/yalla-chess/yalla-chess.db` then
   `.tables`, `SELECT * FROM users;`.

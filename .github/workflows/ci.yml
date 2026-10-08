@@ -145,3 +145,96 @@ jobs:
             docker logs yalla-ci
             exit 1
           fi
+
+  replication:
+    name: docker image replicates and restores
+    runs-on: ubuntu-latest
+    needs: docker
+
+    # Render's free tier has no disk, so the image restores the database from
+    # an S3 bucket at boot and replicates writes back with Litestream. This
+    # proves the full cycle against MinIO: boot, write, stop, boot a fresh
+    # container with an empty filesystem, and find the data again.
+    env:
+      MINIO_ROOT_USER: ci-access-key
+      MINIO_ROOT_PASSWORD: ci-secret-key-0123
+      BUCKET: yalla-ci
+      # Shared by both containers. --network host keeps it simple on a runner.
+      APP_ENV: >-
+        --network host
+        -e NODE_ENV=production
+        -e PUBLIC_ORIGIN=https://yalla-chess.test
+        -e TWILIO_VERIFY_SERVICE_SID=VAci
+        -e TWILIO_ACCOUNT_SID=ACci
+        -e TWILIO_AUTH_TOKEN=citoken
+        -e LITESTREAM_BUCKET=yalla-ci
+        -e LITESTREAM_ENDPOINT=http://127.0.0.1:9000
+        -e LITESTREAM_ACCESS_KEY_ID=ci-access-key
+        -e LITESTREAM_SECRET_ACCESS_KEY=ci-secret-key-0123
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: docker build -t yalla-chess:ci .
+
+      - name: Start MinIO and create the bucket
+        run: |
+          docker run -d --name minio --network host \
+            -e MINIO_ROOT_USER -e MINIO_ROOT_PASSWORD \
+            minio/minio server /data
+          for attempt in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:9000/minio/health/live > /dev/null 2>&1 && break
+            [ "$attempt" = "30" ] && { echo "::error::MinIO never came up."; docker logs minio; exit 1; }
+            sleep 1
+          done
+          docker run --rm --network host --entrypoint sh minio/mc -c \
+            "mc alias set ci http://127.0.0.1:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD && mc mb ci/$BUCKET"
+
+      - name: First boot writes to an empty bucket
+        run: |
+          # No local database and no replica: the entrypoint must log that and
+          # the server must then create the schema and the bootstrap teacher.
+          docker run -d --name yalla-a $APP_ENV \
+            -e BOOTSTRAP_TEACHER_PHONE=+972500000001 \
+            yalla-chess:ci
+          for attempt in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8001/healthz > /dev/null 2>&1 && break
+            [ "$attempt" = "30" ] && { echo "::error::First container never became healthy."; docker logs yalla-a; exit 1; }
+            sleep 1
+          done
+          docker logs yalla-a 2>&1 | grep -q 'litestream.restore.empty' \
+            || { echo "::error::Expected an empty-replica restore on first boot."; docker logs yalla-a; exit 1; }
+          # Give Litestream a few sync intervals to ship the bootstrap write.
+          sleep 5
+          docker stop --timeout 20 yalla-a
+          docker logs yalla-a 2>&1 | grep -q 'server.stopped' \
+            || { echo "::error::Server did not stop gracefully under litestream."; docker logs yalla-a; exit 1; }
+
+      - name: The bucket holds a replica
+        run: |
+          objects=$(docker run --rm --network host --entrypoint sh minio/mc -c \
+            "mc alias set ci http://127.0.0.1:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD >/dev/null && mc ls --recursive ci/$BUCKET")
+          echo "$objects"
+          [ -n "$objects" ] || { echo "::error::Nothing was replicated to the bucket."; exit 1; }
+
+      - name: Second boot restores from the replica
+        run: |
+          # Fresh container, fresh filesystem, and no bootstrap phone: the only
+          # way a teacher can exist is if the restore brought one back.
+          docker run -d --name yalla-b $APP_ENV yalla-chess:ci
+          for attempt in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8001/healthz > /dev/null 2>&1 && break
+            [ "$attempt" = "30" ] && { echo "::error::Second container never became healthy."; docker logs yalla-b; exit 1; }
+            sleep 1
+          done
+          docker logs yalla-b 2>&1 | grep -q 'litestream.restore.done' \
+            || { echo "::error::Second boot did not restore from the replica."; docker logs yalla-b; exit 1; }
+          teachers=$(docker exec yalla-b node -e "
+            const { DatabaseSync } = require('node:sqlite');
+            const db = new DatabaseSync('/data/yalla-chess.db', { readOnly: true });
+            console.log(db.prepare(\"SELECT count(*) AS n FROM users WHERE role = 'teacher'\").get().n);
+          ")
+          echo "Teachers after restore: $teachers"
+          [ "$teachers" = "1" ] || { echo "::error::Restored database does not contain the bootstrap teacher."; docker logs yalla-b; exit 1; }
+          docker stop --timeout 20 yalla-b

@@ -2,23 +2,28 @@
 # and Render creates the service below. Values marked `sync: false` are
 # prompted for once and stored as secrets; everything else is version-controlled.
 #
-# The database is one SQLite file, so the service needs a persistent disk.
-# Render only attaches disks to paid instances, which is why the plan is
-# `starter` and not `free`. A disk also means one instance and a short pause
-# during each deploy, both of which are fine for this site.
+# The database is one SQLite file. Render only attaches persistent disks to
+# paid instances, so on the `free` plan the file is replicated to a Backblaze
+# B2 bucket with Litestream instead (see deploy/litestream.yml): restored at
+# boot, streamed out on every write. Free instances also sleep after 15 idle
+# minutes; .github/workflows/keepalive.yml pings /healthz to prevent that.
+#
+# To move to a paid plan later: set `plan: starter`, uncomment the `disk`
+# block, and leave the LITESTREAM_* variables in place so the replica becomes
+# an off-site backup of the disk.
 services:
   - type: web
     name: yalla-chess
     runtime: docker
     dockerfilePath: ./Dockerfile
     region: frankfurt
-    plan: starter
+    plan: free
     healthCheckPath: /healthz
     autoDeployTrigger: commit
-    disk:
-      name: yalla-chess-data
-      mountPath: /data
-      sizeGB: 1
+    # disk:
+    #   name: yalla-chess-data
+    #   mountPath: /data
+    #   sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
@@ -35,6 +40,18 @@ services:
         value: "true"
       - key: LOG_LEVEL
         value: info
+      # Litestream replica. The bucket and endpoint are not secrets, but they
+      # are account-specific, so they are prompted for too. The key needs
+      # read, write, list and delete on this one bucket. Clearing
+      # LITESTREAM_BUCKET disables replication entirely.
+      - key: LITESTREAM_BUCKET
+        sync: false
+      - key: LITESTREAM_ENDPOINT
+        sync: false
+      - key: LITESTREAM_ACCESS_KEY_ID
+        sync: false
+      - key: LITESTREAM_SECRET_ACCESS_KEY
+        sync: false
       # Twilio Verify, required: the server refuses to boot without it.
       - key: TWILIO_VERIFY_SERVICE_SID
         sync: false

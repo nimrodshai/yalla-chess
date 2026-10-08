@@ -1,0 +1,38 @@
+# Litestream replica configuration. Mounted into the image at
+# /etc/litestream.yml and read by deploy/entrypoint.sh.
+#
+# Why this exists: Render only attaches persistent disks to paid instances. On
+# the free tier the filesystem is wiped on every deploy, restart and spin-down.
+# Litestream restores the SQLite file from object storage at boot, then streams
+# every committed WAL frame back out, so the free instance behaves as if it had
+# a disk. Worst case on a hard kill is losing the last second of writes.
+#
+# Every value is an environment variable, expanded by Litestream itself, so this
+# file holds no secrets and is safe to commit. Backblaze B2 is the intended
+# target (10 GB free, no card), but any S3-compatible bucket works.
+
+access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+
+# A fresh snapshot every 6 hours keeps restores fast and bounds how much WAL a
+# boot has to replay. Retention is how far back point-in-time restore reaches.
+snapshot:
+  interval: 6h
+  retention: 72h
+
+dbs:
+  - path: ${DATA_DIR}/${DB_FILE}
+    # Litestream performs checkpoints itself after shipping frames. The
+    # application's busy_timeout (5 s) covers the brief write lock this takes.
+    checkpoint-interval: 1m
+    replica:
+      type: s3
+      bucket: ${LITESTREAM_BUCKET}
+      path: ${LITESTREAM_PATH}
+      # For B2 this is s3.<region>.backblazeb2.com, e.g. s3.eu-central-003.
+      # Path-style addressing works for B2, MinIO (used in CI) and AWS alike.
+      endpoint: ${LITESTREAM_ENDPOINT}
+      force-path-style: true
+      # Frames are uploaded at most this often, and only when something changed.
+      # Reads never touch the WAL, so an idle portal costs zero API calls.
+      sync-interval: 1s
