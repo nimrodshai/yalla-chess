@@ -88,11 +88,10 @@ and spin-down, so the database is kept alive two ways:
   boot sequence in [deploy/entrypoint.sh](deploy/entrypoint.sh). CI boots the
   image against a throwaway S3 server, stops it, boots a second copy and
   checks the data came back.
-- **A keep-alive ping** from GitHub Actions
-  ([keepalive.yml](.github/workflows/keepalive.yml)) hits `/healthz` every ten
-  minutes, under Render's 15-minute idle timeout. GitHub switches scheduled
-  workflows off after 60 days without a commit in a public repo; any push
-  re-enables it.
+- **A keep-alive ping** from [cron-job.org](https://cron-job.org) (free) hits
+  `/healthz` every five minutes, under Render's 15-minute idle timeout. An
+  external scheduler is used rather than GitHub Actions because GitHub pauses
+  scheduled workflows after 60 days without a commit.
 
 Hard kills lose at most the last second of writes. Reads never touch the WAL,
 so an idle site makes no B2 API calls at all.
@@ -124,8 +123,22 @@ so an idle site makes no B2 API calls at all.
    issued automatically once the records resolve.
 6. Once signed in as the bootstrap teacher, clear `BOOTSTRAP_TEACHER_PHONE` in
    the service's environment.
-7. GitHub: **Actions → Keep alive → Run workflow** once to confirm the ping
-   succeeds. It then runs on its own schedule.
+7. cron-job.org: create a free account, then **Cronjobs → Create cronjob**:
+
+   | Setting | Value |
+   | --- | --- |
+   | Title | `yalla-chess keepalive` |
+   | URL | `https://yallachessacademy.com/healthz` |
+   | Schedule | Every 5 minutes |
+   | Request method | GET |
+   | Request timeout | 30 seconds |
+   | Notifications | On failure, and when it comes back |
+
+   Under **Advanced**, keep "Save responses" off. The first run may take up to
+   a minute if the instance is asleep; after that every ping should answer in
+   well under a second with `{"ok":true,...}`. If the domain is not live yet,
+   point the job at `https://yalla-chess.onrender.com/healthz` and change it
+   later.
 
 `PUBLIC_ORIGIN` is set in the Blueprint to `https://yallachessacademy.com`;
 change it there if the domain ever changes.

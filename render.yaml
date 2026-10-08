@@ -6,7 +6,8 @@
 # paid instances, so on the `free` plan the file is replicated to a Backblaze
 # B2 bucket with Litestream instead (see deploy/litestream.yml): restored at
 # boot, streamed out on every write. Free instances also sleep after 15 idle
-# minutes; .github/workflows/keepalive.yml pings /healthz to prevent that.
+# minutes; a cron-job.org job pings /healthz every 5 minutes to prevent that
+# (setup in the README).
 #
 # To move to a paid plan later: set `plan: starter`, uncomment the `disk`
 # block, and leave the LITESTREAM_* variables in place so the replica becomes
