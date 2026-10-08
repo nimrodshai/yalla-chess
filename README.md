@@ -86,7 +86,7 @@ and spin-down, so the database is kept alive two ways:
   Backblaze B2 bucket at boot and streams every committed write back out
   within a second. Config in [deploy/litestream.yml](deploy/litestream.yml),
   boot sequence in [deploy/entrypoint.sh](deploy/entrypoint.sh). CI boots the
-  image against a throwaway MinIO bucket, stops it, boots a second copy and
+  image against a throwaway S3 server, stops it, boots a second copy and
   checks the data came back.
 - **A keep-alive ping** from GitHub Actions
   ([keepalive.yml](.github/workflows/keepalive.yml)) hits `/healthz` every ten

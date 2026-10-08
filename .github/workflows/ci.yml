@@ -153,13 +153,15 @@ jobs:
 
     # Render's free tier has no disk, so the image restores the database from
     # an S3 bucket at boot and replicates writes back with Litestream. This
-    # proves the full cycle against MinIO: boot, write, stop, boot a fresh
-    # container with an empty filesystem, and find the data again.
+    # proves the full cycle against versitygw, an S3 server whose posix
+    # backend stores each bucket as a directory: boot, write, stop, boot a
+    # fresh container with an empty filesystem, and find the data again.
     env:
-      MINIO_ROOT_USER: ci-access-key
-      MINIO_ROOT_PASSWORD: ci-secret-key-0123
+      S3_ACCESS_KEY: ci-access-key
+      S3_SECRET_KEY: ci-secret-key-0123
       BUCKET: yalla-ci
-      # Shared by both containers. --network host keeps it simple on a runner.
+      # Shared by both app containers. --network host keeps it simple on a
+      # runner: the app reaches the S3 server on 127.0.0.1:7070.
       APP_ENV: >-
         --network host
         -e NODE_ENV=production
@@ -168,7 +170,7 @@ jobs:
         -e TWILIO_ACCOUNT_SID=ACci
         -e TWILIO_AUTH_TOKEN=citoken
         -e LITESTREAM_BUCKET=yalla-ci
-        -e LITESTREAM_ENDPOINT=http://127.0.0.1:9000
+        -e LITESTREAM_ENDPOINT=http://127.0.0.1:7070
         -e LITESTREAM_ACCESS_KEY_ID=ci-access-key
         -e LITESTREAM_SECRET_ACCESS_KEY=ci-secret-key-0123
 
@@ -178,18 +180,23 @@ jobs:
       - name: Build
         run: docker build -t yalla-chess:ci .
 
-      - name: Start MinIO and create the bucket
+      - name: Start an S3 server with an empty bucket
         run: |
-          docker run -d --name minio --network host \
-            -e MINIO_ROOT_USER -e MINIO_ROOT_PASSWORD \
-            minio/minio server /data
+          # With the posix backend a directory under the root is a bucket, so
+          # the bucket exists before the server does and no client is needed.
+          mkdir -p "$RUNNER_TEMP/s3/$BUCKET"
+          docker run -d --name s3 --network host \
+            -e ROOT_ACCESS_KEY="$S3_ACCESS_KEY" \
+            -e ROOT_SECRET_KEY="$S3_SECRET_KEY" \
+            -e VGW_BACKEND=posix \
+            -e VGW_BACKEND_ARG=/data/s3 \
+            -v "$RUNNER_TEMP/s3:/data/s3" \
+            versity/versitygw:v1.8.0
           for attempt in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:9000/minio/health/live > /dev/null 2>&1 && break
-            [ "$attempt" = "30" ] && { echo "::error::MinIO never came up."; docker logs minio; exit 1; }
+            curl -fsS http://127.0.0.1:7070/_/health > /dev/null 2>&1 && break
+            [ "$attempt" = "30" ] && { echo "::error::S3 server never came up."; docker logs s3; exit 1; }
             sleep 1
           done
-          docker run --rm --network host --entrypoint sh minio/mc -c \
-            "mc alias set ci http://127.0.0.1:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD && mc mb ci/$BUCKET"
 
       - name: First boot writes to an empty bucket
         run: |
@@ -213,10 +220,10 @@ jobs:
 
       - name: The bucket holds a replica
         run: |
-          objects=$(docker run --rm --network host --entrypoint sh minio/mc -c \
-            "mc alias set ci http://127.0.0.1:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD >/dev/null && mc ls --recursive ci/$BUCKET")
+          # Objects are files under the bucket directory on the host.
+          objects=$(sudo find "$RUNNER_TEMP/s3/$BUCKET" -type f)
           echo "$objects"
-          [ -n "$objects" ] || { echo "::error::Nothing was replicated to the bucket."; exit 1; }
+          [ -n "$objects" ] || { echo "::error::Nothing was replicated to the bucket."; docker logs yalla-a; docker logs s3; exit 1; }
 
       - name: Second boot restores from the replica
         run: |
