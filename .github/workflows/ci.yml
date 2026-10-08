@@ -192,8 +192,10 @@ jobs:
             -e VGW_BACKEND_ARG=/data/s3 \
             -v "$RUNNER_TEMP/s3:/data/s3" \
             versity/versitygw:v1.8.0
+          # Ready means it answers HTTP at all. An unauthenticated request is
+          # rejected with a 4xx, which is still a running server.
           for attempt in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:7070/_/health > /dev/null 2>&1 && break
+            curl -sS -o /dev/null http://127.0.0.1:7070/ 2> /dev/null && break
             [ "$attempt" = "30" ] && { echo "::error::S3 server never came up."; docker logs s3; exit 1; }
             sleep 1
           done
