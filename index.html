@@ -525,6 +525,10 @@
       margin: 0 0 18px;
     }
 
+    .portal-workspace-switch[hidden] {
+      display: none;
+    }
+
     .portal-workspace-pill {
       border: 1px solid rgba(201, 168, 76, 0.18);
       background: rgba(255, 255, 255, 0.5);
@@ -1056,7 +1060,9 @@
     }
 
     .portal-group-create-section {
-      padding-top: 2px;
+      /* The landing page's global `section` rule adds 100px of vertical
+         padding; this dialog lives outside .member-portal, so reset it here. */
+      padding: 2px 0 0;
     }
 
     .portal-participant-picker-overlay {
@@ -2062,6 +2068,7 @@
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 8px;
+      direction: ltr;
     }
 
     .portal-clock-unit {
@@ -2452,7 +2459,7 @@
     .portal-inspector-menu {
       position: absolute;
       top: 52px;
-      right: 0;
+      inset-inline-end: 0;
       z-index: 4;
       display: grid;
       gap: 4px;
@@ -2591,6 +2598,21 @@
       box-shadow: 0 0 0 4px rgba(201, 168, 76, 0.14);
     }
 
+    .portal-weekly-time {
+      padding-inline: 18px;
+      font-variant-numeric: tabular-nums;
+      cursor: text;
+    }
+
+    .portal-weekly-time::-webkit-calendar-picker-indicator {
+      opacity: 0.55;
+      cursor: pointer;
+    }
+
+    .portal-weekly-time:invalid {
+      border-color: rgba(199, 84, 64, 0.6);
+    }
+
     .portal-weekly-select-icon {
       position: absolute;
       inset-inline-end: 14px;
@@ -2612,10 +2634,14 @@
       display: grid;
       place-items: center;
       color: rgba(103, 93, 84, 0.58);
-      font-size: 1.1rem;
-      font-weight: 700;
       line-height: 1;
       user-select: none;
+    }
+
+    .portal-weekly-separator svg {
+      width: 18px;
+      height: 18px;
+      display: block;
     }
 
     .portal-weekly-delete {
@@ -2702,6 +2728,10 @@
         padding: 10px 20px 10px 10px;
         font-size: 0.92rem;
         line-height: 1.25;
+      }
+
+      .portal-weekly-time {
+        padding-inline: 10px;
       }
 
       .portal-weekly-select-icon {
@@ -7701,6 +7731,7 @@
       en: {
         brandKicker: 'Yalla-Chess',
         brandTitle: 'Teacher hub',
+        brandTitleStudent: 'Student hub',
         title: 'Next class',
         clockLabel: 'Time left',
         nextLessonLabel: 'Next lesson',
@@ -7855,6 +7886,7 @@
       he: {
         brandKicker: 'משחקים שח עם דולב',
         brandTitle: 'מרכז מורים',
+        brandTitleStudent: 'מרכז תלמידים',
         title: 'השיעור הבא',
         clockLabel: 'זמן שנותר',
         nextLessonLabel: 'השיעור הבא',
@@ -9129,6 +9161,22 @@
       return formatPortalScheduleTimeValue(parsed);
     }
 
+    // Free-form time entry (any minute, e.g. 18:10 or 19:15) instead of a
+    // fixed half-hour dropdown. The value is always the HH:MM the server expects.
+    function createPortalWeeklyTimeInput(kind, value, ariaLabel) {
+      const input = document.createElement('input');
+      input.type = 'time';
+      input.className = 'portal-weekly-select portal-weekly-time';
+      input.setAttribute('aria-label', ariaLabel);
+      input.dataset.scheduleField = kind;
+      input.setAttribute('dir', 'ltr');
+      input.setAttribute('step', '60');
+      input.required = true;
+      input.autocomplete = 'off';
+      input.value = normalizePortalScheduleTimeValue(value, kind === 'end' ? '18:00' : '17:00');
+      return input;
+    }
+
     function addPortalMinutesToTime(value, minutes) {
       const parsed = parsePortalScheduleTimeMinutes(value);
       if (parsed == null) {
@@ -9344,14 +9392,17 @@
     }
 
     function getPortalHeroGroup() {
-      const groups = getVisiblePortalGroups();
+      // The hero bar always shows the soonest upcoming lesson across every
+      // visible group, regardless of which group is selected in the list.
+      const groups = sortPortalGroups(getVisiblePortalGroups());
       if (!groups.length) {
         return null;
       }
 
-      const selectedGroupId = isPortalManager() ? getPortalSelectedGroupId() : memberPortalData?.activeGroupId;
+      const now = Date.now() + memberPortalClockOffsetMs;
       return groups.find(function(group) {
-        return group.id === selectedGroupId;
+        const nextLessonAt = Date.parse(group.nextLessonAt);
+        return Number.isFinite(nextLessonAt) && nextLessonAt >= now;
       }) || groups[0];
     }
 
@@ -10289,14 +10340,6 @@
               label: getPortalScheduleWeekdayLabel(day, false)
             });
           }
-        } else {
-          for (let minutes = 0; minutes < 24 * 60; minutes += 30) {
-            const value = formatPortalScheduleTimeValue(minutes);
-            values.push({
-              value,
-              label: formatPortalScheduleTime(value)
-            });
-          }
         }
 
         if (selectedValue && !values.some(function(item) {
@@ -10314,6 +10357,12 @@
       function createWeeklySelectField(kind, value, ariaLabel) {
         const field = document.createElement('label');
         field.className = `portal-weekly-field portal-weekly-field--${kind}`;
+
+        if (kind !== 'day') {
+          const input = createPortalWeeklyTimeInput(kind, value, ariaLabel);
+          field.appendChild(input);
+          return { field, select: input };
+        }
 
         const select = document.createElement('select');
         select.className = 'portal-weekly-select';
@@ -10358,7 +10407,7 @@
 
         const separator = document.createElement('div');
         separator.className = 'portal-weekly-separator';
-        separator.textContent = '–';
+        separator.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>';
 
         const removeButton = document.createElement('button');
         removeButton.className = 'portal-weekly-delete';
@@ -11117,14 +11166,6 @@
             label: getPortalScheduleWeekdayLabel(day, false)
           });
         }
-      } else {
-        for (let minutes = 0; minutes < 24 * 60; minutes += 30) {
-          const value = formatPortalScheduleTimeValue(minutes);
-          values.push({
-            value,
-            label: formatPortalScheduleTime(value)
-          });
-        }
       }
 
       if (selectedValue && !values.some(function(item) {
@@ -11143,6 +11184,12 @@
       const weeklyChevronIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"></path></svg>';
       const field = document.createElement('label');
       field.className = `portal-weekly-field portal-weekly-field--${kind}`;
+
+      if (kind !== 'day') {
+        const input = createPortalWeeklyTimeInput(kind, value, ariaLabel);
+        field.appendChild(input);
+        return { field, select: input };
+      }
 
       const select = document.createElement('select');
       select.className = 'portal-weekly-select';
@@ -11190,7 +11237,7 @@
 
       const separator = document.createElement('div');
       separator.className = 'portal-weekly-separator';
-      separator.textContent = '–';
+      separator.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>';
 
       const removeButton = document.createElement('button');
       removeButton.className = 'portal-weekly-delete';
@@ -12413,6 +12460,10 @@
       const groups = sortPortalGroups(getVisiblePortalGroups());
       const visibleGroups = groups;
 
+      // Render (or hide) the Groups/Users switch for every role, so a student
+      // signing in after a teacher on the same page never inherits it.
+      renderMemberPortalWorkspaceSwitch();
+
       if (!canManage) {
         memberPortalView = 'groups';
         const studentGroup = [getActivePortalGroup()].filter(Boolean);
@@ -12434,7 +12485,6 @@
         return;
       }
 
-      renderMemberPortalWorkspaceSwitch();
       syncPortalGroupSelection();
       syncPortalUserSelection();
 
@@ -12474,7 +12524,7 @@
       const settingsTitle = getSettingsText().title;
 
       if (brandKicker) brandKicker.textContent = t.brandKicker;
-      if (brandTitle) brandTitle.textContent = t.brandTitle;
+      if (brandTitle) brandTitle.textContent = isPortalManager() ? t.brandTitle : (t.brandTitleStudent || t.brandTitle);
       if (settingsButton) {
         settingsButton.setAttribute('aria-label', settingsTitle);
         settingsButton.setAttribute('title', settingsTitle);
