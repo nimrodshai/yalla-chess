@@ -24,6 +24,27 @@ describe('static files', () => {
     assert.match(response.headers.get('content-type'), /text\/html/);
   });
 
+  it('serves robots.txt and a sitemap for crawlers', async () => {
+    const robots = await server.fetch('/robots.txt');
+    assert.equal(robots.status, 200);
+    const robotsText = await robots.text();
+    assert.match(robotsText, /^Disallow: \/api\/$/m);
+    assert.match(robotsText, /^Sitemap: https?:\/\/\S+\/sitemap\.xml$/m);
+
+    const sitemap = await server.fetch('/sitemap.xml');
+    assert.equal(sitemap.status, 200);
+    assert.match(sitemap.headers.get('content-type'), /application\/xml/);
+    assert.match(await sitemap.text(), /<loc>https?:\/\/\S+\/<\/loc>/);
+  });
+
+  it('serves the icons the page links to', async () => {
+    for (const path of ['/favicon-32.png', '/apple-touch-icon.png']) {
+      const response = await server.fetch(path);
+      assert.equal(response.status, 200, path);
+      assert.equal(response.headers.get('content-type'), 'image/png');
+    }
+  });
+
   it('404s a missing asset instead of returning the app shell', async () => {
     // Returning HTML with a 200 hid broken references from browsers and
     // from monitoring.

@@ -2265,6 +2265,19 @@ async function handleRequest(req, res) {
     return;
   }
 
+  // Crawlers: index the landing page, keep out of the API. Both files use
+  // PUBLIC_ORIGIN so they follow the domain without a code change.
+  if ((url.pathname === '/robots.txt' || url.pathname === '/sitemap.xml') && (req.method === 'GET' || req.method === 'HEAD')) {
+    const origin = config.publicOrigin || `http://${req.headers.host || '127.0.0.1'}`;
+    const headers = { 'Cache-Control': 'public, max-age=86400' };
+    if (url.pathname === '/robots.txt') {
+      sendText(res, 200, `User-agent: *\nDisallow: /api/\nDisallow: /healthz\n\nSitemap: ${origin}/sitemap.xml\n`, 'text/plain; charset=utf-8', headers);
+    } else {
+      sendText(res, 200, `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${origin}/</loc></url>\n</urlset>\n`, 'application/xml; charset=utf-8', headers);
+    }
+    return;
+  }
+
   // The session cookie is SameSite, but reject cross-site state changes
   // explicitly rather than relying on that alone.
   if (url.pathname.startsWith('/api/') && req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {

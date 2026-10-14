@@ -14,7 +14,7 @@ WORKDIR /app
 COPY package.json ./
 COPY server.mjs ./
 COPY lib ./lib
-COPY index.html logo.png dolev.jpeg placeholder.mp4 ./
+COPY index.html logo.png dolev.jpeg placeholder.mp4 favicon-32.png apple-touch-icon.png ./
 COPY deploy/entrypoint.sh ./entrypoint.sh
 
 # The database lives on a mounted volume, not in the image layer. Without a
