@@ -212,15 +212,10 @@
           }
           submit.disabled = true;
           try {
-            // Once the group exists, a retry after a failed profile save must not create it again.
-            if (!createdId) {
-              const created = await api('/groups', {
-                root: '/api',
-                method: 'POST',
-                body: { title: { he: nameHe, en: nameEn || nameHe }, zoomLink, schedule: { timezone: settings.businessTimezone || 'Asia/Jerusalem', rows } }
-              });
-              createdId = created.group.id;
-            }
+            // Once the group exists, a retry updates it with the current form instead of creating it again.
+            const group = { title: { he: nameHe, en: nameEn || nameHe }, zoomLink, schedule: { timezone: settings.businessTimezone || 'Asia/Jerusalem', rows } };
+            if (createdId) await api(`/groups/${createdId}`, { root: '/api', method: 'PATCH', body: group });
+            else createdId = (await api('/groups', { root: '/api', method: 'POST', body: group })).group.id;
             await api(`/groups/${createdId}/profile`, { method: 'PATCH', body: profile });
             toast(t('groupCreated'), 'success');
             dialog.close();
