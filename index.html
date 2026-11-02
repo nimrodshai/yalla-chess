@@ -937,6 +937,23 @@
       border: 1px solid rgba(201, 168, 76, 0.22);
     }
 
+    .portal-user-billing-file {
+      display: grid;
+      gap: 4px;
+    }
+
+    .portal-user-billing-file + .portal-user-billing-file {
+      padding-top: 10px;
+      border-top: 1px solid rgba(201, 168, 76, 0.22);
+    }
+
+    .portal-user-billing-name {
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--charcoal);
+      text-decoration: none;
+    }
+
     .portal-user-billing-line {
       font-weight: 600;
       line-height: 1.5;
@@ -7891,7 +7908,7 @@
         userRoleLabel: 'Role',
         accountRoleTeacher: 'Teacher account',
         accountRoleStudent: 'Student account',
-        billingSectionTitle: 'Payment status (from the management app)',
+        billingSectionTitle: 'Student file (management app)',
         billingPaidUntil: 'Paid up. Next payment due {date}',
         billingDueSoon: 'Payment due {date} (in {days} days)',
         billingDueToday: 'Payment due today ({date})',
@@ -7901,7 +7918,8 @@
         billingInactive: 'Student is {status} in the management app',
         billingLastPayment: 'Last payment {date} ({amount})',
         billingNoStudent: 'No student file in the management app yet, so no payment tracking for this account.',
-        billingUnlinked: 'A student file ({name}) has this phone as the parent number, but the account is not linked to it. Set the "portal sign-in phone" on the student file to show their payment status here.',
+        billingMonthlyPrice: '{amount} / month',
+        billingPackagePrice: '{amount} × {n} lessons',
         billingOpenStudent: 'Open student file',
         billingCreateStudent: 'Create student file',
         userGroupsLabel: 'Groups',
@@ -8053,7 +8071,7 @@
         userRoleLabel: 'סוג',
         accountRoleTeacher: 'חשבון מורה',
         accountRoleStudent: 'חשבון תלמיד',
-        billingSectionTitle: 'מצב תשלום (ממערכת הניהול)',
+        billingSectionTitle: 'תיק תלמיד (מערכת הניהול)',
         billingPaidUntil: 'שולם. התשלום הבא ב-{date}',
         billingDueSoon: 'תשלום מגיע ב-{date} (בעוד {days} ימים)',
         billingDueToday: 'תשלום מגיע היום ({date})',
@@ -8063,7 +8081,8 @@
         billingInactive: 'התלמיד {status} במערכת הניהול',
         billingLastPayment: 'תשלום אחרון {date} ({amount})',
         billingNoStudent: 'עדיין אין תיק תלמיד במערכת הניהול, ולכן אין מעקב תשלומים לחשבון הזה.',
-        billingUnlinked: 'בתיק התלמיד של {name} המספר הזה רשום כטלפון ההורה, אבל החשבון לא מקושר לתיק. כדי להציג כאן את מצב התשלום, קבעו בתיק את "טלפון לכניסה לפורטל".',
+        billingMonthlyPrice: '{amount} לחודש',
+        billingPackagePrice: '{amount} × {n} שיעורים',
         billingOpenStudent: 'לתיק התלמיד',
         billingCreateStudent: 'יצירת תיק תלמיד',
         userGroupsLabel: 'קבוצות',
@@ -9096,9 +9115,10 @@
       }).format(date);
     }
 
-    // Clear payment line from the management app's records: which date the
-    // next payment is due, or how many package lessons remain, instead of a
-    // bare "paid" that says nothing about which month.
+    // The student file(s) behind this account, exactly as the management app
+    // shows them: every file whose parent phone or sign-in phone is this
+    // account's phone, each with its own payment line. A parent with two
+    // children sees both files under their names.
     function renderPortalUserBilling(user) {
       const t = getPortalText();
       const section = document.createElement('section');
@@ -9108,59 +9128,90 @@
       title.textContent = t.billingSectionTitle;
       section.appendChild(title);
 
-      const billing = user?.billing || null;
+      const files = Array.isArray(user?.billing) ? user.billing : [];
+      if (!files.length) {
+        const line = document.createElement('div');
+        line.className = 'portal-user-billing-line';
+        line.dataset.tone = 'info';
+        line.textContent = t.billingNoStudent;
+        const link = document.createElement('a');
+        link.className = 'portal-user-billing-link';
+        link.target = '_blank';
+        link.rel = 'noopener';
+        const params = new URLSearchParams({ new: '1', firstName: user?.firstName || '', lastName: user?.lastName || '', userPhone: user?.phone || '', parentEmail: user?.contactEmail || '' });
+        link.href = `/admin/#/students?${params.toString()}`;
+        link.textContent = t.billingCreateStudent;
+        section.appendChild(line);
+        section.appendChild(link);
+        return section;
+      }
+
+      for (const billing of files) {
+        section.appendChild(renderPortalStudentFile(billing, t));
+      }
+      return section;
+    }
+
+    function renderPortalStudentFile(billing, t) {
+      const file = document.createElement('div');
+      file.className = 'portal-user-billing-file';
+
+      const name = document.createElement('a');
+      name.className = 'portal-user-billing-name';
+      name.target = '_blank';
+      name.rel = 'noopener';
+      name.href = `/admin/#/students/${encodeURIComponent(billing.studentId)}`;
+      name.textContent = billing.studentName;
+      file.appendChild(name);
+
       const line = document.createElement('div');
       line.className = 'portal-user-billing-line';
+      const date = billing.nextPaymentAt ? formatPortalDateOnly(billing.nextPaymentAt) : '';
+      const days = Math.abs(Number(billing.daysUntilDue || 0));
+      let text = '';
+      let tone = 'success';
+      if (billing.state === 'inactive') {
+        text = t.billingInactive.replace('{status}', getPortalBusinessStatusLabel(billing.status));
+        tone = 'info';
+      } else if (billing.billingType === 'monthly') {
+        if (billing.state === 'overdue') { text = t.billingOverdue.replace('{date}', date).replace('{days}', String(days)); tone = 'error'; }
+        else if (billing.state === 'due_soon' && days === 0) { text = t.billingDueToday.replace('{date}', date); tone = 'info'; }
+        else if (billing.state === 'due_soon') { text = t.billingDueSoon.replace('{date}', date).replace('{days}', String(days)); tone = 'info'; }
+        else { text = t.billingPaidUntil.replace('{date}', date); }
+      } else {
+        const left = Number(billing.lessonsRemaining || 0);
+        if (left <= 0) { text = t.billingLessonsOut; tone = 'error'; }
+        else { text = t.billingLessonsLeft.replace('{n}', String(left)); tone = left <= 2 ? 'info' : 'success'; }
+      }
+      line.dataset.tone = tone;
+      line.textContent = text;
+      file.appendChild(line);
+
+      const details = [];
+      const price = formatPortalMoney(billing.price, billing.currency);
+      if (price) {
+        details.push(billing.billingType === 'monthly'
+          ? t.billingMonthlyPrice.replace('{amount}', price)
+          : t.billingPackagePrice.replace('{amount}', price).replace('{n}', String(billing.packageSize || 1)));
+      }
+      if (billing.lastPaymentAt) {
+        details.push(t.billingLastPayment.replace('{date}', formatPortalDateOnly(billing.lastPaymentAt)).replace('{amount}', formatPortalMoney(billing.lastPaymentAmount, billing.currency)));
+      }
+      if (details.length) {
+        const meta = document.createElement('div');
+        meta.className = 'portal-user-billing-last';
+        meta.textContent = details.join(' · ');
+        file.appendChild(meta);
+      }
+
       const link = document.createElement('a');
       link.className = 'portal-user-billing-link';
       link.target = '_blank';
       link.rel = 'noopener';
-
-      if (billing && !billing.linked) {
-        // A student file shares this number but is not linked to the account.
-        line.dataset.tone = 'info';
-        line.textContent = t.billingUnlinked.replace('{name}', billing.studentName);
-        link.href = `/admin/#/students/${encodeURIComponent(billing.studentId)}`;
-        link.textContent = `${t.billingOpenStudent}: ${billing.studentName}`;
-      } else if (!billing) {
-        line.dataset.tone = 'info';
-        line.textContent = t.billingNoStudent;
-        const params = new URLSearchParams({ new: '1', firstName: user?.firstName || '', lastName: user?.lastName || '', userPhone: user?.phone || '', parentEmail: user?.contactEmail || '' });
-        link.href = `/admin/#/students?${params.toString()}`;
-        link.textContent = t.billingCreateStudent;
-      } else {
-        const date = billing.nextPaymentAt ? formatPortalDateOnly(billing.nextPaymentAt) : '';
-        const days = Math.abs(Number(billing.daysUntilDue || 0));
-        let text = '';
-        let tone = 'success';
-        if (billing.state === 'inactive') {
-          text = t.billingInactive.replace('{status}', getPortalBusinessStatusLabel(billing.status));
-          tone = 'info';
-        } else if (billing.billingType === 'monthly') {
-          if (billing.state === 'overdue') { text = t.billingOverdue.replace('{date}', date).replace('{days}', String(days)); tone = 'error'; }
-          else if (billing.state === 'due_soon' && days === 0) { text = t.billingDueToday.replace('{date}', date); tone = 'info'; }
-          else if (billing.state === 'due_soon') { text = t.billingDueSoon.replace('{date}', date).replace('{days}', String(days)); tone = 'info'; }
-          else { text = t.billingPaidUntil.replace('{date}', date); }
-        } else {
-          const left = Number(billing.lessonsRemaining || 0);
-          if (left <= 0) { text = t.billingLessonsOut; tone = 'error'; }
-          else { text = t.billingLessonsLeft.replace('{n}', String(left)); tone = left <= 2 ? 'info' : 'success'; }
-        }
-        line.dataset.tone = tone;
-        line.textContent = text;
-        if (billing.lastPaymentAt) {
-          const last = document.createElement('div');
-          last.className = 'portal-user-billing-last';
-          last.textContent = t.billingLastPayment.replace('{date}', formatPortalDateOnly(billing.lastPaymentAt)).replace('{amount}', formatPortalMoney(billing.lastPaymentAmount, billing.currency));
-          line.appendChild(last);
-        }
-        link.href = `/admin/#/students/${encodeURIComponent(billing.studentId)}`;
-        link.textContent = `${t.billingOpenStudent}: ${billing.studentName}`;
-      }
-
-      section.appendChild(line);
-      section.appendChild(link);
-      return section;
+      link.href = name.href;
+      link.textContent = t.billingOpenStudent;
+      file.appendChild(link);
+      return file;
     }
 
     function getPortalBusinessStatusLabel(status) {

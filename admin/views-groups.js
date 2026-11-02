@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   window.VIEWS = window.VIEWS || {};
-  const { h, api, t, card, empty, fmtDate, statusBadge, link, modal, field, input, textarea, select, enumSelect, formValues, errorBox, toast, scheduleText, weekdayPicker, initials, confirmDialog } = window.UI;
+  const { h, api, t, card, empty, fmtDate, statusBadge, link, modal, field, input, textarea, select, enumSelect, formValues, errorBox, toast, scheduleText, scheduleEditor, weekdayPicker, initials, confirmDialog } = window.UI;
 
   window.VIEWS.groups = async ({ id, query, refresh }) => {
     if (id === 'match') return matchTool(query);
@@ -11,17 +11,17 @@
     return groupList(refresh);
   };
 
-  function groupList() {
+  function groupList(refresh) {
     const groups = window.APP.groups;
     const totalStudents = groups.reduce((sum, group) => sum + group.studentCount, 0);
     const totalFree = groups.filter((group) => group.profile.status !== 'closed').reduce((sum, group) => sum + group.seatsFree, 0);
     return h('div', null,
       window.UI.pageHead(t('groupsTitle'), t('groupsSub', { n: groups.length, students: totalStudents, free: totalFree }), [
         h('a', { class: 'btn', href: '#/groups/match' }, `🔍 ${t('findGroup')}`),
-        h('a', { class: 'btn btn-primary', href: '/', target: '_blank', rel: 'noopener' }, t('openPortal'))
+        h('a', { class: 'btn', href: '/', target: '_blank', rel: 'noopener' }, t('openPortal')),
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: () => newGroupForm(refresh) }, `+ ${t('newGroup')}`)
       ]),
-      h('div', { class: 'alert alert-info', style: { marginBottom: '16px' } }, t('newGroupHint')),
-      h('div', { class: 'grid grid-3' }, groups.map(groupCard))
+      h('div', { class: 'grid grid-3 grid-even' }, groups.map(groupCard))
     );
   }
 
@@ -113,7 +113,8 @@
     const lessons = card(t('groupLessons'), lessonsResponse.lessons.length ? h('div', { class: 'list' }, lessonsResponse.lessons.map((lesson) => h('div', { class: 'list-item clickable', onclick: () => { location.hash = `#/lessons/${lesson.id}`; } },
       h('div', { class: 'list-main' },
         h('div', { class: 'list-title' }, fmtDate(lesson.date, { year: 'numeric' }), h('span', { class: 'strong' }, lesson.topic || '—'), lesson.status === 'cancelled' ? statusBadge('cancelled', 'lessonStatus') : null),
-        h('div', { class: 'list-sub' }, [lesson.games ? `${t('games')}: ${lesson.games}` : '', lesson.nextSteps ? `${t('nextSteps')}: ${lesson.nextSteps}` : ''].filter(Boolean).join(' · ')),
+        lesson.nextSteps ? h('div', { class: 'list-sub' }, `${t('nextSteps')}: ${lesson.nextSteps}`) : null,
+        window.UI.gameChips(lesson) ? h('div', { style: { marginTop: '4px' } }, window.UI.gameChips(lesson)) : null,
         lesson.attendance && Object.keys(lesson.attendance).length ? h('div', { class: 'chips', style: { marginTop: '4px' } }, Object.entries(lesson.attendance).map(([studentId, status]) => {
           const student = studentsResponse.students.find((entry) => entry.id === studentId);
           return h('span', { class: `chip ${status === 'absent' ? 'badge-danger' : ''}` }, `${student ? student.name : studentId}: ${t(`attendance.${status}`)}`);
@@ -162,6 +163,70 @@
             dialog.close();
             refresh();
           } catch (error) {
+            form.querySelector('.form-error')?.remove();
+            form.prepend(errorBox(error.message));
+          }
+        });
+        return form;
+      }
+    });
+  }
+
+  // The group itself (name, hours) lives in the portal's table, so it is
+  // created through the portal API; the profile is then saved here.
+  function newGroupForm(refresh) {
+    const settings = window.SETTINGS || {};
+    modal({
+      title: t('newGroup'),
+      body: (dialog) => {
+        const schedule = scheduleEditor([{ weekday: 0, startTime: '17:00', durationMinutes: 60 }]);
+        let createdId = '';
+        const form = h('form', { class: 'form form-3' },
+          field(t('groupNameHe'), input('nameHe', '', { required: true })),
+          field(t('groupNameEn'), input('nameEn', '')),
+          field(t('zoomLink'), input('zoomLink', '')),
+          field(t('groupSchedule'), schedule, { full: true }),
+          field(t('groupStatus'), enumSelect('status', window.VOCAB.groupStatuses, 'groupStatus', 'forming')),
+          field(t('maxStudents'), h('input', { name: 'maxStudents', type: 'number', min: 1, max: 30, value: settings.maxGroupSize || 5 })),
+          field(t('language'), enumSelect('language', window.VOCAB.languages, 'lang', 'he')),
+          field(t('level'), enumSelect('level', window.VOCAB.levels, 'level', '', { blank: '—' })),
+          field(t('minAge'), h('input', { name: 'minAge', type: 'number', min: 3, max: 99 })),
+          field(t('maxAge'), h('input', { name: 'maxAge', type: 'number', min: 3, max: 99 })),
+          h('div', { class: 'form-actions' },
+            h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, t('cancel')),
+            h('button', { class: 'btn btn-primary', type: 'submit' }, t('save'))
+          )
+        );
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const values = formValues(form);
+          // The schedule rows' own inputs are read by the editor, not sent as profile fields.
+          const { nameHe, nameEn, zoomLink, weekday, startTime, durationMinutes, ...profile } = values;
+          const submit = form.querySelector('[type=submit]');
+          form.querySelector('.form-error')?.remove();
+          // Without rows (or with a blank time) the portal quietly falls back to Monday 17:00.
+          const rows = schedule.read();
+          if (!rows.length || rows.some((row) => !row.startTime)) {
+            form.prepend(errorBox(t('scheduleRequired')));
+            return;
+          }
+          submit.disabled = true;
+          try {
+            // Once the group exists, a retry after a failed profile save must not create it again.
+            if (!createdId) {
+              const created = await api('/groups', {
+                root: '/api',
+                method: 'POST',
+                body: { title: { he: nameHe, en: nameEn || nameHe }, zoomLink, schedule: { timezone: settings.businessTimezone || 'Asia/Jerusalem', rows } }
+              });
+              createdId = created.group.id;
+            }
+            await api(`/groups/${createdId}/profile`, { method: 'PATCH', body: profile });
+            toast(t('groupCreated'), 'success');
+            dialog.close();
+            location.hash = `#/groups/${createdId}`;
+          } catch (error) {
+            submit.disabled = false;
             form.querySelector('.form-error')?.remove();
             form.prepend(errorBox(error.message));
           }
@@ -242,7 +307,10 @@
       window.UI.clear(results).append(renderMatches(data.matches));
       window.UI.clear(suggestions).append(renderSuggestions(data.suggestions));
     };
-    form.addEventListener('submit', (event) => { event.preventDefault(); run(); });
+    // User-triggered reloads report failures as a toast; the first load
+    // below stays unguarded so the router can show sign-in or an error page.
+    const rerun = window.UI.guard(run);
+    form.addEventListener('submit', (event) => { event.preventDefault(); rerun(); });
     await run();
     return h('div', null,
       h('div', { class: 'breadcrumb' }, link('#/groups', t('navGroups')), '›', t('matchTitle')),

@@ -26,37 +26,102 @@
     const data = await api('/leads');
     const leads = data.leads;
     const open = leads.filter((lead) => !['converted', 'lost'].includes(lead.status));
+    const addLead = () => leadForm({ onSaved: (lead) => { location.hash = `#/leads/${lead.id}`; } });
     const head = window.UI.pageHead(t('leadsTitle'), t('leadsSub'), [
       h('div', { class: 'seg' },
         h('a', { class: `btn btn-ghost btn-sm ${mode === 'pipeline' ? 'active' : ''}`, href: '#/leads' }, t('pipeline')),
         h('a', { class: `btn btn-ghost btn-sm ${mode === 'list' ? 'active' : ''}`, href: '#/leads?mode=list' }, t('listView'))
       ),
-      h('button', { class: 'btn btn-primary', type: 'button', onclick: () => leadForm({ onSaved: (lead) => { location.hash = `#/leads/${lead.id}`; } }) }, `+ ${t('newLead')}`)
+      h('button', { class: 'btn btn-primary', type: 'button', onclick: addLead }, `+ ${t('newLead')}`)
     ]);
 
+    // Same header and tiles in both views; only the body below changes.
     const stats = h('div', { class: 'stats' },
       window.UI.stat(t('statLeads'), open.length),
-      window.UI.stat(t('needsFollowup'), open.filter(needsFollowup).length, { tone: 'warn' }),
+      window.UI.stat(t('needsFollowup'), open.filter(needsFollowup).length, { tone: 'danger' }),
       window.UI.stat(t('lead.trial_scheduled'), leads.filter((lead) => lead.status === 'trial_scheduled').length, { tone: 'gold' }),
-      window.UI.stat(t('lead.waiting_group'), leads.filter((lead) => lead.status === 'waiting_group').length),
+      window.UI.stat(t('lead.waiting_group'), leads.filter((lead) => lead.status === 'waiting_group').length, { tone: 'warn' }),
       window.UI.stat(t('lead.converted'), leads.filter((lead) => lead.status === 'converted').length, { tone: 'sage' })
     );
 
-    const cardNode = (lead) => h('div', { class: `pipe-card ${needsFollowup(lead) ? 'overdue' : ''}`, onclick: () => { location.hash = `#/leads/${lead.id}`; } },
-      h('div', { class: 'pipe-card-title' }, lead.childName || lead.parentName),
-      h('div', { class: 'pipe-card-sub' }, [lead.parentName, lead.childAge ? `${t('age')} ${lead.childAge}` : '', lead.level ? t(`level.${lead.level}`) : '', t(`lang.${lead.language}`)].filter(Boolean).join(' · ')),
-      h('div', { class: 'pipe-card-sub' }, [lead.trialAt && lead.status === 'trial_scheduled' ? `${t('trialAt')}: ${fmtDateTime(lead.trialAt, window.SETTINGS.businessTimezone)}` : '', lead.nextFollowupAt ? `${t('nextFollowupAt')} ${fmtDate(lead.nextFollowupAt)}` : '', lead.source ? t(`source.${lead.source}`) : ''].filter(Boolean).join(' · '))
-    );
+    const tz = window.SETTINGS.businessTimezone;
+    const nextStep = (lead) => {
+      const when = lead.trialAt ? fmtDateTime(lead.trialAt, tz) : '';
+      const trialPast = lead.trialAt && lead.trialAt.slice(0, 10) < today();
+      if (lead.status === 'converted') return { text: t('nextConverted'), tone: 'success' };
+      if (lead.status === 'lost') return { text: t('nextLost'), tone: '' };
+      if (lead.status === 'trial_scheduled') return trialPast ? { text: t('nextTrialPast', { when }), tone: 'error' } : { text: t('nextTrialScheduled', { when }), tone: 'info' };
+      if (lead.status === 'trial_done') return { text: t('nextTrialDone'), tone: needsFollowup(lead) ? 'error' : 'info' };
+      if (lead.status === 'waiting_group') return { text: t('nextWaitingGroup', { lang: t(`lang.${lead.language}`), age: lead.childAge ?? '?' }), tone: 'info' };
+      if (lead.status === 'new') return { text: t('nextNew'), tone: 'error' };
+      return { text: t('nextContacted'), tone: 'info' };
+    };
+    const setStatus = async (lead, status, extra = {}) => { await api(`/leads/${lead.id}`, { method: 'PATCH', body: { status, ...extra } }); toast(t('saved'), 'success'); refresh(); };
+    // Returns the handler's promise so a failure surfaces as a toast.
+    const stop = (fn) => (event) => { event.stopPropagation(); return fn(); };
+    const quickActions = (lead) => {
+      const buttons = [];
+      if (!['converted', 'lost'].includes(lead.status) && lead.parentPhone) {
+        buttons.push(h('button', { class: 'btn btn-xs btn-wa', type: 'button', onclick: stop(() => composeMessage({ kind: lead.status === 'trial_scheduled' ? 'trial_invite' : 'followup', leadId: lead.id, name: lead.parentName, onSent: refresh })) }, t('whatsapp')));
+      }
+      if (lead.status === 'new') buttons.push(h('button', { class: 'btn btn-xs', type: 'button', onclick: stop(() => setStatus(lead, 'contacted', { lastContactAt: today() })) }, `✓ ${t('actionMarkContacted')}`));
+      if (lead.status === 'contacted') buttons.push(h('button', { class: 'btn btn-xs', type: 'button', onclick: stop(() => trialDialog(lead, refresh)) }, `📅 ${t('scheduleTrial')}`));
+      if (lead.status === 'trial_scheduled') buttons.push(h('button', { class: 'btn btn-xs', type: 'button', onclick: stop(() => setStatus(lead, 'trial_done')) }, `✓ ${t('actionTrialHeld')}`));
+      if (lead.status === 'trial_done') {
+        buttons.push(h('button', { class: 'btn btn-xs btn-gold', type: 'button', onclick: stop(() => { location.hash = `#/leads/${lead.id}`; }) }, `★ ${t('actionEnroll')}`));
+        buttons.push(h('button', { class: 'btn btn-xs', type: 'button', onclick: stop(() => setStatus(lead, 'waiting_group')) }, t('actionWaitGroup')));
+      }
+      if (lead.status === 'converted' && lead.convertedStudentId) buttons.push(h('a', { class: 'btn btn-xs', href: `#/students/${lead.convertedStudentId}`, onclick: (event) => event.stopPropagation() }, t('openStudent')));
+      return buttons;
+    };
+
+    // A follow-up date set on the prospect is shown on every card, whatever
+    // the stage, so a reminder never disappears behind the stage's own hint.
+    const followupLine = (lead) => {
+      if (!lead.nextFollowupAt || ['converted', 'lost'].includes(lead.status)) return null;
+      const late = lead.nextFollowupAt <= today();
+      return h('div', { class: `pipe-followup ${late ? 'late' : ''}` }, `⏰ ${t(late ? 'nextFollowupLate' : 'nextFollowupOn', { date: fmtDate(lead.nextFollowupAt) })}`);
+    };
+
+    const cardNode = (lead) => {
+      const next = nextStep(lead);
+      const followupLate = lead.nextFollowupAt && lead.nextFollowupAt <= today() && !['converted', 'lost'].includes(lead.status);
+      return h('div', { class: `pipe-card ${next.tone === 'error' || followupLate ? 'overdue' : ''}`, onclick: () => { location.hash = `#/leads/${lead.id}`; } },
+        h('div', { class: 'pipe-card-title' }, lead.childName || lead.parentName, lead.childAge ? h('span', { class: 'muted', style: { fontWeight: 400 } }, ` · ${t('age')} ${lead.childAge}`) : null),
+        h('div', { class: 'pipe-card-sub' }, [lead.parentName ? `${t('parent')}: ${lead.parentName}` : '', lead.level ? t(`level.${lead.level}`) : '', t(`lang.${lead.language}`), lead.source ? t(`source.${lead.source}`) : ''].filter(Boolean).join(' · ')),
+        h('div', { class: `pipe-next tone-${next.tone || 'plain'}` }, h('span', { class: 'pipe-next-label' }, `${t('nextStepLabel')}: `), next.text),
+        followupLine(lead),
+        h('div', { class: 'pipe-actions' }, quickActions(lead))
+      );
+    };
 
     let body;
     if (mode === 'pipeline') {
-      body = h('div', { class: 'pipeline' }, window.VOCAB.leadStatuses.map((status) => {
-        const column = leads.filter((lead) => lead.status === status);
-        return h('div', { class: 'pipe-col' },
-          h('div', { class: 'pipe-head' }, h('span', null, t(`lead.${status}`)), h('span', { class: 'badge' }, column.length)),
-          column.length ? column.map(cardNode) : h('div', { class: 'muted tiny', style: { padding: '6px' } }, '—')
+      const flow = ['new', 'contacted', 'trial_scheduled', 'trial_done', 'waiting_group'];
+      const ends = ['converted', 'lost'];
+      const column = (status, index) => {
+        const items = leads.filter((lead) => lead.status === status);
+        return h('div', { class: `pipe-col ${ends.includes(status) ? 'pipe-col--end' : ''}` },
+          h('div', { class: 'pipe-head' },
+            h('div', null,
+              index !== null ? h('div', { class: 'pipe-stage-num' }, t('stageLabel', { n: index + 1 })) : null,
+              h('div', { class: 'pipe-stage-title' }, t(`lead.${status}`)),
+              h('div', { class: 'pipe-desc' }, t(`stageDesc.${status}`))
+            ),
+            h('span', { class: `badge ${items.length ? 'badge-ink' : ''}` }, items.length)
+          ),
+          // Only this part scrolls, so the stage header stays put.
+          h('div', { class: 'pipe-cards' },
+            items.length ? items.map(cardNode) : status === 'new' ? null : h('div', { class: 'pipe-empty' }, t('emptyStage')),
+            status === 'new' ? h('button', { class: 'pipe-add', type: 'button', onclick: addLead }, `+ ${t('newLead')}`) : null
+          )
         );
-      }));
+      };
+      body = h('div', { class: 'pipeline' },
+        flow.map((status, index) => [column(status, index), index < flow.length - 1 ? h('div', { class: 'pipe-arrow' }, '›') : null]),
+        h('div', { class: 'pipe-arrow pipe-arrow--end' }, '›'),
+        h('div', { class: 'pipe-end' }, h('div', { class: 'pipe-end-title' }, t('stageEnd')), ends.map((status) => column(status, null)))
+      );
     } else {
       body = h('div', { class: 'card' }, leads.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
         h('thead', null, h('tr', null, h('th', null, t('childName')), h('th', null, t('parent')), h('th', null, t('age')), h('th', null, t('level')), h('th', null, t('preference')), h('th', null, t('source')), h('th', null, t('status')), h('th', null, t('nextFollowupAt')))),
@@ -72,7 +137,9 @@
         )))
       )) : empty(t('noLeads')));
     }
-    return h('div', null, head, stats, body);
+    // In pipeline mode the page itself does not scroll: the board fills the
+    // viewport and its columns scroll on their own.
+    return h('div', { class: mode === 'pipeline' ? 'board-page' : '' }, head, stats, body);
   }
 
   async function leadDetail(id, refresh) {

@@ -73,34 +73,48 @@ describe('business API', () => {
     assert.equal(detail.payment.state, 'due_soon', 'a new monthly student is due on their join date');
   });
 
-  it('shows portal accounts only their own payment state', async () => {
+  it('shows every student file behind a portal phone with its own payment state', async () => {
     const phone = '+972500000666';
     const sibling = (await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Sib', lastName: 'One', parentName: 'Shared Parent', parentPhone: phone, groupId: 'rookies', price: 250, billingType: 'monthly' }))).json()).student;
     await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: sibling.id, amount: 250, currency: 'ILS', periodLabel: '2026-11' }));
-    await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Sib', lastName: 'Two', parentName: 'Shared Parent', parentPhone: phone, groupId: 'rookies', price: 250, billingType: 'monthly' }));
+    const second = (await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Sib', lastName: 'Two', parentName: 'Shared Parent', parentPhone: phone, groupId: 'rookies', price: 250, billingType: 'monthly' }))).json()).student;
     await server.fetch('/api/users', json(teacher.cookie, { role: 'student', phone }));
 
+    // A parent with two children sees both files, each under its own name
+    // and with its own state, exactly as the management app shows them.
     let dashboard = await (await server.fetch('/api/dashboard', { headers: { Cookie: teacher.cookie } })).json();
     let account = dashboard.users.find((user) => user.phone === phone);
-    assert.equal(account.billing, null, 'two students on one parent phone: neither status is shown');
+    assert.equal(account.billing.length, 2);
+    const paid = account.billing.find((file) => file.studentId === sibling.id);
+    const unpaid = account.billing.find((file) => file.studentId === second.id);
+    assert.equal(paid.studentName, 'Sib One');
+    assert.equal(paid.state, 'ok');
+    assert.equal(paid.lastPaymentAmount, 250);
+    assert.equal(unpaid.state, 'due_soon');
 
-    // A single student on the parent phone is only suggested, never shown as that account's status.
+    // A single file on the parent phone is that account's file: no extra link step.
     const lonePhone = '+972500000667';
     const lone = (await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Lone', lastName: 'Child', parentPhone: lonePhone, price: 250, billingType: 'monthly' }))).json()).student;
     await server.fetch('/api/users', json(teacher.cookie, { role: 'student', phone: lonePhone }));
     dashboard = await (await server.fetch('/api/dashboard', { headers: { Cookie: teacher.cookie } })).json();
     const loneAccount = dashboard.users.find((user) => user.phone === lonePhone);
-    assert.equal(loneAccount.billing.linked, false);
-    assert.equal(loneAccount.billing.studentId, lone.id);
-    assert.equal(loneAccount.billing.state, undefined, 'no payment state until the account is explicitly linked');
+    assert.equal(loneAccount.billing.length, 1);
+    assert.equal(loneAccount.billing[0].studentId, lone.id);
+    assert.equal(loneAccount.billing[0].state, 'due_soon');
 
-    // An explicit sign-in phone on one of them links the account to that student.
+    // A phone with no file at all gets an empty list, which the portal
+    // turns into a "create student file" shortcut.
+    const nobody = '+972500000668';
+    await server.fetch('/api/users', json(teacher.cookie, { role: 'student', phone: nobody }));
+    dashboard = await (await server.fetch('/api/dashboard', { headers: { Cookie: teacher.cookie } })).json();
+    assert.deepEqual(dashboard.users.find((user) => user.phone === nobody).billing, []);
+
+    // A sign-in phone on a file links it too, once, even when it is also the parent phone.
     await server.fetch(`/api/business/students/${sibling.id}`, json(teacher.cookie, { userPhone: phone }, 'PATCH'));
     dashboard = await (await server.fetch('/api/dashboard', { headers: { Cookie: teacher.cookie } })).json();
     account = dashboard.users.find((user) => user.phone === phone);
-    assert.equal(account.billing.linked, true);
-    assert.equal(account.billing.studentId, sibling.id);
-    assert.equal(account.billing.state, 'ok');
+    assert.equal(account.billing.length, 2);
+    assert.equal(account.billing.filter((file) => file.studentId === sibling.id).length, 1);
 
     // The same sign-in phone cannot be given to a second student.
     const dupe = await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Dupe', userPhone: phone }));
@@ -248,6 +262,94 @@ describe('business API', () => {
     const lead = (await (await server.fetch('/api/business/leads', { headers: { Cookie: teacher.cookie } })).json()).leads.find((entry) => entry.parentPhone && entry.language === 'he');
     const composed = await (await server.fetch('/api/business/messages/compose', json(teacher.cookie, { kind: 'custom', leadId: lead.id, lang: 'he', values: { notes: 'בדיקה' } }))).json();
     assert.equal(composed.message.body, `שלום ${lead.parentName}, בדיקה — Coach Test`);
+  });
+
+  it('imports every game from a PGN file as a content item', async () => {
+    const pgn = `[Event "London"]
+[White "Edward Lasker"]
+[Black "George Thomas"]
+[Date "1912.10.29"]
+[Result "1-0"]
+
+1. d4 e6 2. Nf3 f5 3. Nc3 Nf6 4. Bg5 Be7 5. Bxf6 Bxf6 6. e4 fxe4 7. Nxe4 b6 8. Ne5 O-O 9. Bd3 Bb7 10. Qh5 Qe7 11. Qxh7+ Kxh7 12. Nxf6+ Kh6 13. Neg4+ Kg5 14. h4+ Kf4 15. g3+ Kf3 16. Be2+ Kg2 17. Rh2+ Kg1 18. Kd2# 1-0
+
+[Event "Paris"]
+[White "Paul Morphy"]
+[Black "Duke Karl"]
+[Result "1-0"]
+
+1.e4 e5 2.Nf3 d6 3.d4 Bg4 {pin} 4.dxe5 Bxf3 5.Qxf3 dxe5 6.Bc4 Nf6 7.Qb3 Qe7 8.Nc3 c6 9.Bg5 b5 10.Nxb5 cxb5 11.Bxb5+ Nbd7 12.O-O-O Rd8 13.Rxd7 Rxd7 14.Rd1 Qe6 15.Bxd7+ Nxd7 16.Qb8+ Nxb8 17.Rd8# 1-0
+`;
+    const response = await server.fetch('/api/business/content/import-pgn', json(teacher.cookie, { fileName: 'classics.pgn', pgn }));
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.imported, 2);
+    assert.equal(body.items[0].white, 'Edward Lasker');
+    assert.equal(body.items[0].result, '1-0');
+    assert.equal(body.items[0].movesCount, 35);
+    assert.equal(body.items[1].title, 'Paul Morphy – Duke Karl, Paris');
+    assert.equal(body.items[1].sourceFile, 'classics.pgn');
+
+    const games = (await (await server.fetch('/api/business/content?kind=game', { headers: { Cookie: teacher.cookie } })).json()).content;
+    assert.ok(games.some((item) => item.id === body.items[1].id && item.pgn.includes('17.Rd8#')));
+
+    const emptyFile = await server.fetch('/api/business/content/import-pgn', json(teacher.cookie, { fileName: 'empty.pgn', pgn: '   ' }));
+    assert.equal(emptyFile.status, 400);
+
+    // Nested variations, line comments and a FEN start position.
+    const annotated = `[Event "Study"]
+[SetUp "1"]
+[FEN "8/8/8/8/8/4k3/4p3/4K3 b - - 0 1"]
+
+1... Kd3 ; a line comment runs to the end of the line
+2. Kf2 (2. Kd1 e1=Q+ (2... Kd2) 3. Kxe1) 2... e1=Q+ 3. Kxe1 Kd2 *
+`;
+    const study = await (await server.fetch('/api/business/content/import-pgn', json(teacher.cookie, { fileName: 'study.pgn', pgn: annotated }))).json();
+    assert.equal(study.imported, 1);
+    assert.equal(study.items[0].movesCount, 5, 'variations and comments are not counted as moves');
+
+    const awkward = `[Event "Comments"]
+
+1. e4 {best; by far} e5 ; and now { not a comment
+2. Nf3 $1 Nc6 3. Bb5 (3. Bc4 {Italian; also good}) a6 1/2-1/2
+`;
+    const parsed = await (await server.fetch('/api/business/content/import-pgn', json(teacher.cookie, { fileName: 'comments.pgn', pgn: awkward }))).json();
+    assert.equal(parsed.items[0].movesCount, 6, 'a ";" inside braces and a "{" inside a line comment are both just comment text');
+    assert.equal(study.items[0].fen, '8/8/8/8/8/4k3/4p3/4K3 b - - 0 1');
+  });
+
+  it('links lessons to games in the list: renames follow, deletions are remembered', async () => {
+    const game = (await (await server.fetch('/api/business/content/import-pgn', json(teacher.cookie, { fileName: 'one.pgn', pgn: '[White "Greco"]\n[Black "NN"]\n\n1. e4 e5 2. Nf3 *' }))).json()).items[0];
+    const created = await server.fetch('/api/business/lessons', json(teacher.cookie, { date: '2026-10-12', groupId: 'rookies', topic: 'Italian', gameRefs: [{ id: game.id }] }));
+    assert.equal(created.status, 200);
+    const { lesson } = await created.json();
+    assert.deepEqual(lesson.gamesResolved.map((entry) => [entry.title, entry.exists]), [[game.title, true]]);
+
+    const byGame = async () => (await (await server.fetch(`/api/business/lessons?gameId=${game.id}`, { headers: { Cookie: teacher.cookie } })).json()).lessons;
+    assert.deepEqual((await byGame()).map((entry) => entry.id), [lesson.id], 'a game lists the lessons that used it');
+
+    await server.fetch(`/api/business/content/${game.id}`, json(teacher.cookie, { title: 'Greco – NN, renamed' }, 'PATCH'));
+    const groupLessons = (await (await server.fetch('/api/business/lessons?groupId=rookies', { headers: { Cookie: teacher.cookie } })).json()).lessons;
+    assert.equal(groupLessons.find((entry) => entry.id === lesson.id).gamesResolved[0].title, 'Greco – NN, renamed', 'a rename shows on past lessons');
+
+    await server.fetch(`/api/business/content/${game.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+    const [afterDelete] = await byGame();
+    assert.equal(afterDelete.gamesResolved[0].exists, false);
+    assert.equal(afterDelete.gamesResolved[0].title, 'Greco – NN, renamed', 'a deleted game is remembered by its last name');
+
+    // Re-saving the lesson keeps the reference to the deleted game.
+    const resaved = await (await server.fetch(`/api/business/lessons/${lesson.id}`, json(teacher.cookie, { topic: 'Italian (edited)', gameRefs: afterDelete.gamesResolved }, 'PATCH'))).json();
+    assert.equal(resaved.lesson.gamesResolved[0].title, 'Greco – NN, renamed');
+
+    // Sending only the id, or a different name, cannot erase or rewrite it.
+    const idOnly = await (await server.fetch(`/api/business/lessons/${lesson.id}`, json(teacher.cookie, { gameRefs: [game.id] }, 'PATCH'))).json();
+    assert.equal(idOnly.lesson.gamesResolved[0].title, 'Greco – NN, renamed', 'an id-only save keeps the remembered name');
+    const renamedByClient = await (await server.fetch(`/api/business/lessons/${lesson.id}`, json(teacher.cookie, { gameRefs: [{ id: game.id, title: 'Something else' }] }, 'PATCH'))).json();
+    assert.equal(renamedByClient.lesson.gamesResolved[0].title, 'Greco – NN, renamed', 'the client cannot rename a deleted game');
+
+    // An edit that does not mention games leaves them alone.
+    const untouched = await (await server.fetch(`/api/business/lessons/${lesson.id}`, json(teacher.cookie, { homework: 'Play the Italian' }, 'PATCH'))).json();
+    assert.equal(untouched.lesson.gamesResolved.length, 1);
   });
 
   it('rejects malformed JSON and unknown routes cleanly', async () => {

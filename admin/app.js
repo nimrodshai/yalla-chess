@@ -85,6 +85,7 @@
         searchResults.hidden = false;
       } catch (error) {
         searchResults.hidden = true;
+        toast(error.message || t('errorGeneric'), 'error');
       }
     }, 250);
   });
@@ -117,6 +118,8 @@
       const content = await view({ id, sub, query, refresh: render });
       if (token !== renderToken) return;
       clear(main).append(content);
+      // A board view owns the viewport: the page stays put, columns scroll.
+      main.classList.toggle('main--board', Boolean(content.classList && content.classList.contains('board-page')));
       window.scrollTo({ top: 0 });
     } catch (error) {
       if (token !== renderToken) return;

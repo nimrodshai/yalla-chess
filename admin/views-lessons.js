@@ -37,9 +37,12 @@
       const data = await api(`/lessons?${params}`);
       window.UI.clear(listNode).append(data.lessons.length ? h('div', { class: 'list' }, data.lessons.map((lesson) => lessonRow(lesson, nameOf))) : empty(t('noLessons')));
     };
-    const searchBox = h('input', { type: 'search', value: state.q, placeholder: t('search'), oninput: (event) => { state.q = event.target.value; clearTimeout(searchBox._timer); searchBox._timer = setTimeout(load, 250); } });
+    // User-triggered reloads report failures as a toast; the first load
+    // below stays unguarded so the router can show sign-in or an error page.
+    const reload = window.UI.guard(load);
+    const searchBox = h('input', { type: 'search', value: state.q, placeholder: t('search'), oninput: (event) => { state.q = event.target.value; clearTimeout(searchBox._timer); searchBox._timer = setTimeout(reload, 250); } });
     const groupSelect = select('groupId', [['', t('filterGroup')], ...window.APP.groups.map((group) => [group.id, group.name])], state.groupId);
-    groupSelect.addEventListener('change', () => { state.groupId = groupSelect.value; load(); });
+    groupSelect.addEventListener('change', () => { state.groupId = groupSelect.value; reload(); });
     await load();
     return h('div', null,
       window.UI.pageHead(t('lessonsTitle'), t('lessonsSub'), [h('button', { class: 'btn btn-primary', type: 'button', onclick: () => lessonForm({ onSaved: (lesson) => { location.hash = `#/lessons/${lesson.id}`; } }) }, `+ ${t('newLesson')}`)]),
@@ -55,8 +58,9 @@
       h('div', { style: { minWidth: '90px' } }, h('div', { class: 'strong small' }, fmtDate(lesson.date, { year: 'numeric' })), h('div', { class: 'muted tiny' }, lesson.startTime)),
       h('div', { class: 'list-main' },
         h('div', { class: 'list-title' }, who, h('span', { class: 'badge' }, t(`kind.${lesson.kind}`)), lesson.status === 'cancelled' ? statusBadge('cancelled', 'lessonStatus') : null),
-        h('div', { class: 'list-sub' }, h('strong', null, lesson.topic || '—'), lesson.games ? ` · ${lesson.games}` : ''),
-        lesson.topics?.length ? h('div', { class: 'chips', style: { marginTop: '4px' } }, lesson.topics.map((topic) => h('span', { class: 'chip' }, topic))) : null
+        h('div', { class: 'list-sub' }, h('strong', null, lesson.topic || '—')),
+        lesson.topics?.length ? h('div', { class: 'chips', style: { marginTop: '4px' } }, lesson.topics.map((topic) => h('span', { class: 'chip' }, topic))) : null,
+        window.UI.gameChips(lesson) ? h('div', { style: { marginTop: '4px' } }, window.UI.gameChips(lesson)) : null
       )
     );
   }
@@ -95,7 +99,8 @@
         card(t('details'), h('dl', { class: 'stack' },
           lesson.topics?.length ? h('div', { class: 'chips' }, lesson.topics.map((topic) => h('span', { class: 'chip' }, topic))) : null,
           block(t('exercises'), lesson.exercises),
-          block(t('games'), lesson.games),
+          lesson.gamesResolved?.length ? h('div', { class: 'detail' }, h('dt', null, t('gamesFromList')), h('dd', null, window.UI.gameChips(lesson, { withFreeText: false }))) : null,
+          block(t('gamesOther'), lesson.games),
           block(t('successes'), lesson.successes),
           block(t('difficultiesField'), lesson.difficulties),
           block(t('homework'), lesson.homework),
@@ -128,8 +133,9 @@
   }
 
   async function lessonForm({ lesson = null, defaults = {}, onSaved }) {
-    const studentsResponse = await api('/students');
+    const [studentsResponse, gamesResponse] = await Promise.all([api('/students'), api('/content?kind=game')]);
     const students = studentsResponse.students.filter((student) => student.status !== 'inactive' || lesson);
+    const gameList = gamesResponse.content.slice().sort((a, b) => a.title.localeCompare(b.title));
     const l = lesson || { date: todayIso(window.SETTINGS.businessTimezone), startTime: '', durationMinutes: 60, kind: 'group', groupId: '', studentIds: [], attendance: {}, status: 'held', ...defaults };
     if (l.groupId && !l.startTime) {
       const group = window.APP.groups.find((entry) => entry.id === l.groupId);
@@ -140,6 +146,30 @@
       size: 'modal-lg',
       body: (dialog) => {
         const attendanceState = { ...(l.attendance || {}) };
+
+        // Games come from the official list; one that was deleted since
+        // stays on the lesson under its remembered name until removed here.
+        const pickedGames = (l.gamesResolved || l.gameRefs || []).map((game) => ({ id: game.id, title: game.title, exists: game.exists !== false && gameList.some((item) => item.id === game.id) }));
+        const pickedHost = h('div', { class: 'chips' });
+        const gameSelect = h('select');
+        const renderGames = () => {
+          window.UI.clear(pickedHost);
+          for (const game of pickedGames) {
+            pickedHost.append(h('span', { class: `chip chip-game ${game.exists ? '' : 'removed'}` }, '♞ ', game.title, game.exists ? null : h('span', { class: 'chip-note' }, ` · ${t('gameRemoved')}`),
+              h('button', { type: 'button', class: 'chip-x', 'aria-label': t('delete'), onclick: () => { pickedGames.splice(pickedGames.indexOf(game), 1); renderGames(); } }, '×')));
+          }
+          window.UI.clear(gameSelect);
+          gameSelect.append(h('option', { value: '' }, gameList.length ? t('pickGame') : t('noGamesInList')));
+          for (const item of gameList) if (!pickedGames.some((game) => game.id === item.id)) gameSelect.append(h('option', { value: item.id }, item.title));
+          gameSelect.disabled = !gameList.length;
+        };
+        gameSelect.addEventListener('change', () => {
+          const item = gameList.find((entry) => entry.id === gameSelect.value);
+          if (item) pickedGames.push({ id: item.id, title: item.title, exists: true });
+          renderGames();
+        });
+        renderGames();
+        const gamePicker = h('div', { class: 'game-picker' }, gameSelect, pickedHost);
         const kindSelect = enumSelect('kind', window.VOCAB.lessonKinds, 'kind', l.kind);
         const groupSelect = select('groupId', [['', '—'], ...window.APP.groups.map((group) => [group.id, group.name])], l.groupId || '');
         const studentPicker = h('div', { class: 'attendance-grid' });
@@ -192,7 +222,8 @@
           field(t('topic'), input('topic', l.topic || '', { required: true }), { full: true }),
           field(t('topicsTags'), input('topics', (l.topics || []).join(', ')), { full: true }),
           field(t('exercises'), textarea('exercises', l.exercises || '', { rows: 2 })),
-          field(t('games'), textarea('games', l.games || '', { rows: 2 })),
+          field(t('gamesFromList'), gamePicker, { full: true }),
+          field(t('gamesOther'), textarea('games', l.games || '', { rows: 1 }), { full: true }),
           field(t('homework'), textarea('homework', l.homework || '', { rows: 2 })),
           field(t('successes'), textarea('successes', l.successes || '', { rows: 2 })),
           field(t('difficultiesField'), textarea('difficulties', l.difficulties || '', { rows: 2 })),
@@ -210,6 +241,7 @@
           event.preventDefault();
           const values = formValues(form);
           values.studentIds = groupSelect.value ? [] : Array.from(selectedStudents);
+          values.gameRefs = pickedGames.map((game) => ({ id: game.id, title: game.title }));
           values.attendance = attendanceState;
           values.teacher = window.SETTINGS.teacherName;
           try {

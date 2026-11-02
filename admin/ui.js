@@ -14,7 +14,7 @@
         if (value === null || value === undefined || value === false) continue;
         if (key === 'class') element.className = value;
         else if (key === 'style' && typeof value === 'object') Object.assign(element.style, value);
-        else if (key.startsWith('on') && typeof value === 'function') element.addEventListener(key.slice(2).toLowerCase(), value);
+        else if (key.startsWith('on') && typeof value === 'function') element.addEventListener(key.slice(2).toLowerCase(), guarded(value));
         else if (key === 'dataset') Object.assign(element.dataset, value);
         else if (key === 'html') element.innerHTML = value;
         else if (key in element && key !== 'list' && key !== 'form' && typeof value !== 'object') element[key] = value;
@@ -25,6 +25,27 @@
     }
     append(element, children);
     return element;
+  }
+
+  // Every handler attached through h() reports a thrown error or a rejected
+  // promise as a toast, so a failed quick action (network, 404, validation)
+  // is never silent.
+  function guarded(handler) {
+    return (event) => {
+      try {
+        const result = handler(event);
+        // Hand back the settled promise so callers that await it still wait.
+        if (result && typeof result.catch === 'function') return result.catch(reportError);
+        return result;
+      } catch (error) {
+        reportError(error);
+        return undefined;
+      }
+    };
+  }
+
+  function reportError(error) {
+    toast((error && error.message) || t('errorGeneric'), 'error');
   }
 
   function append(element, children) {
@@ -50,7 +71,8 @@
       init.headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(options.body);
     }
-    const response = await fetch(`/api/business${path}`, init);
+    // `root` reaches the portal's own API (e.g. creating a group) instead of /api/business.
+    const response = await fetch(`${options.root ?? '/api/business'}${path}`, init);
     let data = {};
     try { data = await response.json(); } catch (error) { data = {}; }
     if (response.status === 401) {
@@ -280,8 +302,17 @@
   }
 
   // ------------------------------------------------------------- FEN board
+  // An 8x8 CSS grid with a fixed 1:1 aspect ratio per square. Pieces are
+  // images under /admin/pieces (wK.png ... bP.png); the Unicode glyph is the
+  // fallback if an image is missing.
   const PIECES = { K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙', k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
-  function board(fen) {
+  function pieceImage(piece) {
+    const color = piece === piece.toUpperCase() ? 'w' : 'b';
+    const img = h('img', { src: `/admin/pieces/${color}${piece.toUpperCase()}.png`, alt: PIECES[piece], draggable: false });
+    img.addEventListener('error', () => { img.replaceWith(h('span', { class: `glyph ${color}` }, PIECES[piece])); }, { once: true });
+    return img;
+  }
+  function board(fen, { highlights = [], caption = true, coords = true } = {}) {
     const placement = String(fen || '').trim().split(/\s+/)[0] || '';
     const ranks = placement.split('/');
     if (ranks.length !== 8) return h('div', { class: 'muted small' }, 'FEN?');
@@ -290,20 +321,119 @@
       let file = 0;
       for (const char of rank) {
         if (/\d/.test(char)) {
-          for (let i = 0; i < Number(char); i += 1) { node.append(square(rankIndex, file, '')); file += 1; }
+          for (let i = 0; i < Number(char); i += 1) { node.append(square(rankIndex, file, '', highlights, coords)); file += 1; }
         } else {
-          node.append(square(rankIndex, file, char));
+          node.append(square(rankIndex, file, char, highlights, coords));
           file += 1;
         }
       }
     });
     const sideToMove = String(fen || '').trim().split(/\s+/)[1];
-    return h('div', { class: 'board-wrap' }, node, sideToMove ? h('div', { class: 'board-caption' }, sideToMove === 'b' ? t('blackToMove') : t('whiteToMove')) : null);
+    return h('div', { class: 'board-wrap' }, node, caption && sideToMove ? h('div', { class: 'board-caption' }, sideToMove === 'b' ? t('blackToMove') : t('whiteToMove')) : null);
   }
-  function square(rankIndex, file, piece) {
+  function square(rankIndex, file, piece, highlights, coords) {
     const light = (rankIndex + file) % 2 === 0;
-    const color = piece && piece === piece.toUpperCase() ? 'w' : 'b';
-    return h('div', { class: `sq ${light ? 'light' : 'dark'} ${piece ? color : ''}` }, PIECES[piece] || '');
+    const squareName = 'abcdefgh'[file] + (8 - rankIndex);
+    return h('div', { class: `sq ${light ? 'light' : 'dark'} ${highlights.includes(squareName) ? 'hl' : ''}`, dataset: { square: squareName } },
+      coords && file === 0 ? h('span', { class: 'coord rank' }, String(8 - rankIndex)) : null,
+      coords && rankIndex === 7 ? h('span', { class: 'coord file' }, 'abcdefgh'[file]) : null,
+      piece ? pieceImage(piece) : null
+    );
+  }
+
+  // Animates the change between two positions on a freshly rendered board.
+  // Pieces that left one square and arrived on another glide between them
+  // (both king and rook when castling; pawn to queen on promotion); a
+  // captured piece fades out, and one that reappears when stepping back
+  // fades in. Floating copies sit on the board itself because each square
+  // clips its own content.
+  function placementArray(fen) {
+    const out = [];
+    for (const char of String(fen || '').trim().split(/\s+/)[0] || '') {
+      if (char === '/') continue;
+      if (/\d/.test(char)) for (let i = 0; i < Number(char); i += 1) out.push('');
+      else out.push(char);
+    }
+    return out.length === 64 ? out : null;
+  }
+  const squareName = (index) => 'abcdefgh'[index % 8] + (8 - Math.floor(index / 8));
+  const sameColor = (a, b) => (a === a.toUpperCase()) === (b === b.toUpperCase());
+
+  function animateBoard(boardNode, previousFen, nextFen, { duration = 260 } = {}) {
+    if (!boardNode || !previousFen || previousFen === nextFen) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const before = placementArray(previousFen);
+    const after = placementArray(nextFen);
+    if (!before || !after) return;
+
+    const vacated = [];
+    const arrived = [];
+    for (let i = 0; i < 64; i += 1) {
+      if (before[i] && before[i] !== after[i]) vacated.push(i);
+      if (after[i] && after[i] !== before[i]) arrived.push(i);
+    }
+    const used = new Set();
+    const pairs = [];
+    const distance = (a, b) => Math.abs((a % 8) - (b % 8)) + Math.abs(Math.floor(a / 8) - Math.floor(b / 8));
+    const take = (target, accept) => {
+      const options = vacated.filter((v) => !used.has(v) && accept(before[v])).sort((x, y) => distance(x, target) - distance(y, target));
+      if (!options.length) return false;
+      used.add(options[0]);
+      pairs.push([options[0], target]);
+      return true;
+    };
+    const unmatched = [];
+    for (const a of arrived) if (!take(a, (piece) => piece === after[a])) unmatched.push(a);
+    // Promotion forwards (pawn becomes a piece) or backwards (piece becomes a pawn).
+    const appearing = unmatched.filter((a) => !take(a, (piece) => sameColor(piece, after[a]) && (piece.toUpperCase() === 'P') !== (after[a].toUpperCase() === 'P')));
+    const disappearing = vacated.filter((v) => !used.has(v));
+    if (!pairs.length && !appearing.length && !disappearing.length) return;
+
+    const squareNode = (index) => boardNode.querySelector(`[data-square="${squareName(index)}"]`);
+    const pieceNode = (index) => squareNode(index)?.querySelector('img, .glyph');
+    const floating = (index, content, z) => {
+      const cell = squareNode(index);
+      const node = h('div', { class: 'float', style: { left: `${cell.offsetLeft}px`, top: `${cell.offsetTop}px`, width: `${cell.offsetWidth}px`, height: `${cell.offsetHeight}px`, zIndex: String(z) } }, content);
+      boardNode.append(node);
+      return node;
+    };
+    const cleanups = [];
+    const easing = 'cubic-bezier(.2,.7,.3,1)';
+
+    for (const v of disappearing) {
+      const ghost = floating(v, pieceImage(before[v]), 2);
+      void getComputedStyle(ghost).opacity;
+      ghost.style.transition = `opacity ${duration}ms ease-out`;
+      requestAnimationFrame(() => { ghost.style.opacity = '0'; });
+      cleanups.push(() => ghost.remove());
+    }
+    for (const [from, to] of pairs) {
+      const real = pieceNode(to);
+      if (!real) continue;
+      const start = squareNode(from);
+      const end = squareNode(to);
+      const mover = floating(from, real.cloneNode(true), 4);
+      real.style.visibility = 'hidden';
+      void getComputedStyle(mover).transform;
+      mover.style.transition = `transform ${duration}ms ${easing}`;
+      // Two frames so the start position is painted before moving.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        mover.style.transform = `translate(${end.offsetLeft - start.offsetLeft}px, ${end.offsetTop - start.offsetTop}px)`;
+      }));
+      cleanups.push(() => { mover.remove(); real.style.visibility = ''; });
+    }
+    for (const a of appearing) {
+      const real = pieceNode(a);
+      if (!real) continue;
+      real.style.opacity = '0';
+      // Flush styles so the browser has seen opacity 0 before it changes;
+      // a freshly inserted node otherwise skips the transition.
+      void getComputedStyle(real).opacity;
+      real.style.transition = `opacity ${duration}ms ease-in`;
+      requestAnimationFrame(() => { real.style.opacity = '1'; });
+      cleanups.push(() => { real.style.transition = ''; real.style.opacity = ''; });
+    }
+    setTimeout(() => cleanups.forEach((fn) => fn()), duration + 60);
   }
 
   // ------------------------------------------------------------- composer
@@ -426,6 +556,17 @@
     });
   }
 
+  // Games a lesson used, resolved by the server against the games list:
+  // a link to the game while it exists, its remembered name otherwise.
+  function gameChips(lesson, { withFreeText = true } = {}) {
+    const resolved = lesson.gamesResolved || [];
+    const chips = resolved.map((game) => game.exists
+      ? h('a', { class: 'chip chip-game', href: `#/content/${game.id}`, onclick: (event) => event.stopPropagation(), title: t('openBoard') }, '♞ ', game.title)
+      : h('span', { class: 'chip chip-game removed', title: t('gameRemovedHint') }, '♞ ', game.title, h('span', { class: 'chip-note' }, ` · ${t('gameRemoved')}`)));
+    if (withFreeText && lesson.games) chips.push(h('span', { class: 'chip' }, lesson.games));
+    return chips.length ? h('div', { class: 'chips' }, chips) : null;
+  }
+
   function pageHead(title, sub, actions = []) {
     return h('div', { class: 'page-head' },
       h('div', null, h('h1', { class: 'page-title' }, title), sub ? h('div', { class: 'page-sub' }, sub) : null),
@@ -458,6 +599,6 @@
   window.UI = {
     h, append, clear, api, toast, modal, confirmDialog, field, input, textarea, select, enumSelect, checkbox, formValues, errorBox,
     scheduleEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, todayIso, addDays, weekdayOf,
-    initials, scheduleText, statusBadge, board, composeMessage, paymentDialog, pageHead, card, stat, empty, link, t
+    initials, scheduleText, statusBadge, board, animateBoard, gameChips, composeMessage, paymentDialog, pageHead, card, stat, empty, link, t, guard: guarded
   };
 })();

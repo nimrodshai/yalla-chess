@@ -2,6 +2,7 @@
 // so tests exercise HTTP behaviour rather than internals.
 
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,10 +10,21 @@ import { fileURLToPath } from 'node:url';
 
 const SERVER = fileURLToPath(new URL('../server.mjs', import.meta.url));
 
-let nextPort = 8300 + Math.floor(Math.random() * 400);
+// Ask the OS for a free port. Test files run in parallel processes, so a
+// random port from a fixed range could collide between them.
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
 
 export async function startServer(env = {}) {
-  const port = nextPort++;
+  const port = await freePort();
   const dataDir = await mkdtemp(join(tmpdir(), 'yalla-test-'));
 
   const child = spawn(process.execPath, [SERVER], {

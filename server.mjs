@@ -1663,7 +1663,7 @@ async function handleDashboard(req, res) {
     canManageUsers: canEditUsers,
     activeGroupId: visibleGroups[0]?.id || '',
     groups: visibleGroups,
-    users: canEditUsers ? users.map((user) => ({ ...serializeUser(user, getUserPhone(user)), billing: billing[getUserPhone(user)] || null })) : []
+    users: canEditUsers ? users.map((user) => ({ ...serializeUser(user, getUserPhone(user)), billing: billing[getUserPhone(user)] || [] })) : []
   }, getCorsHeaders(req));
 }
 
@@ -2188,7 +2188,8 @@ async function handleBusiness(req, res, url) {
     async body() {
       if (bodyCache !== undefined) return bodyCache;
       try {
-        const raw = await readRequestBody(req, 256 * 1024);
+        // PGN uploads can be a few megabytes of text.
+        const raw = await readRequestBody(req, 8 * 1024 * 1024);
         bodyCache = raw ? JSON.parse(raw) : {};
       } catch (error) {
         const err = new Error('Invalid JSON payload.');
