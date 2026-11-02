@@ -38,6 +38,26 @@ Both run in CI on every push and pull request, alongside a Docker image build
 and a guard job that fails the build if runtime data, a database or anything
 credential-shaped is ever committed.
 
+## Management app
+
+`/admin` is the business side of the portal, for teachers only: students
+with full profiles, groups with capacity and level, a weekly calendar with
+cancellations and reschedules, a lesson log that tracks what each student
+has learned, payments (monthly or per package, ILS/USD/EUR), prospects with
+trial scheduling and conversion, a content library (plans, exercises with a
+FEN board, famous games), monthly reports, WhatsApp message templates and a
+daily brief. Sign in to the portal as a teacher and open the "Management"
+pill, or go to `/admin` directly; it shares the session cookie.
+
+Data lives in extra tables in the same SQLite file (`lib/business-db.mjs`);
+the API is `/api/business/*` (`lib/business.mjs`), the front end is plain
+JavaScript under `admin/`. Group hours and the member list stay in the
+portal's `groups` table; a student with a portal phone is added to their
+group there automatically. In development the database is seeded with demo
+students, lessons, payments and prospects (`lib/business-seed.mjs`).
+Messages open WhatsApp with the text prefilled and are logged once sent;
+automatic sending, Google Calendar sync and the assistant are the next step.
+
 ## Configuration
 
 Every setting is an environment variable; see [.env.example](.env.example) for

@@ -35,6 +35,9 @@ import {
   updateSession
 } from './lib/db.mjs';
 import { withWriteLock } from './lib/mutex.mjs';
+import { isBusinessStoreEmpty, openBusinessStore } from './lib/business-db.mjs';
+import { billingByPhone, handleBusinessRequest } from './lib/business.mjs';
+import { seedBusinessDemo } from './lib/business-seed.mjs';
 
 const ROOT = process.cwd();
 const PORT = config.port;
@@ -1648,6 +1651,10 @@ async function handleDashboard(req, res) {
     .map((group) => serializeDashboardGroup(group, session))
     .sort((a, b) => new Date(a.nextLessonAt).getTime() - new Date(b.nextLessonAt).getTime());
 
+  // Teachers also see each account's payment state from the management
+  // app, so the portal never shows a bare "paid" with no month attached.
+  const billing = canEditUsers ? billingByPhone() : {};
+
   sendJson(res, 200, {
     ok: true,
     serverTime: new Date().toISOString(),
@@ -1656,7 +1663,7 @@ async function handleDashboard(req, res) {
     canManageUsers: canEditUsers,
     activeGroupId: visibleGroups[0]?.id || '',
     groups: visibleGroups,
-    users: canEditUsers ? users.map((user) => serializeUser(user, getUserPhone(user))) : []
+    users: canEditUsers ? users.map((user) => ({ ...serializeUser(user, getUserPhone(user)), billing: billing[getUserPhone(user)] || null })) : []
   }, getCorsHeaders(req));
 }
 
@@ -2091,6 +2098,116 @@ async function handleGroupZoomLinkUpdate(req, res, groupId) {
   }, getCorsHeaders(req));
 }
 
+// ------------------------------------------------------ business management
+//
+// Everything under /api/business/* is for teachers. Reads run directly;
+// writes go through the write lock because some of them also rewrite the
+// portal's users and groups collections.
+
+function removePhoneFromGroups(groups, phone, updatedBy) {
+  let changed = false;
+  for (const group of groups) {
+    const before = normalizeGroupMembers(group.members);
+    const after = before.filter((member) => !sameUserIdentifier(member, phone));
+    if (after.length !== before.length) {
+      group.members = after;
+      group.updatedAt = new Date().toISOString();
+      group.updatedBy = updatedBy;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+// Keeps the member portal consistent with a student record: a student with a
+// portal phone gets a sign-in account, and appears in exactly the group they
+// are assigned to.
+async function syncStudentPortal(student, previous, session) {
+  const nextPhone = normalizePhone(student?.userPhone || '');
+  const previousPhone = normalizePhone(previous?.userPhone || '');
+  const actor = session?.username || '';
+
+  if (nextPhone) {
+    const users = await loadUsers();
+    const index = findUserIndexByIdentifier(users, nextPhone);
+    if (index === -1) {
+      users.push(normalizeUserRecord({
+        role: 'student',
+        username: nextPhone,
+        phone: nextPhone,
+        firstName: student.firstName,
+        lastName: student.lastName,
+        contactEmail: student.parentEmail,
+        planName: student.lessonType === 'private' ? 'Private lessons' : 'Group lessons'
+      }));
+      await saveUsers(users);
+      logInfo('business.portal_account_created', { phone: nextPhone, student: student.id });
+    } else if (users[index].role === 'student' && (users[index].firstName !== student.firstName || users[index].lastName !== student.lastName)) {
+      users[index] = normalizeUserRecord({ ...users[index], firstName: student.firstName, lastName: student.lastName });
+      await saveUsers(users);
+    }
+  }
+
+  const groups = await loadGroups();
+  let changed = false;
+  if (previousPhone && previousPhone !== nextPhone) changed = removePhoneFromGroups(groups, previousPhone, actor) || changed;
+  if (nextPhone) {
+    const active = ['active', 'trial'].includes(student.status) && student.groupId;
+    for (const group of groups) {
+      const members = normalizeGroupMembers(group.members);
+      const has = members.some((member) => sameUserIdentifier(member, nextPhone));
+      const shouldHave = active && group.id === student.groupId;
+      if (has === shouldHave) continue;
+      group.members = shouldHave ? [...members, nextPhone] : members.filter((member) => !sameUserIdentifier(member, nextPhone));
+      group.updatedAt = new Date().toISOString();
+      group.updatedBy = actor;
+      changed = true;
+    }
+  }
+  if (changed) await saveGroups(groups);
+}
+
+async function handleBusiness(req, res, url) {
+  const session = getSessionFromRequest(req);
+  if (!session) {
+    sendJson(res, 401, { ok: false, error: 'Not authenticated.' }, getCorsHeaders(req));
+    return;
+  }
+
+  if (!canManageUsers(session)) {
+    sendJson(res, 403, { ok: false, error: 'Not authorized.' }, getCorsHeaders(req));
+    return;
+  }
+
+  const path = url.pathname.slice('/api/business'.length) || '/';
+  const method = req.method;
+  let bodyCache;
+  const ctx = {
+    session,
+    url,
+    async body() {
+      if (bodyCache !== undefined) return bodyCache;
+      try {
+        const raw = await readRequestBody(req, 256 * 1024);
+        bodyCache = raw ? JSON.parse(raw) : {};
+      } catch (error) {
+        const err = new Error('Invalid JSON payload.');
+        err.statusCode = error.statusCode || 400;
+        throw err;
+      }
+      if (!bodyCache || typeof bodyCache !== 'object' || Array.isArray(bodyCache)) bodyCache = {};
+      return bodyCache;
+    },
+    groups: () => loadGroups(),
+    saveGroups: (groups) => saveGroups(groups),
+    syncStudentPortal: (student, previous) => syncStudentPortal(student, previous, session)
+  };
+
+  const run = () => handleBusinessRequest(method, path, ctx);
+  const result = method === 'GET' ? await run() : await withWriteLock(run);
+  sendJson(res, result.status, result.payload, getCorsHeaders(req));
+}
+
 function handleLogout(req, res) {
   const cookies = parseCookies(req.headers.cookie || '');
   const sessionId = cookies[SESSION_COOKIE];
@@ -2318,6 +2435,11 @@ async function handleRequest(req, res) {
     return;
   }
 
+  if (url.pathname === '/api/business' || url.pathname.startsWith('/api/business/')) {
+    await handleBusiness(req, res, url);
+    return;
+  }
+
   if (url.pathname === '/api/me' && req.method === 'GET') {
     handleMe(req, res);
     return;
@@ -2382,6 +2504,12 @@ async function handleRequest(req, res) {
   }
 
   if (req.method === 'GET' || req.method === 'HEAD') {
+    // The management app lives in its own directory; /admin and /admin/
+    // both open it, and its assets resolve next to it.
+    if (url.pathname === '/admin' || url.pathname === '/admin/') {
+      await serveStatic(req, res, '/admin/index.html');
+      return;
+    }
     await serveStatic(req, res, url.pathname);
     return;
   }
@@ -2512,7 +2640,23 @@ if (problems.length) {
 }
 
 openDatabase();
+openBusinessStore();
 await seedDatabase();
+
+// Demo students, lessons, payments and prospects, so the management app has
+// something to show on a fresh development database. Never in production.
+if (!config.isProduction && isBusinessStoreEmpty()) {
+  const seeded = seedBusinessDemo({ groups: await loadGroups() });
+  if (seeded) {
+    logInfo('business.demo_seeded', { ...seeded, students: seeded.students.length });
+    // Demo students that have portal phones must appear in their groups.
+    const users = await loadUsers();
+    for (const student of seeded.students) {
+      if (student.userPhone) await syncStudentPortal(student, null, { username: 'seed' });
+    }
+    if (users.length !== (await loadUsers()).length) logInfo('business.demo_accounts_created');
+  }
+}
 
 server.listen(PORT, config.host, () => {
   logInfo('server.listening', {

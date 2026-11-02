@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "yalla-chess",
+      "runtimeExecutable": "/usr/bin/env",
+      "runtimeArgs": [
+        "NODE_ENV=development",
+        "TWILIO_ALLOW_CONSOLE_FALLBACK=true",
+        "ENABLE_DEBUG_ENDPOINTS=true",
+        "/Users/nimrodshai/.local/bin/node",
+        "server.mjs"
+      ],
+      "port": 8001,
+      "autoPort": true
+    }
+  ]
+}

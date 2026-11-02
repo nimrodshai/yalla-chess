@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>ניהול | Yalla-Chess</title>
+  <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/admin/admin.css">
+  <script>
+    (function () {
+      var lang = 'he';
+      try { lang = localStorage.getItem('yallaChessLanguage') || 'he'; } catch (e) {}
+      if (lang !== 'he' && lang !== 'en') lang = 'he';
+      document.documentElement.setAttribute('lang', lang);
+      document.documentElement.setAttribute('dir', lang === 'he' ? 'rtl' : 'ltr');
+      window.__initialLang = lang;
+    })();
+  </script>
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="topbar">
+      <button class="topbar-menu" id="menuToggle" type="button" aria-label="menu">
+        <span></span><span></span><span></span>
+      </button>
+      <a class="topbar-brand" href="/admin/">
+        <img src="/favicon-32.png" alt="" width="28" height="28">
+        <span class="topbar-brand-text">
+          <span class="topbar-kicker" data-i18n="brandKicker">Yalla-Chess</span>
+          <span class="topbar-title" data-i18n="brandTitle">ניהול בית הספר</span>
+        </span>
+      </a>
+      <div class="topbar-search">
+        <input id="globalSearch" type="search" autocomplete="off" data-i18n-placeholder="searchPlaceholder" placeholder="חיפוש תלמיד, הורה, טלפון…">
+        <div id="globalSearchResults" class="search-results" hidden></div>
+      </div>
+      <div class="topbar-actions">
+        <button class="topbar-pill" id="langToggle" type="button">EN</button>
+        <a class="topbar-pill" href="/" data-i18n="toPortal">לפורטל</a>
+        <span class="topbar-user" id="topbarUser"></span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <nav class="sidebar" id="sidebar" aria-label="sections">
+        <a class="nav-item" href="#/dashboard" data-route="dashboard"><span class="nav-icon">☀️</span><span data-i18n="navDashboard">דוח יומי</span></a>
+        <a class="nav-item" href="#/students" data-route="students"><span class="nav-icon">🧒</span><span data-i18n="navStudents">תלמידים</span></a>
+        <a class="nav-item" href="#/groups" data-route="groups"><span class="nav-icon">♟️</span><span data-i18n="navGroups">קבוצות</span></a>
+        <a class="nav-item" href="#/calendar" data-route="calendar"><span class="nav-icon">📅</span><span data-i18n="navCalendar">יומן</span></a>
+        <a class="nav-item" href="#/lessons" data-route="lessons"><span class="nav-icon">📝</span><span data-i18n="navLessons">סיכומי שיעורים</span></a>
+        <a class="nav-item" href="#/payments" data-route="payments"><span class="nav-icon">💳</span><span data-i18n="navPayments">תשלומים</span></a>
+        <a class="nav-item" href="#/leads" data-route="leads"><span class="nav-icon">📞</span><span data-i18n="navLeads">מתעניינים</span></a>
+        <a class="nav-item" href="#/content" data-route="content"><span class="nav-icon">📚</span><span data-i18n="navContent">תוכן ומערכי שיעור</span></a>
+        <a class="nav-item" href="#/reports" data-route="reports"><span class="nav-icon">📈</span><span data-i18n="navReports">דוחות</span></a>
+        <a class="nav-item" href="#/settings" data-route="settings"><span class="nav-icon">⚙️</span><span data-i18n="navSettings">הגדרות</span></a>
+      </nav>
+      <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+      <main class="main" id="main">
+        <div class="loading" data-i18n="loading">טוען…</div>
+      </main>
+    </div>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div id="toastRoot" class="toast-root"></div>
+
+  <script src="/admin/i18n.js"></script>
+  <script src="/admin/ui.js"></script>
+  <script src="/admin/views-dashboard.js"></script>
+  <script src="/admin/views-students.js"></script>
+  <script src="/admin/views-groups.js"></script>
+  <script src="/admin/views-calendar.js"></script>
+  <script src="/admin/views-lessons.js"></script>
+  <script src="/admin/views-payments.js"></script>
+  <script src="/admin/views-leads.js"></script>
+  <script src="/admin/views-content.js"></script>
+  <script src="/admin/views-reports.js"></script>
+  <script src="/admin/views-settings.js"></script>
+  <script src="/admin/app.js"></script>
+</body>
+</html>

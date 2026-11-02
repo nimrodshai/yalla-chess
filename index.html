@@ -596,6 +596,10 @@
       display: none;
     }
 
+    .portal-workspace-pill--link {
+      text-decoration: none;
+    }
+
     .portal-workspace-pill {
       border: 1px solid rgba(201, 168, 76, 0.18);
       background: rgba(255, 255, 255, 0.5);
@@ -921,6 +925,40 @@
     .portal-inspector-body {
       display: grid;
       gap: 18px;
+    }
+
+    .portal-user-billing {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 18px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: rgba(201, 168, 76, 0.08);
+      border: 1px solid rgba(201, 168, 76, 0.22);
+    }
+
+    .portal-user-billing-line {
+      font-weight: 600;
+      line-height: 1.5;
+    }
+
+    .portal-user-billing-line[data-tone="success"] { color: #4f6446; }
+    .portal-user-billing-line[data-tone="info"] { color: #8a5f10; }
+    .portal-user-billing-line[data-tone="error"] { color: #b4443a; }
+
+    .portal-user-billing-last {
+      font-weight: 400;
+      font-size: 13px;
+      color: var(--text-light);
+      margin-top: 2px;
+    }
+
+    .portal-user-billing-link {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--gold-dark);
+      text-decoration: underline;
+      justify-self: start;
     }
 
     .portal-inspector-subtitle {
@@ -6660,22 +6698,8 @@
             </select>
           </label>
           <label class="portal-manager-field">
-            <span class="portal-manager-field-label" id="portalCreatePaymentLabel">Payment</span>
-            <select id="portalCreatePayment" name="paymentStatus">
-              <option value="paid">Paid</option>
-              <option value="trial">Trial</option>
-              <option value="overdue">Overdue</option>
-              <option value="inactive">Inactive</option>
-              <option value="pending">Pending</option>
-            </select>
-          </label>
-          <label class="portal-manager-field">
             <span class="portal-manager-field-label" id="portalCreatePlanLabel">Plan</span>
             <input id="portalCreatePlan" name="planName" type="text" maxlength="80" placeholder="Monthly group plan" dir="auto">
-          </label>
-          <label class="portal-manager-field">
-            <span class="portal-manager-field-label" id="portalCreatePaidUntilLabel">Paid until</span>
-            <input id="portalCreatePaidUntil" name="paidUntil" type="date" dir="ltr">
           </label>
         </div>
         <label class="portal-manager-field portal-user-notes">
@@ -7821,6 +7845,7 @@
         managerUsersTitle: 'Manage users',
         managerUsersIntro: 'Track every account, payment state, and class assignment in one workspace.',
         workspaceGroupsTab: 'Groups',
+        workspaceManageTab: 'Management',
         workspaceUsersTab: 'Users',
         groupSearchPlaceholder: 'Search groups...',
         userSearchPlaceholder: 'Search users...',
@@ -7866,7 +7891,19 @@
         userRoleLabel: 'Role',
         accountRoleTeacher: 'Teacher account',
         accountRoleStudent: 'Student account',
-        userPaymentLabel: 'Payment',
+        billingSectionTitle: 'Payment status (from the management app)',
+        billingPaidUntil: 'Paid up. Next payment due {date}',
+        billingDueSoon: 'Payment due {date} (in {days} days)',
+        billingDueToday: 'Payment due today ({date})',
+        billingOverdue: 'Overdue: payment was due {date} ({days} days ago)',
+        billingLessonsLeft: 'Lesson package: {n} lessons left',
+        billingLessonsOut: 'Lesson package used up: a new package is due',
+        billingInactive: 'Student is {status} in the management app',
+        billingLastPayment: 'Last payment {date} ({amount})',
+        billingNoStudent: 'No student file in the management app yet, so no payment tracking for this account.',
+        billingUnlinked: 'A student file ({name}) has this phone as the parent number, but the account is not linked to it. Set the "portal sign-in phone" on the student file to show their payment status here.',
+        billingOpenStudent: 'Open student file',
+        billingCreateStudent: 'Create student file',
         userGroupsLabel: 'Groups',
         userPhoneLabel: 'Phone',
         userPhonePlaceholder: '+972501234567',
@@ -7874,7 +7911,6 @@
         userEmailPlaceholder: 'parent@example.com',
         userPlanLabel: 'Plan',
         userPlanPlaceholder: 'Monthly group plan',
-        userPaidUntilLabel: 'Paid until',
         userNotesLabel: 'Notes',
         userNotesPlaceholder: 'Anything useful before class',
         userSave: 'Save student',
@@ -7895,11 +7931,6 @@
         weeklyScheduleRemove: 'Remove weekly date',
         groupMenuDuplicate: 'Duplicate group',
         groupMenuDelete: 'Delete group',
-        paymentStatusPaid: 'Paid',
-        paymentStatusTrial: 'Trial',
-        paymentStatusOverdue: 'Overdue',
-        paymentStatusInactive: 'Inactive',
-        paymentStatusPending: 'Pending',
         manageGroup: 'Manage',
         closeGroup: 'Close',
         deleteGroup: 'Delete',
@@ -7976,6 +8007,7 @@
         managerUsersTitle: 'ניהול משתמשים',
         managerUsersIntro: 'רואים את כל החשבונות, מצב התשלום ושיוך הקבוצות במקום אחד.',
         workspaceGroupsTab: 'קבוצות',
+        workspaceManageTab: 'ניהול',
         workspaceUsersTab: 'משתמשים',
         groupSearchPlaceholder: 'חיפוש קבוצות...',
         userSearchPlaceholder: 'חיפוש משתמשים...',
@@ -8021,7 +8053,19 @@
         userRoleLabel: 'סוג',
         accountRoleTeacher: 'חשבון מורה',
         accountRoleStudent: 'חשבון תלמיד',
-        userPaymentLabel: 'תשלום',
+        billingSectionTitle: 'מצב תשלום (ממערכת הניהול)',
+        billingPaidUntil: 'שולם. התשלום הבא ב-{date}',
+        billingDueSoon: 'תשלום מגיע ב-{date} (בעוד {days} ימים)',
+        billingDueToday: 'תשלום מגיע היום ({date})',
+        billingOverdue: 'באיחור: התשלום היה אמור להגיע ב-{date} (לפני {days} ימים)',
+        billingLessonsLeft: 'חבילת שיעורים: נותרו {n} שיעורים',
+        billingLessonsOut: 'חבילת השיעורים נגמרה: צריך לרכוש חבילה חדשה',
+        billingInactive: 'התלמיד {status} במערכת הניהול',
+        billingLastPayment: 'תשלום אחרון {date} ({amount})',
+        billingNoStudent: 'עדיין אין תיק תלמיד במערכת הניהול, ולכן אין מעקב תשלומים לחשבון הזה.',
+        billingUnlinked: 'בתיק התלמיד של {name} המספר הזה רשום כטלפון ההורה, אבל החשבון לא מקושר לתיק. כדי להציג כאן את מצב התשלום, קבעו בתיק את "טלפון לכניסה לפורטל".',
+        billingOpenStudent: 'לתיק התלמיד',
+        billingCreateStudent: 'יצירת תיק תלמיד',
         userGroupsLabel: 'קבוצות',
         userPhoneLabel: 'טלפון',
         userPhonePlaceholder: '+972501234567',
@@ -8029,7 +8073,6 @@
         userEmailPlaceholder: 'parent@example.com',
         userPlanLabel: 'מסלול',
         userPlanPlaceholder: 'מסלול קבוצתי חודשי',
-        userPaidUntilLabel: 'בתוקף עד',
         userNotesLabel: 'הערות',
         userNotesPlaceholder: 'כל דבר שחשוב לדעת לפני השיעור',
         userSave: 'שמירת תלמיד',
@@ -8050,11 +8093,6 @@
         weeklyScheduleRemove: 'הסרת תאריך שבועי',
         groupMenuDuplicate: 'שכפול קבוצה',
         groupMenuDelete: 'מחיקת קבוצה',
-        paymentStatusPaid: 'שולם',
-        paymentStatusTrial: 'ניסיון',
-        paymentStatusOverdue: 'באיחור',
-        paymentStatusInactive: 'לא פעיל',
-        paymentStatusPending: 'ממתין',
         manageGroup: 'ניהול',
         closeGroup: 'סגירה',
         deleteGroup: 'מחיקה',
@@ -9045,36 +9083,6 @@
       return values.join(' · ');
     }
 
-    function getPortalUserPaymentLabel(user) {
-      const t = getPortalText();
-      const status = String(user?.paymentStatus || 'paid').trim().toLowerCase();
-      switch (status) {
-        case 'trial':
-          return t.paymentStatusTrial;
-        case 'overdue':
-          return t.paymentStatusOverdue;
-        case 'inactive':
-          return t.paymentStatusInactive;
-        case 'pending':
-          return t.paymentStatusPending;
-        default:
-          return t.paymentStatusPaid;
-      }
-    }
-
-    function getPortalUserPaymentTone(user) {
-      const status = String(user?.paymentStatus || 'paid').trim().toLowerCase();
-      if (status === 'trial' || status === 'pending') {
-        return 'info';
-      }
-
-      if (status === 'overdue' || status === 'inactive') {
-        return 'error';
-      }
-
-      return 'success';
-    }
-
     function formatPortalDateOnly(value) {
       const date = new Date(`${String(value || '').trim()}T12:00:00`);
       if (Number.isNaN(date.getTime())) {
@@ -9088,18 +9096,88 @@
       }).format(date);
     }
 
-    function formatPortalUserPaymentSummary(user) {
-      const pieces = [getPortalUserPaymentLabel(user)];
-      if (user?.planName) {
-        pieces.push(user.planName);
-      }
-      if (user?.paidUntil) {
-        const paidUntil = formatPortalDateOnly(user.paidUntil);
-        if (paidUntil) {
-          pieces.push(`${getPortalText().userPaidUntilLabel} ${paidUntil}`);
+    // Clear payment line from the management app's records: which date the
+    // next payment is due, or how many package lessons remain, instead of a
+    // bare "paid" that says nothing about which month.
+    function renderPortalUserBilling(user) {
+      const t = getPortalText();
+      const section = document.createElement('section');
+      section.className = 'portal-user-billing';
+      const title = document.createElement('div');
+      title.className = 'portal-inspector-subtitle';
+      title.textContent = t.billingSectionTitle;
+      section.appendChild(title);
+
+      const billing = user?.billing || null;
+      const line = document.createElement('div');
+      line.className = 'portal-user-billing-line';
+      const link = document.createElement('a');
+      link.className = 'portal-user-billing-link';
+      link.target = '_blank';
+      link.rel = 'noopener';
+
+      if (billing && !billing.linked) {
+        // A student file shares this number but is not linked to the account.
+        line.dataset.tone = 'info';
+        line.textContent = t.billingUnlinked.replace('{name}', billing.studentName);
+        link.href = `/admin/#/students/${encodeURIComponent(billing.studentId)}`;
+        link.textContent = `${t.billingOpenStudent}: ${billing.studentName}`;
+      } else if (!billing) {
+        line.dataset.tone = 'info';
+        line.textContent = t.billingNoStudent;
+        const params = new URLSearchParams({ new: '1', firstName: user?.firstName || '', lastName: user?.lastName || '', userPhone: user?.phone || '', parentEmail: user?.contactEmail || '' });
+        link.href = `/admin/#/students?${params.toString()}`;
+        link.textContent = t.billingCreateStudent;
+      } else {
+        const date = billing.nextPaymentAt ? formatPortalDateOnly(billing.nextPaymentAt) : '';
+        const days = Math.abs(Number(billing.daysUntilDue || 0));
+        let text = '';
+        let tone = 'success';
+        if (billing.state === 'inactive') {
+          text = t.billingInactive.replace('{status}', getPortalBusinessStatusLabel(billing.status));
+          tone = 'info';
+        } else if (billing.billingType === 'monthly') {
+          if (billing.state === 'overdue') { text = t.billingOverdue.replace('{date}', date).replace('{days}', String(days)); tone = 'error'; }
+          else if (billing.state === 'due_soon' && days === 0) { text = t.billingDueToday.replace('{date}', date); tone = 'info'; }
+          else if (billing.state === 'due_soon') { text = t.billingDueSoon.replace('{date}', date).replace('{days}', String(days)); tone = 'info'; }
+          else { text = t.billingPaidUntil.replace('{date}', date); }
+        } else {
+          const left = Number(billing.lessonsRemaining || 0);
+          if (left <= 0) { text = t.billingLessonsOut; tone = 'error'; }
+          else { text = t.billingLessonsLeft.replace('{n}', String(left)); tone = left <= 2 ? 'info' : 'success'; }
         }
+        line.dataset.tone = tone;
+        line.textContent = text;
+        if (billing.lastPaymentAt) {
+          const last = document.createElement('div');
+          last.className = 'portal-user-billing-last';
+          last.textContent = t.billingLastPayment.replace('{date}', formatPortalDateOnly(billing.lastPaymentAt)).replace('{amount}', formatPortalMoney(billing.lastPaymentAmount, billing.currency));
+          line.appendChild(last);
+        }
+        link.href = `/admin/#/students/${encodeURIComponent(billing.studentId)}`;
+        link.textContent = `${t.billingOpenStudent}: ${billing.studentName}`;
       }
-      return pieces.filter(Boolean).join(' · ');
+
+      section.appendChild(line);
+      section.appendChild(link);
+      return section;
+    }
+
+    function getPortalBusinessStatusLabel(status) {
+      const he = currentLang === 'he';
+      const labels = {
+        trial: he ? 'בניסיון' : 'on trial',
+        active: he ? 'פעיל' : 'active',
+        waitlist: he ? 'ברשימת המתנה' : 'on the waitlist',
+        inactive: he ? 'לא פעיל' : 'inactive'
+      };
+      return labels[status] || status || '';
+    }
+
+    function formatPortalMoney(amount, currency) {
+      if (amount === null || amount === undefined || amount === '') return '';
+      const symbol = currency === 'USD' ? '$' : currency === 'EUR' ? '€' : '₪';
+      return `\u200e${symbol}${Number(amount).toLocaleString('en-US', { maximumFractionDigits: 2 })}\u200e`;
     }
 
     function getPortalUserGroupNames(user) {
@@ -9942,6 +10020,18 @@
         });
         container.appendChild(button);
       });
+
+      // The business-management app (students, payments, prospects, reports)
+      // lives at /admin and shares this session.
+      const manageLink = document.createElement('a');
+      manageLink.className = 'portal-workspace-pill portal-workspace-pill--link';
+      manageLink.href = '/admin/';
+      manageLink.innerHTML = '<span class="portal-workspace-pill-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 19V5"></path><path d="M9 19v-8"></path><path d="M14 19v-5"></path><path d="M19 19V9"></path></svg></span>';
+      const manageLabel = document.createElement('span');
+      manageLabel.className = 'portal-workspace-pill-label';
+      manageLabel.textContent = t.workspaceManageTab || 'Management';
+      manageLink.appendChild(manageLabel);
+      container.appendChild(manageLink);
     }
 
     function getActivePortalGroup() {
@@ -11024,39 +11114,19 @@
         roleInput.appendChild(option);
       });
 
-      const paymentInput = document.createElement('select');
-      [
-        ['paid', t.paymentStatusPaid],
-        ['trial', t.paymentStatusTrial],
-        ['overdue', t.paymentStatusOverdue],
-        ['inactive', t.paymentStatusInactive],
-        ['pending', t.paymentStatusPending]
-      ].forEach(function(optionData) {
-        const option = document.createElement('option');
-        option.value = optionData[0];
-        option.textContent = optionData[1];
-        if (String(user.paymentStatus || 'paid').trim().toLowerCase() === optionData[0]) {
-          option.selected = true;
-        }
-        paymentInput.appendChild(option);
-      });
-
       const planInput = document.createElement('input');
       planInput.type = 'text';
       planInput.value = user.planName || '';
       planInput.placeholder = t.userPlanPlaceholder || t.userPlanLabel;
       planInput.setAttribute('dir', 'auto');
 
-      const paidUntilInput = document.createElement('input');
-      paidUntilInput.type = 'date';
-      paidUntilInput.value = user.paidUntil || '';
-      paidUntilInput.setAttribute('dir', 'ltr');
-
       const notesInput = document.createElement('textarea');
       notesInput.rows = 4;
       notesInput.value = user.notes || '';
       notesInput.placeholder = t.userNotesPlaceholder || t.userNotesLabel;
       notesInput.setAttribute('dir', 'auto');
+
+      const billingSection = renderPortalUserBilling(user);
 
       const fieldsGrid = document.createElement('div');
       fieldsGrid.className = 'portal-user-grid';
@@ -11065,9 +11135,7 @@
       fieldsGrid.appendChild(createField(t.userPhoneLabel, phoneInput));
       fieldsGrid.appendChild(createField(t.userEmailLabel, emailInput));
       fieldsGrid.appendChild(createField(t.userRoleLabel, roleInput));
-      fieldsGrid.appendChild(createField(t.userPaymentLabel, paymentInput));
       fieldsGrid.appendChild(createField(t.userPlanLabel, planInput));
-      fieldsGrid.appendChild(createField(t.userPaidUntilLabel, paidUntilInput));
 
       const notesField = createField(t.userNotesLabel, notesInput);
       notesField.classList.add('portal-user-notes');
@@ -11112,9 +11180,7 @@
           phone: phoneInput.value,
           contactEmail: emailInput.value,
           role: roleInput.value,
-          paymentStatus: paymentInput.value,
           planName: planInput.value,
-          paidUntil: paidUntilInput.value,
           notes: notesInput.value
         };
       }
@@ -11185,7 +11251,7 @@
         });
       });
 
-      [roleInput, paymentInput, paidUntilInput].forEach(function(input) {
+      [roleInput].forEach(function(input) {
         input.addEventListener('change', function() {
           setUserFormDirty(true);
           syncUserDraftPreview();
@@ -11198,6 +11264,7 @@
         queueUserAutoSave(0);
       });
 
+      form.appendChild(billingSection);
       form.appendChild(fieldsGrid);
       form.appendChild(notesField);
       form.appendChild(groupsSection);
@@ -11567,9 +11634,7 @@
       document.getElementById('portalCreatePhoneLabel').textContent = t.userPhoneLabel;
       document.getElementById('portalCreateEmailLabel').textContent = t.userEmailLabel;
       document.getElementById('portalCreateRoleLabel').textContent = t.userRoleLabel;
-      document.getElementById('portalCreatePaymentLabel').textContent = t.userPaymentLabel;
       document.getElementById('portalCreatePlanLabel').textContent = t.userPlanLabel;
-      document.getElementById('portalCreatePaidUntilLabel').textContent = t.userPaidUntilLabel;
       document.getElementById('portalCreateNotesLabel').textContent = t.userNotesLabel;
       document.getElementById('portalUserCreateCancel').textContent = t.createUserCancel || 'Cancel';
       document.getElementById('portalUserCreateSave').textContent = portalUserCreateBusy ? t.savingUser : t.userSave;
@@ -11579,7 +11644,6 @@
       const phone = document.getElementById('portalCreatePhone');
       const email = document.getElementById('portalCreateEmail');
       const role = document.getElementById('portalCreateRole');
-      const payment = document.getElementById('portalCreatePayment');
       const plan = document.getElementById('portalCreatePlan');
       const notes = document.getElementById('portalCreateNotes');
 
@@ -11593,13 +11657,6 @@
       setPortalSelectOptions(role, [
         ['student', t.accountRoleStudent || settingsText.accountRoleStudent || 'Student account'],
         ['teacher', t.accountRoleTeacher || settingsText.accountRoleTeacher || 'Teacher account']
-      ]);
-      setPortalSelectOptions(payment, [
-        ['paid', t.paymentStatusPaid],
-        ['trial', t.paymentStatusTrial],
-        ['overdue', t.paymentStatusOverdue],
-        ['inactive', t.paymentStatusInactive],
-        ['pending', t.paymentStatusPending]
       ]);
 
       Array.from(document.querySelectorAll('#portalUserCreateForm input, #portalUserCreateForm select, #portalUserCreateForm textarea, #portalUserCreateForm button')).forEach(function(control) {
@@ -11632,9 +11689,7 @@
       }
 
       const role = document.getElementById('portalCreateRole');
-      const payment = document.getElementById('portalCreatePayment');
       if (role) role.value = 'student';
-      if (payment) payment.value = 'paid';
       setPortalUserCreateStatus('', '');
 
       const overlay = document.getElementById('portalUserCreateOverlay');
@@ -11702,9 +11757,7 @@
         phone,
         contactEmail,
         role: document.getElementById('portalCreateRole')?.value || 'student',
-        paymentStatus: document.getElementById('portalCreatePayment')?.value || 'paid',
         planName: document.getElementById('portalCreatePlan')?.value || '',
-        paidUntil: document.getElementById('portalCreatePaidUntil')?.value || '',
         notes: document.getElementById('portalCreateNotes')?.value || ''
       }, {
         button: document.getElementById('portalUserCreateSave'),
@@ -13274,9 +13327,7 @@
             lastName: fullName.lastName || payload.lastName || '',
             contactEmail,
             role,
-            paymentStatus: payload.paymentStatus,
             planName: payload.planName,
-            paidUntil: payload.paidUntil,
             notes: payload.notes
           })
         });
@@ -13384,9 +13435,7 @@
             lastName: String(payload.lastName || '').trim(),
             contactEmail,
             role: payload.role === 'teacher' ? 'teacher' : 'student',
-            paymentStatus: payload.paymentStatus,
             planName: payload.planName,
-            paidUntil: payload.paidUntil,
             notes: payload.notes
           })
         });
