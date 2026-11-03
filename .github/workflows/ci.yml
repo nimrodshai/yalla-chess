@@ -203,7 +203,7 @@ jobs:
       - name: First boot writes to an empty bucket
         run: |
           # No local database and no replica: the entrypoint must log that and
-          # the server must then create the schema and the bootstrap teacher.
+          # the server must then create the schema and the bootstrap admin.
           docker run -d --name yalla-a $APP_ENV \
             -e BOOTSTRAP_TEACHER_PHONE=+972500000001 \
             yalla-chess:ci
@@ -230,7 +230,7 @@ jobs:
       - name: Second boot restores from the replica
         run: |
           # Fresh container, fresh filesystem, and no bootstrap phone: the only
-          # way a teacher can exist is if the restore brought one back.
+          # way an admin can exist is if the restore brought one back.
           docker run -d --name yalla-b $APP_ENV yalla-chess:ci
           for attempt in $(seq 1 30); do
             curl -fsS http://127.0.0.1:8001/healthz > /dev/null 2>&1 && break
@@ -239,11 +239,11 @@ jobs:
           done
           docker logs yalla-b 2>&1 | grep -q 'litestream.restore.done' \
             || { echo "::error::Second boot did not restore from the replica."; docker logs yalla-b; exit 1; }
-          teachers=$(docker exec yalla-b node -e "
+          admins=$(docker exec yalla-b node -e "
             const { DatabaseSync } = require('node:sqlite');
             const db = new DatabaseSync('/data/yalla-chess.db', { readOnly: true });
-            console.log(db.prepare(\"SELECT count(*) AS n FROM users WHERE role = 'teacher'\").get().n);
+            console.log(db.prepare(\"SELECT count(*) AS n FROM users WHERE role = 'admin'\").get().n);
           ")
-          echo "Teachers after restore: $teachers"
-          [ "$teachers" = "1" ] || { echo "::error::Restored database does not contain the bootstrap teacher."; docker logs yalla-b; exit 1; }
+          echo "Admins after restore: $admins"
+          [ "$admins" = "1" ] || { echo "::error::Restored database does not contain the bootstrap admin."; docker logs yalla-b; exit 1; }
           docker stop --timeout 20 yalla-b
