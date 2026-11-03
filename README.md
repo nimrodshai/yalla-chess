@@ -127,8 +127,13 @@ and spin-down, so the database is kept alive two ways:
   external scheduler is used rather than GitHub Actions because GitHub pauses
   scheduled workflows after 60 days without a commit.
 
-Hard kills lose at most the last second of writes. Reads never touch the WAL,
-so an idle site makes no B2 API calls at all.
+Hard kills lose at most the last second of writes. Even an idle site makes a
+few hundred B2 listing calls a day, because Litestream's cleanup and compaction
+loops list the bucket on a timer; `deploy/litestream.yml` stretches those
+timers to stay well under B2's free daily cap of 2,500 Class C calls. If that
+cap is ever hit, every call fails with "Transaction cap exceeded", including
+the restore at boot, so the service cannot start until the cap resets at
+midnight UTC or is raised under **Caps & Alerts** in Backblaze.
 
 1. Backblaze: create an account (no card needed) and a **private** bucket in
    the EU, e.g. `yalla-chess-db`. Note the bucket's S3 endpoint from its

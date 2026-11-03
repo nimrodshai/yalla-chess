@@ -20,6 +20,22 @@ snapshot:
   interval: 6h
   retention: 72h
 
+# Listing the bucket is what the B2 free tier rations: 2,500 Class C calls a
+# day, after which every call, including the restore at boot, fails with
+# "Transaction cap exceeded" and the service cannot start. Litestream's
+# background loops list the bucket on a timer whether or not anything changed,
+# and the defaults (an L0 cleanup check every 15s that lists twice, an L1
+# compaction every 30s) come to well over 10,000 lists a day on an idle site
+# that the keep-alive ping never lets sleep. These intervals bring that to a
+# few hundred. Durability is unaffected: every write is still uploaded within
+# sync-interval, and uploads are Class A calls, which are free. The cost is
+# only that a restore fetches more small files instead of a few compacted ones.
+l0-retention-check-interval: 1h
+levels:
+  - interval: 15m
+  - interval: 3h
+  - interval: 24h
+
 dbs:
   - path: ${DATA_DIR}/${DB_FILE}
     # Litestream performs checkpoints itself after shipping frames. The
@@ -34,5 +50,5 @@ dbs:
       endpoint: ${LITESTREAM_ENDPOINT}
       force-path-style: true
       # Frames are uploaded at most this often, and only when something changed.
-      # Reads never touch the WAL, so an idle portal costs zero API calls.
+      # The listing loops above run regardless; see the comment on levels.
       sync-interval: 1s
