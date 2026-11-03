@@ -57,7 +57,11 @@
   async function groupDetail(id, refresh) {
     const group = window.APP.groups.find((entry) => entry.id === id);
     if (!group) return h('div', { class: 'card' }, empty(t('none')));
-    const [lessonsResponse, studentsResponse, formerResponse] = await Promise.all([api(`/lessons?groupId=${id}&limit=100`), api('/students'), api('/students?status=inactive')]);
+    const today = window.UI.todayIso(window.SETTINGS.businessTimezone);
+    const [lessonsResponse, studentsResponse, formerResponse, calendar] = await Promise.all([api(`/lessons?groupId=${id}&limit=100`), api('/students'), api('/students?status=inactive'), api(`/calendar?from=${today}&to=${window.UI.addDays(today, 14)}`)]);
+    // The next lesson still to teach, with the game suggested for it.
+    const now = new Date().toISOString();
+    const nextLesson = calendar.occurrences.find((occurrence) => occurrence.groupId === id && occurrence.kind !== 'cancel' && !occurrence.loggedLessonId && occurrence.endAt > now);
     const profile = group.profile;
     const admin = window.APP.isAdmin;
     const unassigned = studentsResponse.students.filter((student) => student.groupId !== id && student.status !== 'inactive');
@@ -129,6 +133,7 @@
     return h('div', null,
       h('div', { class: 'breadcrumb' }, link('#/groups', t('navGroups')), '›', group.name),
       head,
+      nextLesson ? h('div', { style: { marginTop: '16px' } }, window.UI.nextLesson(nextLesson, { onSaved: refresh })) : null,
       // Short summary cards share a row and stretch to the same height; the
       // two lists below grow independently but start on the same line.
       h('div', { class: 'grid grid-2', style: { marginTop: '16px' } }, profileCard, topics),

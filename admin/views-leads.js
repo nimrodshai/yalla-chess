@@ -27,6 +27,17 @@
     after();
   }
 
+  // The group the server suggests for this prospect, or why there is none.
+  function suggestionCell(suggestion) {
+    const group = suggestion?.group;
+    if (!group) return h('span', { class: 'muted small' }, t(`suggestion.${suggestion?.reason || 'none_fits'}`));
+    const name = window.I18N.lang === 'he' ? group.name : group.nameEn || group.name;
+    return h('div', null,
+      h('a', { class: 'link strong', href: `#/groups/${group.id}`, onclick: (event) => event.stopPropagation() }, name),
+      h('div', { class: 'muted tiny' }, t('seatsFreeCount', { n: group.seatsFree }))
+    );
+  }
+
   async function leadList(refresh) {
     const leads = (await api('/leads')).leads.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const addLead = () => leadForm({ onSaved: (lead) => { location.hash = `#/leads/${lead.id}`; } });
@@ -37,12 +48,13 @@
         h('button', { class: 'btn btn-primary', type: 'button', onclick: addLead }, `+ ${t('newLead')}`)
       ]),
       h('div', { class: 'card' }, leads.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
-        h('thead', null, h('tr', null, h('th', null, t('childName')), h('th', null, t('parent')), h('th', null, t('age')), h('th', null, t('preference')), h('th', null, t('date')), h('th', null, ''))),
+        h('thead', null, h('tr', null, h('th', null, t('childName')), h('th', null, t('parent')), h('th', null, t('age')), h('th', null, t('preference')), h('th', null, t('suggestedGroup')), h('th', null, t('date')), h('th', null, ''))),
         h('tbody', null, leads.map((lead) => h('tr', { class: 'clickable', onclick: () => { location.hash = `#/leads/${lead.id}`; } },
           h('td', { class: 'strong' }, lead.childName || '—'),
           h('td', null, lead.parentName, h('div', { class: 'muted tiny', dir: 'ltr' }, lead.parentPhone)),
           h('td', null, lead.childAge ?? ''),
           h('td', null, t(`pref.${lead.preference}`)),
+          h('td', null, suggestionCell(lead.suggestedGroup)),
           h('td', { class: 'muted small' }, fmtDate(lead.createdAt.slice(0, 10))),
           h('td', null, h('div', { class: 'row', style: { gap: '6px', justifyContent: 'flex-end' } },
             lead.parentPhone ? h('button', { class: 'btn btn-xs btn-wa', type: 'button', onclick: stop(() => composeMessage({ kind: 'followup', leadId: lead.id, name: lead.parentName, onSent: refresh })) }, t('whatsapp')) : null,

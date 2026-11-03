@@ -125,7 +125,7 @@
         detail(t('reminders'), student.remindersEnabled ? `${t('yes')}${student.reminderLeadHours !== null ? ` · ${student.reminderLeadHours}h` : ''}` : t('no')),
         detail(t('userPhone'), student.userPhone)
       ),
-      data.nextLessonAt ? h('div', { class: 'alert alert-info' }, t('nextLessonIn', { when: fmtDateTime(data.nextLessonAt, tz) }), student.timezone && student.timezone !== tz ? h('span', { class: 'small' }, ` (${t('inParentTime', { time: fmtDateTime(data.nextLessonAt, student.timezone) })})`) : null) : null
+      window.UI.nextLesson(data.nextLesson, { timezone: student.timezone, onSaved: refresh })
     ));
 
     const learning = card(t('chess'), h('div', { class: 'stack' },

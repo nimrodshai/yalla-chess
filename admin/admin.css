@@ -231,6 +231,10 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .table td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 .table tr.clickable { cursor: pointer; }
 .table tr.clickable:hover td { background: var(--gold-soft); }
+/* A link inside a row goes somewhere other than the row, so it shows its own box on hover */
+.table a.link { display: inline-block; padding: 2px 8px; margin: -2px -8px; border: 1.5px solid transparent; border-radius: 8px; transition: border-color .12s, background .12s; }
+.table a.link:hover, .table a.link:focus-visible { border-color: var(--gold); background: var(--paper); outline: none; }
+.table a.link:active { border-color: var(--gold-dark); }
 .table td.num, .table th.num { text-align: end; font-variant-numeric: tabular-nums; }
 .table td.center, .table th.center { text-align: center; }
 .table td.center .chips { justify-content: center; }
@@ -271,7 +275,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .form-section { grid-column: 1 / -1; font-weight: 700; color: var(--ink); font-size: 14px; margin-top: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
 .form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .modal .form > .form-actions { margin-top: 4px; padding-top: 16px; border-top: 1px solid var(--line); }
-.form-error { grid-column: 1 / -1; color: var(--danger); background: var(--danger-soft); padding: 8px 12px; border-radius: 10px; font-size: 13px; }
+.form-error { scroll-margin: 16px; grid-column: 1 / -1; color: var(--danger); background: var(--danger-soft); padding: 8px 12px; border-radius: 10px; font-size: 13px; }
 .weekday-picker { display: flex; gap: 4px; flex-wrap: wrap; }
 .weekday-picker button { height: 32px; min-width: 36px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--paper); font-size: 13px; font-weight: 600; }
 .weekday-picker button.active { background: var(--ink); color: var(--cream); border-color: var(--ink); }
@@ -496,6 +500,7 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
 .alert-danger { background: var(--danger-soft); color: var(--danger); }
 .alert-warn { background: var(--warn-soft); color: #8a5f10; }
 .alert-info { background: var(--info-soft); color: var(--info); }
+.next-lesson { justify-content: space-between; }
 .alert-sage { background: var(--sage-soft); color: #4f6446; }
 
 .breadcrumb { font-size: 13px; color: var(--text-light); margin-bottom: 8px; display: flex; gap: 6px; align-items: center; }

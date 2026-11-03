@@ -95,6 +95,15 @@
     );
     autosave(generalForm, status, (element) => ({ [element.name]: element.value }));
 
+    // What counts as close when a group is suggested for a prospect.
+    const matchingStatus = h('span', { class: 'autosave-status', 'aria-live': 'polite' });
+    const matchingForm = h('form', { class: 'form' },
+      field(t('matchAgeYears'), h('input', { name: 'matchAgeYears', type: 'number', min: 0, max: 20, value: settings.matchAgeYears }), { hint: t('matchAgeYearsHint') }),
+      field(t('matchLevelSteps'), h('input', { name: 'matchLevelSteps', type: 'number', min: 0, max: window.VOCAB.levels.length - 1, value: settings.matchLevelSteps }), { hint: t('matchLevelStepsHint') }),
+      field(t('matchRatingPoints'), h('input', { name: 'matchRatingPoints', type: 'number', min: 0, max: 3000, step: 10, value: settings.matchRatingPoints }), { hint: t('matchRatingPointsHint') })
+    );
+    autosave(matchingForm, matchingStatus, (element) => ({ [element.name]: element.value }));
+
     const templatesForm = h('form', { class: 'stack' },
       window.VOCAB.messageKinds.map((kind) => h('div', { class: 'card', style: { padding: '14px 16px' } },
         h('div', { class: 'card-title', style: { marginBottom: '8px' } }, t(`msg.${kind}`)),
@@ -113,6 +122,7 @@
       window.UI.pageHead(t('settingsTitle'), t('settingsSub')),
       h('div', { class: 'stack' },
         card(t('general'), generalForm, { actions: [status] }),
+        card(t('matchingTitle'), matchingForm, { sub: t('matchingSub'), actions: [matchingStatus] }),
         card(t('templates'), templatesForm, { sub: t('templatesSub'), actions: [templatesStatus] }),
         card(t('portalAccounts'), h('p', { class: 'small' }, t('portalAccountsNote'))),
         card(t('integrations'), h('p', { class: 'small' }, t('integrationsNote')))

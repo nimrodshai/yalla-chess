@@ -72,7 +72,13 @@
       init.body = JSON.stringify(options.body);
     }
     // `root` reaches the portal's own API (e.g. creating a group) instead of /api/business.
-    const response = await fetch(`${options.root ?? '/api/business'}${path}`, init);
+    let response;
+    try {
+      response = await fetch(`${options.root ?? '/api/business'}${path}`, init);
+    } catch (cause) {
+      // The server could not be reached at all: offline, or it is down.
+      throw new Error(t('errorNetwork'));
+    }
     let data = {};
     try { data = await response.json(); } catch (error) { data = {}; }
     if (response.status === 401) {
@@ -388,8 +394,12 @@
     return values;
   }
 
+  // Forms put the error at their top, which in a long form is out of view
+  // of the save button, so bring it into view once it is placed.
   function errorBox(message) {
-    return h('div', { class: 'form-error' }, message);
+    const box = h('div', { class: 'form-error', role: 'alert' }, message);
+    requestAnimationFrame(() => { if (box.isConnected) box.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); });
+    return box;
   }
 
   // Weekday + time + duration rows, used for private schedules.
@@ -775,6 +785,20 @@
       game.seenBy ? h('span', { class: 'muted' }, ` · ${t('suggestedGameSeen', { n: game.seenBy, of: game.of })}`) : null);
   }
 
+  // The next lesson on a student's or a group's page: when it is (and in
+  // the family's own zone when that differs), the game suggested for it,
+  // and a button to log it with that game offered.
+  function nextLesson(occurrence, { timezone = '', onSaved } = {}) {
+    if (!occurrence) return null;
+    const tz = window.SETTINGS.businessTimezone;
+    return h('div', { class: 'alert alert-info next-lesson' },
+      h('div', { class: 'list-main' },
+        h('div', null, t('nextLessonIn', { when: fmtDateTime(occurrence.startAt, tz) }),
+          timezone && timezone !== tz ? h('span', { class: 'small' }, ` (${t('inParentTime', { time: fmtDateTime(occurrence.startAt, timezone) })})`) : null),
+        suggestedGame(occurrence)),
+      h('button', { class: 'btn btn-sm', type: 'button', onclick: () => window.VIEWS.logLesson({ occurrence: occurrence.key, slot: occurrence, durationMinutes: occurrence.durationMinutes, suggestedGame: occurrence.suggestedGame, onSaved }) }, t('logThisLesson')));
+  }
+
   function gameChips(lesson, { withFreeText = true } = {}) {
     const resolved = lesson.gamesResolved || [];
     const chips = resolved.map((game) => game.exists
@@ -862,6 +886,6 @@
   window.UI = {
     h, append, clear, api, toast, modal, confirmDialog, field, input, phoneInput, fmtPhone, timezoneSelect, textarea, select, enumSelect, teacherSelect, checkbox, formValues, errorBox,
     scheduleEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, todayIso, addDays, weekdayOf,
-    initials, scheduleText, ratingsText, statusBadge, board, animateBoard, gameChips, suggestedGame, composeMessage, paymentDialog, pageHead, card, stat, empty, link, masonry, t, guard: guarded
+    initials, scheduleText, ratingsText, statusBadge, board, animateBoard, gameChips, suggestedGame, nextLesson, composeMessage, paymentDialog, pageHead, card, stat, empty, link, masonry, t, guard: guarded
   };
 })();

@@ -535,6 +535,45 @@ describe('business API', () => {
     assert.ok(next.suggestedGame, 'an upcoming lesson suggests a game');
     assert.equal(next.suggestedGame.seenBy, 0);
     assert.notEqual(next.suggestedGame.id, game.id);
+
+    // A student's page shows the next lesson with its suggested game too,
+    // for a group lesson and for a private student on their own.
+    const moverNext = (await get(`/students/${mover.id}`)).nextLesson;
+    assert.ok(moverNext.suggestedGame, 'a group student\'s next lesson suggests a game');
+    assert.notEqual(moverNext.suggestedGame.id, game.id, 'not one they have seen');
+    const loner = (await get('/students')).students.find((entry) => entry.lessonType === 'private' && entry.privateSchedule.length);
+    const lonerNext = (await get(`/students/${loner.id}`)).nextLesson;
+    assert.equal(lonerNext.kind, 'private');
+    assert.ok(lonerNext.suggestedGame, 'a private student\'s next lesson suggests a game');
+    assert.equal(lonerNext.suggestedGame.of, 1);
+  });
+
+  it('counts a logged lesson only for its own slot', async () => {
+    const get = async (path) => (await server.fetch(`/api/business${path}`, { headers: { Cookie: teacher.cookie } })).json();
+    const week = async () => (await get('/calendar?from=2026-11-22&to=2026-11-28')).occurrences;
+    const groupSlot = (await week()).find((occurrence) => occurrence.kind === 'group' && !occurrence.loggedLessonId);
+    const privateSlot = (await week()).find((occurrence) => occurrence.kind === 'private' && !occurrence.loggedLessonId);
+    assert.ok(groupSlot && privateSlot, 'demo data has group and private lessons that week');
+
+    // A group lesson logged at another time that day leaves the scheduled one open.
+    await server.fetch('/api/business/lessons', json(teacher.cookie, { date: groupSlot.date, startTime: groupSlot.startTime === '06:00' ? '07:00' : '06:00', kind: 'group', groupId: groupSlot.groupId, topic: 'Extra' }));
+    // So does a group lesson for a private student's group on their private day.
+    const loner = (await get(`/students/${privateSlot.studentIds[0]}`)).student;
+    if (loner.groupId) await server.fetch('/api/business/lessons', json(teacher.cookie, { date: privateSlot.date, startTime: privateSlot.startTime, kind: 'group', groupId: loner.groupId, topic: 'Group day' }));
+    const after = await week();
+    assert.equal(after.find((occurrence) => occurrence.key === groupSlot.key).loggedLessonId, '');
+    assert.ok(after.find((occurrence) => occurrence.key === groupSlot.key).suggestedGame, 'it still suggests a game');
+    assert.equal(after.find((occurrence) => occurrence.key === privateSlot.key).loggedLessonId, '');
+
+    // Logged at its own time, it is the slot's.
+    await server.fetch('/api/business/lessons', json(teacher.cookie, { date: groupSlot.date, startTime: groupSlot.startTime, kind: 'group', groupId: groupSlot.groupId, topic: 'On time' }));
+    assert.ok((await week()).find((occurrence) => occurrence.key === groupSlot.key).loggedLessonId);
+
+    // One logged without a time covers each of its students' lessons that day.
+    const privates = after.filter((occurrence) => occurrence.kind === 'private' && occurrence.date === privateSlot.date && !occurrence.loggedLessonId);
+    await server.fetch('/api/business/lessons', json(teacher.cookie, { date: privateSlot.date, kind: 'private', studentIds: privates.flatMap((occurrence) => occurrence.studentIds), topic: 'Untimed' }));
+    const untimed = await week();
+    for (const slot of privates) assert.ok(untimed.find((occurrence) => occurrence.key === slot.key).loggedLessonId, 'an untimed summary logs every lesson it covers');
   });
 
   it('suggests the game the fewest students have seen when all have been shown', async () => {
@@ -545,6 +584,56 @@ describe('business API', () => {
     assert.equal(suggestGame(['s3'], games, seen, { level: 'beginner' }).id, 'b', 'a tie goes to the group\'s level');
     assert.equal(suggestGame(['s3'], games, seen, { usage: { b: 4 } }).id, 'c', 'then to the game used least');
     assert.equal(suggestGame(['s1'], [], seen), null);
+  });
+
+  it('suggests for each prospect the closest group with room, by the ranges in settings', async () => {
+    const { suggestGroupFor } = await import('../lib/business.mjs');
+    const settings = { matchAgeYears: 2, matchLevelSteps: 1, matchRatingPoints: 150 };
+    const student = (age, level, chesscomRating) => ({ age, level, chesscomRating });
+    const group = (id, students, { seatsFree = 2, status = 'active', language = 'he', ...profile } = {}) => ({
+      id, name: id, nameEn: id, seatsFree, seatsTotal: 5, students,
+      profile: { status, language, minAge: null, maxAge: null, level: '', ratingMin: null, ratingMax: null, ...profile }
+    });
+    const lead = (fields) => ({ preference: 'group', language: 'he', childAge: null, level: '', chesscomRating: null, ...fields });
+    const views = [
+      group('far', [student(13, 'advanced', 1300)]),
+      group('close', [student(8, 'beginner', 500), student(10, 'beginner', 620)]),
+      group('closer-but-full', [student(9, 'beginner', 560)], { seatsFree: 0 }),
+      group('closed', [student(9, 'beginner', 560)], { status: 'closed' }),
+      group('english', [student(9, 'beginner', 560)], { language: 'en' }),
+      group('empty', [], { minAge: 6, maxAge: 8, level: 'basic' })
+    ];
+
+    const child = lead({ childAge: 9, level: 'beginner', chesscomRating: 550 });
+    assert.equal(suggestGroupFor(child, views, settings).group.id, 'close', 'full, closed and other-language groups are skipped');
+    assert.equal(suggestGroupFor(child, views, settings).group.comparedWith, 'students');
+
+    const young = lead({ childAge: 7, level: 'basic' });
+    const empty = suggestGroupFor(young, views, settings).group;
+    assert.equal(empty.id, 'empty', 'an empty group is compared with its profile');
+    assert.equal(empty.comparedWith, 'profile');
+
+    assert.equal(suggestGroupFor(lead({ childAge: 12 }), views, { ...settings, matchAgeYears: 0 }).reason, 'none_fits', 'a tighter range rules groups out');
+    assert.equal(suggestGroupFor(lead({ childAge: 12 }), views, settings).group.id, 'far');
+    assert.equal(suggestGroupFor(lead({ preference: 'private', childAge: 9 }), views, settings).reason, 'private');
+    assert.equal(suggestGroupFor(lead({}), views, settings).reason, 'no_details');
+  });
+
+  it('shows a suggested group on every prospect and follows the matching settings', async () => {
+    const leads = async () => (await (await server.fetch('/api/business/leads', { headers: { Cookie: teacher.cookie } })).json()).leads;
+    // Earlier tests fill groups, so compare wide ranges with none at all.
+    const put = (body) => server.fetch('/api/business/settings', json(teacher.cookie, body, 'PUT'));
+    const suggested = (list) => list.filter((entry) => entry.suggestedGroup.group).length;
+    await put({ matchAgeYears: 20, matchLevelSteps: 3, matchRatingPoints: 3000 });
+    const wide = await leads();
+    assert.ok(wide.length > 0);
+    assert.ok(wide.every((entry) => 'suggestedGroup' in entry));
+    assert.ok(suggested(wide) > 0, 'with wide ranges some prospect fits a group');
+
+    const saved = await (await put({ matchAgeYears: 0, matchLevelSteps: 0, matchRatingPoints: 0 })).json();
+    assert.equal(saved.settings.matchAgeYears, 0);
+    assert.ok(suggested(await leads()) < suggested(wide), 'tighter ranges suggest fewer groups');
+    await put({ matchAgeYears: 2, matchLevelSteps: 1, matchRatingPoints: 150 });
   });
 
   it('rejects malformed JSON and unknown routes cleanly', async () => {
