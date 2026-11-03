@@ -55,7 +55,10 @@ describe('business API', () => {
     assert.equal(created.status, 200);
     const { student: record } = await created.json();
     assert.equal(record.parentPhone, '+972501112222', 'phones are normalised to E.164');
-    assert.equal(record.groupName, 'Rookies');
+    // The group's own name, which depends on the seed (a local groups.json
+    // or the built-in demo groups).
+    const rookiesView = (await (await server.fetch('/api/business/groups', { headers: { Cookie: teacher.cookie } })).json()).groups.find((group) => group.id === 'rookies');
+    assert.equal(record.groupName, rookiesView.name);
 
     const dashboard = await (await server.fetch('/api/dashboard', { headers: { Cookie: teacher.cookie } })).json();
     const rookies = dashboard.groups.find((group) => group.id === 'rookies');
