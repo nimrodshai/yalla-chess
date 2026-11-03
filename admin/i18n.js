@@ -660,7 +660,9 @@
     timezonesAll: 'כל אזורי הזמן',
     nextLessonIn: 'השיעור הבא: {when}',
     inTz: 'לפי {tz}',
-    pickStudent: 'בחירת תלמיד',
+    pickStudent: 'בחירת תלמידים',
+    searchStudentName: 'הקלדת שם תלמיד או קבוצה…',
+    selectedCount: '{n} נבחרו',
     pickGroup: 'בחירת קבוצה',
     unassigned: 'לא משובץ'
   };
@@ -1307,7 +1309,9 @@
     timezonesAll: 'All time zones',
     nextLessonIn: 'Next lesson: {when}',
     inTz: 'in {tz}',
-    pickStudent: 'Pick a student',
+    pickStudent: 'Pick students',
+    searchStudentName: 'Type a student or group name…',
+    selectedCount: '{n} selected',
     pickGroup: 'Pick a group',
     unassigned: 'Unassigned'
   };

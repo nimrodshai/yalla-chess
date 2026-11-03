@@ -553,3 +553,17 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
 .autosave-status { font-size: 12px; font-weight: 600; color: var(--text-light); white-space: nowrap; }
 .autosave-status[data-state="saved"] { color: var(--sage); }
 .autosave-status[data-state="error"] { color: var(--danger); white-space: normal; }
+
+/* Searchable pick list (add a student to a group) */
+.pick-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--paper); }
+.pick-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.pick-item:last-child { border-bottom: 0; }
+.pick-item:hover { background: var(--gold-soft); }
+.pick-item input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--gold); pointer-events: none; flex: none; }
+.pick-item .pick-label { flex: 1; min-width: 0; }
+.pick-item.selected { font-weight: 600; }
+.pick-item.active { background: var(--gold-soft); box-shadow: inset 3px 0 0 var(--gold); }
+[dir="rtl"] .pick-item.active { box-shadow: inset -3px 0 0 var(--gold); }
+.text-danger { color: var(--danger); }
+.pick-empty { padding: 12px; text-align: center; }
+.pick-list.busy { opacity: 0.6; pointer-events: none; }

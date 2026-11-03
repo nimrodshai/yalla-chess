@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   window.VIEWS = window.VIEWS || {};
-  const { h, api, t, card, empty, fmtDate, statusBadge, link, modal, field, input, textarea, select, enumSelect, teacherSelect, formValues, errorBox, toast, scheduleText, scheduleEditor, weekdayPicker, initials, confirmDialog } = window.UI;
+  const { h, clear, api, t, card, empty, fmtDate, statusBadge, link, modal, field, input, textarea, select, enumSelect, teacherSelect, formValues, errorBox, toast, scheduleText, scheduleEditor, weekdayPicker, initials, confirmDialog } = window.UI;
 
   window.VIEWS.groups = async ({ id, query, refresh }) => {
     if (id === 'match') return matchTool(query);
@@ -245,21 +245,111 @@
       size: 'modal-sm',
       body: (dialog) => {
         if (!candidates.length) return empty(t('noStudents'));
-        const picker = select('studentId', candidates.map((student) => [student.id, `${student.name}${student.groupName ? ` (${student.groupName})` : ''} · ${t(`status.${student.status}`)}`]));
-        return h('div', { class: 'stack' },
-          field(t('pickStudent'), picker),
-          h('div', { class: 'form-actions' },
-            h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, t('cancel')),
-            h('button', { class: 'btn btn-primary', type: 'button', onclick: async () => {
-              const student = candidates.find((entry) => entry.id === picker.value);
+        // A search box over a short scrollable list with checkboxes. Clicking
+        // a row toggles it; the arrow keys move a cursor and Enter toggles
+        // the row under it and clears the search for the next name, so
+        // several students can be added in one go.
+        const label = (student) => `${student.name}${student.groupName ? ` (${student.groupName})` : ''}`;
+        const chosen = new Set();
+        let matches = [];
+        let active = null;
+        let busy = false;
+        const list = h('div', { class: 'pick-list', role: 'listbox', id: 'pickStudentList', 'aria-multiselectable': 'true', 'aria-label': t('pickStudent') });
+        const summary = h('div', { class: 'muted small' });
+        const addButton = h('button', { class: 'btn btn-primary', type: 'button', disabled: true, onclick: () => addChosen() }, t('add'));
+        // The selection is locked while a batch is saving, so what gets
+        // saved is exactly what was ticked when Add was pressed.
+        const toggle = (student) => {
+          if (busy) return;
+          if (chosen.has(student)) chosen.delete(student);
+          else chosen.add(student);
+          active = student;
+        };
+        const search = h('input', { type: 'search', placeholder: t('searchStudentName'), autocomplete: 'off', role: 'combobox', 'aria-controls': 'pickStudentList', 'aria-expanded': 'true', oninput: () => { active = null; render(); }, onkeydown: (event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (!matches.length) return;
+            const index = matches.indexOf(active);
+            const step = event.key === 'ArrowDown' ? 1 : -1;
+            active = matches[index === -1 ? (step === 1 ? 0 : matches.length - 1) : (index + step + matches.length) % matches.length];
+            render();
+          } else if (event.key === 'Enter') {
+            event.preventDefault();
+            if (event.metaKey || event.ctrlKey) return addChosen();
+            if (!active || busy) return;
+            toggle(active);
+            if (search.value) search.value = '';
+            render();
+          }
+        } });
+        const optionId = (student) => `pick-${student.id}`;
+        const render = () => {
+          const q = search.value.trim().toLowerCase();
+          matches = candidates.filter((student) => !q || label(student).toLowerCase().includes(q));
+          // While searching, the cursor starts on the first match so Enter picks it.
+          if (!matches.includes(active)) active = q ? matches[0] || null : null;
+          clear(list);
+          list.classList.toggle('busy', busy);
+          list.setAttribute('aria-disabled', String(busy));
+          if (!matches.length) list.append(h('div', { class: 'pick-empty muted small' }, t('noStudents')));
+          for (const student of matches) {
+            const box = h('input', { type: 'checkbox', tabindex: -1, 'aria-hidden': 'true' });
+            box.checked = chosen.has(student);
+            list.append(h('div', { class: `pick-item${chosen.has(student) ? ' selected' : ''}${student === active ? ' active' : ''}`, id: optionId(student), role: 'option', 'aria-selected': String(chosen.has(student)), onclick: () => { toggle(student); render(); search.focus(); } },
+              box, h('span', { class: 'pick-label', dir: 'auto' }, label(student)), statusBadge(student.status)));
+          }
+          if (active) {
+            search.setAttribute('aria-activedescendant', optionId(active));
+            list.querySelector('.pick-item.active')?.scrollIntoView({ block: 'nearest' });
+          } else {
+            search.removeAttribute('aria-activedescendant');
+          }
+          const free = Math.max(0, group.seatsTotal - group.studentCount);
+          summary.textContent = [chosen.size ? t('selectedCount', { n: chosen.size }) : '', t('seatsFreeCount', { n: free })].filter(Boolean).join(' · ');
+          summary.classList.toggle('text-danger', chosen.size > free);
+          addButton.textContent = chosen.size > 1 ? `${t('add')} (${chosen.size})` : t('add');
+          addButton.disabled = busy || !chosen.size;
+        };
+        // Students are added one by one. If a request fails, the error is
+        // reported as a toast by h(); the ones already added leave the list
+        // and the group page refreshes, and the dialog stays open with the
+        // rest still selected so the teacher can retry.
+        const addChosen = async () => {
+          if (!chosen.size || busy) return;
+          busy = true;
+          render();
+          let added = 0;
+          try {
+            for (const student of [...chosen]) {
               const body = { groupId: group.id };
               if (student.status === 'waitlist') body.status = 'active';
               if (student.lessonType === 'private') body.lessonType = 'both';
-              await api(`/students/${picker.value}`, { method: 'PATCH', body });
-              toast(t('saved'), 'success');
-              dialog.close();
-              refresh();
-            } }, t('add'))
+              await api(`/students/${student.id}`, { method: 'PATCH', body });
+              chosen.delete(student);
+              candidates = candidates.filter((entry) => entry !== student);
+              group.studentCount += 1;
+              added += 1;
+            }
+          } catch (error) {
+            if (added) refresh();
+            throw error;
+          } finally {
+            busy = false;
+            render();
+          }
+          toast(t('saved'), 'success');
+          dialog.close();
+          refresh();
+        };
+        render();
+        setTimeout(() => search.focus());
+        return h('div', { class: 'stack' },
+          field(t('pickStudent'), search),
+          list,
+          summary,
+          h('div', { class: 'form-actions' },
+            h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, t('cancel')),
+            addButton
           )
         );
       }
