@@ -127,7 +127,8 @@ describe('business API', () => {
   });
 
   it('logs a lesson and updates the topics every attending student has learned', async () => {
-    const students = (await (await server.fetch('/api/business/students?groupId=rookies', { headers: { Cookie: teacher.cookie } })).json()).students;
+    // Students added to the group by earlier tests joined after this lesson.
+    const students = (await (await server.fetch('/api/business/students?groupId=rookies', { headers: { Cookie: teacher.cookie } })).json()).students.filter((entry) => entry.joinedAt <= '2026-10-05');
     assert.ok(students.length >= 2);
     const [present, absent] = students;
 
@@ -344,6 +345,57 @@ describe('business API', () => {
     await server.fetch(lessonUrl, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
   });
 
+  it('shows a teacher their lessons and the month\'s pay at their hourly rate', async () => {
+    const get = async (url) => (await server.fetch(url, { headers: { Cookie: teacher.cookie } })).json();
+    const created = (await (await server.fetch('/api/business/teachers', json(teacher.cookie, { name: 'Rate Test', hourlyRate: 120, currency: 'usd' }))).json()).teacher;
+    assert.equal(created.hourlyRate, 120);
+    assert.equal(created.currency, 'USD');
+
+    const lessonIds = [];
+    for (const [date, durationMinutes, status] of [['2026-09-03', 90, 'held'], ['2026-09-10', 45, 'held'], ['2026-09-17', 60, 'cancelled'], ['2026-08-20', 60, 'held']]) {
+      const lesson = (await (await server.fetch('/api/business/lessons', json(teacher.cookie, { date, durationMinutes, status, groupId: 'rookies', teacher: 'Rate Test', topic: 'Pay' }))).json()).lesson;
+      lessonIds.push(lesson.id);
+    }
+
+    const september = await get(`/api/business/teachers/${created.id}?month=2026-09`);
+    assert.equal(september.lessons.length, 3, 'the month lists cancelled lessons too');
+    assert.deepEqual(september.pay.earned, { lessons: 2, minutes: 135, amount: 270 }, 'held lessons only, by their length');
+    assert.equal(september.upcoming.length, 0, 'a past month has nothing still to come');
+    assert.deepEqual(september.history.map((row) => [row.month, row.amount]), [['2026-09', 270], ['2026-08', 120]]);
+    assert.equal(september.totals.amount, 390);
+
+    // Without a rate the hours are still counted but no amount is made up.
+    await server.fetch(`/api/business/teachers/${created.id}`, json(teacher.cookie, { hourlyRate: null }, 'PATCH'));
+    const unpriced = await get(`/api/business/teachers/${created.id}?month=2026-09`);
+    assert.equal(unpriced.pay.earned.minutes, 135);
+    assert.equal(unpriced.pay.earned.amount, null);
+
+    // A private lesson is credited to the student's teacher, not the default one.
+    await server.fetch(`/api/business/teachers/${created.id}`, json(teacher.cookie, { hourlyRate: 120 }, 'PATCH'));
+    const pupil = (await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Pay', lastName: 'Pupil', lessonType: 'private', teacher: 'Rate Test' }))).json()).student;
+    const privateLesson = (await (await server.fetch('/api/business/lessons', json(teacher.cookie, { date: '2026-09-24', durationMinutes: 30, kind: 'private', studentIds: [pupil.id], topic: 'Mates' }))).json()).lesson;
+    lessonIds.push(privateLesson.id);
+    assert.equal(privateLesson.teacher, 'Rate Test');
+    assert.equal((await get(`/api/business/teachers/${created.id}?month=2026-09`)).pay.earned.minutes, 165);
+    await server.fetch(`/api/business/students/${pupil.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+
+    // A group with no teacher is taught by the default teacher, so its
+    // coming lessons count toward the default teacher's month.
+    const settings = (await get('/api/business/settings')).settings;
+    const owner = (await get('/api/business/teachers')).teachers.find((entry) => entry.name === settings.teacherName);
+    const groups = (await get('/api/business/groups')).groups;
+    const unassigned = groups.find((group) => group.schedule.length && group.profile.status !== 'closed');
+    const previousTeacher = unassigned.profile.teacher;
+    await server.fetch(`/api/business/groups/${unassigned.id}/profile`, json(teacher.cookie, { teacher: '' }, 'PATCH'));
+    const ownerPage = await get(`/api/business/teachers/${owner.id}`);
+    assert.ok([...ownerPage.upcoming, ...ownerPage.unlogged].some((occurrence) => occurrence.groupId === unassigned.id), 'an unassigned group shows on the default teacher\'s page');
+    await server.fetch(`/api/business/groups/${unassigned.id}/profile`, json(teacher.cookie, { teacher: previousTeacher }, 'PATCH'));
+
+    assert.equal((await server.fetch('/api/business/teachers/nope', { headers: { Cookie: teacher.cookie } })).status, 404);
+    for (const id of lessonIds) await server.fetch(`/api/business/lessons/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+    await server.fetch(`/api/business/teachers/${created.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+  });
+
   it('imports every game from a PGN file as a content item', async () => {
     const pgn = `[Event "London"]
 [White "Edward Lasker"]
@@ -430,6 +482,63 @@ describe('business API', () => {
     // An edit that does not mention games leaves them alone.
     const untouched = await (await server.fetch(`/api/business/lessons/${lesson.id}`, json(teacher.cookie, { homework: 'Play the Italian' }, 'PATCH'))).json();
     assert.equal(untouched.lesson.gamesResolved.length, 1);
+  });
+
+  it('keeps a group lesson on each student who was in it, and suggests games none of them has seen', async () => {
+    const get = async (path) => (await server.fetch(`/api/business${path}`, { headers: { Cookie: teacher.cookie } })).json();
+    const game = (await (await server.fetch('/api/business/content/import-pgn', json(teacher.cookie, { fileName: 'roster.pgn', pgn: '[White "Morphy"]\n[Black "Duke"]\n\n1. e4 e5 *' }))).json()).items[0];
+    const rookies = (await get('/students?groupId=rookies')).students.filter((entry) => entry.joinedAt <= '2026-10-19');
+    const [mover] = rookies;
+    const created = await (await server.fetch('/api/business/lessons', json(teacher.cookie, { date: '2026-10-19', kind: 'group', groupId: 'rookies', topic: 'Opera game', gameRefs: [{ id: game.id }] }))).json();
+    assert.deepEqual([...created.lesson.studentIds].sort(), rookies.map((entry) => entry.id).sort(), 'a group lesson records who was in the group');
+
+    // Editing a group lesson from the form sends no students; the roster stays.
+    const edited = await (await server.fetch(`/api/business/lessons/${created.lesson.id}`, json(teacher.cookie, { homework: 'Replay it', studentIds: [] }, 'PATCH'))).json();
+    assert.deepEqual([...edited.lesson.studentIds].sort(), rookies.map((entry) => entry.id).sort());
+
+    const tacticsBefore = (await get('/lessons?groupId=tactics')).lessons.map((lesson) => lesson.id);
+    assert.ok(tacticsBefore.length, 'demo data has a tactics lesson');
+    await server.fetch(`/api/business/students/${mover.id}`, json(teacher.cookie, { groupId: 'tactics' }, 'PATCH'));
+
+    const moved = await get(`/students/${mover.id}`);
+    assert.ok(moved.lessons.some((lesson) => lesson.id === created.lesson.id), 'the old group\'s lesson stays on the student who moved');
+    assert.ok(moved.games.some((entry) => entry.id === game.id), 'and so does the game they saw');
+    assert.ok(!moved.lessons.some((lesson) => tacticsBefore.includes(lesson.id)), 'the new group\'s past lessons are not theirs');
+    assert.ok((await get(`/lessons?studentId=${mover.id}`)).lessons.some((lesson) => lesson.id === created.lesson.id));
+
+    // A tactics summary logged late, for a date before the move, is not theirs,
+    // and an attendance mark for someone outside the group is dropped.
+    const late = await (await server.fetch('/api/business/lessons', json(teacher.cookie, { date: '2026-10-20', kind: 'group', groupId: 'tactics', topic: 'Logged late', attendance: { [mover.id]: 'present', [rookies[1].id]: 'present' } }))).json();
+    assert.ok(!late.lesson.studentIds.includes(mover.id), 'a student who joined the group after the lesson is not on it');
+    assert.ok(!late.lesson.studentIds.includes(rookies[1].id), 'nor is a student from another group');
+    assert.deepEqual(late.lesson.attendance, {});
+    assert.ok(!(await get(`/students/${mover.id}`)).lessons.some((lesson) => lesson.id === late.lesson.id));
+
+    // The form sends the roster the teacher ticked, so a rookies summary logged
+    // late can include the student who has left the group since.
+    const ticked = await (await server.fetch('/api/business/lessons', json(teacher.cookie, { date: '2026-10-26', kind: 'group', groupId: 'rookies', topic: 'Before the move', studentIds: rookies.map((entry) => entry.id), attendance: { [mover.id]: 'present' } }))).json();
+    assert.ok(ticked.lesson.studentIds.includes(mover.id));
+    assert.deepEqual(ticked.lesson.attendance, { [mover.id]: 'present' });
+    assert.ok((await get(`/students/${mover.id}`)).lessons.some((lesson) => lesson.id === ticked.lesson.id));
+
+    // The tactics group's next lesson now includes the student who moved, who
+    // has seen the new game, so the suggestion is one nobody there has seen.
+    const calendar = await get('/calendar?from=2026-11-08&to=2026-11-14');
+    const next = calendar.occurrences.find((occurrence) => occurrence.groupId === 'tactics');
+    assert.ok(next.studentIds.includes(mover.id));
+    assert.ok(next.suggestedGame, 'an upcoming lesson suggests a game');
+    assert.equal(next.suggestedGame.seenBy, 0);
+    assert.notEqual(next.suggestedGame.id, game.id);
+  });
+
+  it('suggests the game the fewest students have seen when all have been shown', async () => {
+    const { suggestGame } = await import('../lib/business.mjs');
+    const games = [{ id: 'a', title: 'A' }, { id: 'b', title: 'B', level: 'beginner' }, { id: 'c', title: 'C' }];
+    const seen = { s1: new Set(['a', 'b', 'c']), s2: new Set(['a', 'b']), s3: new Set(['a']) };
+    assert.deepEqual(suggestGame(['s1', 's2', 's3'], games, seen), { id: 'c', title: 'C', seenBy: 1, of: 3 });
+    assert.equal(suggestGame(['s3'], games, seen, { level: 'beginner' }).id, 'b', 'a tie goes to the group\'s level');
+    assert.equal(suggestGame(['s3'], games, seen, { usage: { b: 4 } }).id, 'c', 'then to the game used least');
+    assert.equal(suggestGame(['s1'], [], seen), null);
   });
 
   it('rejects malformed JSON and unknown routes cleanly', async () => {

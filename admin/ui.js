@@ -760,6 +760,16 @@
 
   // Games a lesson used, resolved by the server against the games list:
   // a link to the game while it exists, its remembered name otherwise.
+  // The game the calendar suggests for a lesson not logged yet: one none of
+  // its students has seen, else the one the fewest have.
+  function suggestedGame(occurrence) {
+    const game = occurrence.suggestedGame;
+    if (!game) return null;
+    return h('div', { class: 'list-sub' }, `♞ ${t('suggestedGame')}: `,
+      h('a', { class: 'link', href: `#/content/${game.id}`, onclick: (event) => event.stopPropagation() }, game.title),
+      game.seenBy ? h('span', { class: 'muted' }, ` · ${t('suggestedGameSeen', { n: game.seenBy, of: game.of })}`) : null);
+  }
+
   function gameChips(lesson, { withFreeText = true } = {}) {
     const resolved = lesson.gamesResolved || [];
     const chips = resolved.map((game) => game.exists
@@ -801,6 +811,6 @@
   window.UI = {
     h, append, clear, api, toast, modal, confirmDialog, field, input, phoneInput, fmtPhone, timezoneSelect, textarea, select, enumSelect, teacherSelect, checkbox, formValues, errorBox,
     scheduleEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, todayIso, addDays, weekdayOf,
-    initials, scheduleText, statusBadge, board, animateBoard, gameChips, composeMessage, paymentDialog, pageHead, card, stat, empty, link, t, guard: guarded
+    initials, scheduleText, statusBadge, board, animateBoard, gameChips, suggestedGame, composeMessage, paymentDialog, pageHead, card, stat, empty, link, t, guard: guarded
   };
 })();

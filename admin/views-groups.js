@@ -55,7 +55,7 @@
   async function groupDetail(id, refresh) {
     const group = window.APP.groups.find((entry) => entry.id === id);
     if (!group) return h('div', { class: 'card' }, empty(t('none')));
-    const [lessonsResponse, studentsResponse] = await Promise.all([api(`/lessons?groupId=${id}&limit=100`), api('/students')]);
+    const [lessonsResponse, studentsResponse, formerResponse] = await Promise.all([api(`/lessons?groupId=${id}&limit=100`), api('/students'), api('/students?status=inactive')]);
     const profile = group.profile;
     const unassigned = studentsResponse.students.filter((student) => student.groupId !== id && student.status !== 'inactive');
 
@@ -71,7 +71,7 @@
         )
       ),
       h('div', { class: 'row' },
-        h('a', { class: 'btn', href: `#/lessons?new=1&groupId=${group.id}` }, `+ ${t('logLesson')}`),
+        h('button', { class: 'btn', type: 'button', onclick: () => window.VIEWS.logLesson({ groupId: group.id, onSaved: refresh }) }, `+ ${t('logLesson')}`),
         h('button', { class: 'btn btn-primary', type: 'button', onclick: () => profileForm(group, refresh) }, t('editProfile'))
       )
     ));
@@ -117,7 +117,7 @@
         lesson.nextSteps ? h('div', { class: 'list-sub' }, `${t('nextSteps')}: ${lesson.nextSteps}`) : null,
         window.UI.gameChips(lesson) ? h('div', { style: { marginTop: '4px' } }, window.UI.gameChips(lesson)) : null,
         lesson.attendance && Object.keys(lesson.attendance).length ? h('div', { class: 'chips', style: { marginTop: '4px' } }, Object.entries(lesson.attendance).map(([studentId, status]) => {
-          const student = studentsResponse.students.find((entry) => entry.id === studentId);
+          const student = [...studentsResponse.students, ...formerResponse.students].find((entry) => entry.id === studentId);
           return h('span', { class: `chip ${status === 'absent' ? 'badge-danger' : ''}` }, `${student ? student.name : studentId}: ${t(`attendance.${status}`)}`);
         })) : null
       )

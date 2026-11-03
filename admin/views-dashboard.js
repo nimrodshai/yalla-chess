@@ -1,9 +1,9 @@
-// Overview: the business at a glance. Groups and their open seats, the
-// students, the open leads and the payments to collect, nothing else.
+// Overview: the business at a glance. Today's lessons, groups and their
+// open seats, the students, the open leads and the payments to collect.
 (function () {
   'use strict';
   window.VIEWS = window.VIEWS || {};
-  const { h, api, t, card, stat, empty, fmtMoney, statusBadge, composeMessage, link, scheduleText } = window.UI;
+  const { h, api, t, card, stat, empty, fmtMoney, fmtTime, statusBadge, composeMessage, link, scheduleText } = window.UI;
 
   window.VIEWS.dashboard = async ({ refresh }) => {
     const [data, leadsResponse] = await Promise.all([api('/overview'), api('/leads')]);
@@ -27,6 +27,32 @@
       stat(t('statToCollect'), toCollect, { tone: data.paymentsOverdue.length ? 'danger' : toCollect ? 'warn' : 'sage' }),
       stat(t('statMonthIncome'), fmtMoney(s.monthIncome, 'ILS'), { tone: 'sage' })
     );
+
+    // ---- today's lessons, in order
+    const tz = data.timezone;
+    const lessonRow = (occurrence) => h('div', { class: 'list-item' },
+      h('span', { class: 'time-pill' }, fmtTime(occurrence.startAt, tz)),
+      h('div', { class: 'list-main' },
+        h('div', { class: 'list-title' },
+          occurrence.groupId ? link(`#/groups/${occurrence.groupId}`, occurrence.title)
+            : occurrence.studentIds.length === 1 ? link(`#/students/${occurrence.studentIds[0]}`, occurrence.title)
+            : occurrence.title,
+          occurrence.kind !== 'group' ? h('span', { class: 'badge' }, t(`kind.${occurrence.kind}`)) : null,
+          occurrence.conflicts?.length ? h('span', { class: 'badge badge-danger' }, t('conflict')) : null),
+        h('div', { class: 'list-sub' }, `${occurrence.durationMinutes} ${t('minutes')}${occurrence.kind === 'group' ? ` · ${occurrence.students.length} ${t('students')}` : ''}`),
+        window.UI.suggestedGame(occurrence)
+      ),
+      h('div', { class: 'list-side' },
+        occurrence.zoomLink ? h('a', { class: 'btn btn-sm', href: occurrence.zoomLink, target: '_blank', rel: 'noopener' }, 'Zoom') : null,
+        occurrence.loggedLessonId
+          ? h('a', { class: 'btn btn-sm', href: `#/lessons/${occurrence.loggedLessonId}` }, t('viewSummary'))
+          : h('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => window.VIEWS.logLesson({ occurrence: occurrence.key, slot: occurrence, durationMinutes: occurrence.durationMinutes, suggestedGame: occurrence.suggestedGame, onSaved: refresh }) }, t('logLesson'))
+      )
+    );
+    const todayCard = card(t('lessonsToday'), data.lessonsToday.length ? h('div', { class: 'list' }, data.lessonsToday.map(lessonRow)) : empty(t('noLessonsToday')), {
+      count: data.lessonsToday.length || undefined,
+      actions: [h('a', { class: 'btn btn-sm', href: '#/calendar' }, t('navCalendar'))]
+    });
 
     // ---- groups, the ones with room first
     const groupRow = (group) => h('div', { class: 'list-item' },
@@ -84,7 +110,7 @@
       head,
       stats,
       h('div', { class: 'grid grid-2' },
-        h('div', { class: 'stack' }, groupsCard),
+        h('div', { class: 'stack' }, todayCard, groupsCard),
         h('div', { class: 'stack' }, paymentsCard, leadsCard)
       )
     );

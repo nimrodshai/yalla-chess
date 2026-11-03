@@ -173,13 +173,14 @@
         ),
         occurrence.conflicts?.length ? h('div', { class: 'alert alert-danger' }, t('conflictWith')) : null,
         occurrence.note ? h('div', { class: 'small' }, occurrence.note) : null,
+        window.UI.suggestedGame(occurrence),
         occurrence.students.length ? h('div', { class: 'small' }, h('strong', null, `${t('students')}: `), occurrence.students.join(', ')) : null,
         occurrence.zoomLink ? h('a', { class: 'small', href: occurrence.zoomLink, target: '_blank', rel: 'noopener', dir: 'ltr' }, occurrence.zoomLink) : null,
         h('div', { class: 'row' },
           occurrence.groupId ? h('a', { class: 'btn btn-sm', href: `#/groups/${occurrence.groupId}`, onclick: () => api_.close() }, t('group')) : null,
           occurrence.loggedLessonId
             ? h('a', { class: 'btn btn-sm', href: `#/lessons/${occurrence.loggedLessonId}`, onclick: () => api_.close() }, t('viewSummary'))
-            : h('a', { class: 'btn btn-sm btn-primary', href: `#/lessons?new=1&occurrence=${encodeURIComponent(occurrence.key)}`, onclick: () => api_.close() }, t('logThisLesson')),
+            : h('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => { api_.close(); window.VIEWS.logLesson({ occurrence: occurrence.key, slot: occurrence, durationMinutes: occurrence.durationMinutes, suggestedGame: occurrence.suggestedGame, onSaved: refresh }); } }, t('logThisLesson')),
           occurrence.studentIds.length === 1 ? h('button', { class: 'btn btn-sm btn-wa', type: 'button', onclick: () => { api_.close(); composeMessage({ kind: 'lesson_reminder', studentId: occurrence.studentIds[0], occurrenceKey: occurrence.key, reference: `${occurrence.key}:${occurrence.studentIds[0]}`, name: occurrence.title, onSent: refresh }); } }, t('sendReminder')) : null,
           occurrence.leadId ? h('a', { class: 'btn btn-sm', href: `#/leads/${occurrence.leadId}`, onclick: () => api_.close() }, t('leadFor')) : null
         ),

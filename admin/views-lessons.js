@@ -6,30 +6,50 @@
 
   window.VIEWS.lessons = async ({ id, query, refresh }) => {
     if (id) return lessonDetail(id, refresh);
-    if (query.new) {
-      const defaults = {};
-      if (query.groupId) defaults.groupId = query.groupId;
-      if (query.studentId) { defaults.studentIds = [query.studentId]; defaults.kind = 'private'; }
-      if (query.occurrence) {
-        const parts = query.occurrence.split(':');
-        const date = parts.find((part) => /^\d{4}-\d{2}-\d{2}$/.test(part));
-        if (date) defaults.date = date;
-        const time = parts[parts.length - 1];
-        if (/^\d{2}:\d{2}$/.test(time)) defaults.startTime = time;
-        if (parts[0] === 'g') { defaults.groupId = parts[1]; defaults.kind = 'group'; }
-        if (parts[0] === 'p') { defaults.studentIds = [parts[1]]; defaults.kind = 'private'; }
-        if (parts[0] === 'e') { defaults.kind = 'makeup'; }
-      }
-      setTimeout(() => lessonForm({ defaults, onSaved: (lesson) => { location.hash = `#/lessons/${lesson.id}`; } }), 0);
-    }
+    if (query.new) setTimeout(() => logLesson({ ...query, onSaved: (lesson) => { location.hash = `#/lessons/${lesson.id}`; } }), 0);
     return lessonList(query);
   };
+
+  // Opens a new summary prefilled from a calendar occurrence key, a group or
+  // a student, on top of whatever page the teacher is on. Pass the
+  // occurrence's length too; the form's 60-minute default is only a guess.
+  // A one-off event's key ("e:<id>") says nothing about when or what it is,
+  // so pass the occurrence itself as `slot`: its date, time, kind, group and
+  // students win over anything read from the key, and the lesson lands in
+  // the right month and matches its place in the calendar.
+  function logLesson({ occurrence, slot, durationMinutes, suggestedGame, groupId, studentId, onSaved }) {
+    const defaults = {};
+    if (groupId) defaults.groupId = groupId;
+    if (studentId) { defaults.studentIds = [studentId]; defaults.kind = 'private'; }
+    if (occurrence) {
+      const parts = occurrence.split(':');
+      const date = parts.find((part) => /^\d{4}-\d{2}-\d{2}$/.test(part));
+      if (date) defaults.date = date;
+      const time = parts.slice(-2).join(':');
+      if (/^\d{2}:\d{2}$/.test(time)) defaults.startTime = time;
+      if (parts[0] === 'g') { defaults.groupId = parts[1]; defaults.kind = 'group'; }
+      if (parts[0] === 'p') { defaults.studentIds = [parts[1]]; defaults.kind = 'private'; }
+      if (parts[0] === 'e') { defaults.kind = 'makeup'; }
+    }
+    if (slot) {
+      if (slot.date) defaults.date = slot.date;
+      if (slot.startTime) defaults.startTime = slot.startTime;
+      if (window.VOCAB.lessonKinds.includes(slot.kind)) defaults.kind = slot.kind;
+      if (slot.groupId) { defaults.groupId = slot.groupId; delete defaults.studentIds; }
+      else if (slot.studentIds?.length) defaults.studentIds = slot.studentIds;
+      if (!durationMinutes) durationMinutes = slot.durationMinutes;
+    }
+    const length = Number(durationMinutes) || window.APP.groups.find((group) => group.id === defaults.groupId)?.schedule?.find((row) => row.startTime === defaults.startTime && defaults.date && row.weekday === window.UI.weekdayOf(defaults.date))?.durationMinutes;
+    if (length) defaults.durationMinutes = length;
+    return lessonForm({ defaults, suggestedGame, onSaved });
+  }
 
   async function lessonList(query) {
     const state = { q: query.q || '', groupId: query.groupId || '' };
     const listNode = h('div');
-    const studentsResponse = await api('/students');
-    const nameOf = (studentId) => studentsResponse.students.find((student) => student.id === studentId)?.name || studentId;
+    const [studentsResponse, formerResponse] = await Promise.all([api('/students'), api('/students?status=inactive')]);
+    const everyone = [...studentsResponse.students, ...formerResponse.students];
+    const nameOf = (studentId) => everyone.find((student) => student.id === studentId)?.name || studentId;
     const load = async () => {
       const params = new URLSearchParams();
       if (state.q) params.set('q', state.q);
@@ -66,12 +86,13 @@
   }
 
   async function lessonDetail(id, refresh) {
-    const [data, studentsResponse] = await Promise.all([api(`/lessons?limit=500`), api('/students')]);
+    const [data, studentsResponse, formerResponse] = await Promise.all([api(`/lessons?limit=500`), api('/students'), api('/students?status=inactive')]);
     const lesson = data.lessons.find((entry) => entry.id === id);
     if (!lesson) return h('div', { class: 'card' }, empty(t('noLessons')));
     const group = window.APP.groups.find((entry) => entry.id === lesson.groupId);
-    const studentsById = Object.fromEntries(studentsResponse.students.map((student) => [student.id, student]));
-    const involved = group ? studentsResponse.students.filter((student) => student.groupId === group.id) : lesson.studentIds.map((studentId) => studentsById[studentId]).filter(Boolean);
+    const studentsById = Object.fromEntries([...studentsResponse.students, ...formerResponse.students].map((student) => [student.id, student]));
+    // Who the lesson was for is its saved roster, not the group as it is now.
+    const involved = lesson.studentIds.map((studentId) => studentsById[studentId]).filter(Boolean);
     const attendanceList = Array.from(new Set([...involved.map((student) => student.id), ...Object.keys(lesson.attendance || {})]));
 
     const block = (label, value) => value ? h('div', { class: 'detail' }, h('dt', null, label), h('dd', { class: 'pre' }, value)) : null;
@@ -132,9 +153,12 @@
     next();
   }
 
-  async function lessonForm({ lesson = null, defaults = {}, onSaved }) {
-    const [studentsResponse, gamesResponse] = await Promise.all([api('/students'), api('/content?kind=game')]);
-    const students = studentsResponse.students.filter((student) => student.status !== 'inactive' || lesson);
+  async function lessonForm({ lesson = null, defaults = {}, suggestedGame = null, onSaved }) {
+    const [studentsResponse, formerResponse, gamesResponse] = await Promise.all([api('/students'), api('/students?status=inactive'), api('/content?kind=game')]);
+    // Students who have left are offered only for lessons from before they
+    // left (or for an existing lesson), so a late summary can still name them.
+    const leftBy = (student, date) => student.status === 'inactive' && (!student.leftAt || !date || student.leftAt < date);
+    const allStudents = [...studentsResponse.students, ...formerResponse.students];
     const gameList = gamesResponse.content.slice().sort((a, b) => a.title.localeCompare(b.title));
     const l = lesson || { date: todayIso(window.SETTINGS.businessTimezone), startTime: '', durationMinutes: 60, kind: 'group', groupId: '', studentIds: [], attendance: {}, status: 'held', ...defaults };
     if (l.groupId && !l.startTime) {
@@ -161,6 +185,10 @@
           gameSelect.append(h('option', { value: '' }, gameList.length ? t('pickGame') : t('noGamesInList')));
           for (const item of gameList) if (!pickedGames.some((game) => game.id === item.id)) gameSelect.append(h('option', { value: item.id }, item.title));
           gameSelect.disabled = !gameList.length;
+          const suggested = suggestedGame && gameList.find((item) => item.id === suggestedGame.id);
+          if (suggested && !pickedGames.some((game) => game.id === suggested.id)) {
+            pickedHost.append(h('button', { type: 'button', class: 'chip chip-game', title: t('addSuggestedGame'), onclick: () => { pickedGames.push({ id: suggested.id, title: suggested.title, exists: true }); renderGames(); } }, `+ ♞ ${suggested.title} · ${t('suggestedGame')}`));
+          }
         };
         gameSelect.addEventListener('change', () => {
           const item = gameList.find((entry) => entry.id === gameSelect.value);
@@ -174,20 +202,33 @@
         const studentPicker = h('div', { class: 'attendance-grid' });
         const attendanceGrid = h('div', { class: 'attendance-grid' });
         const selectedStudents = new Set(l.studentIds || []);
+        // A group lesson's students start as whoever was in the group on its
+        // date; the teacher can tick someone who has moved since, or untick.
+        // A saved lesson's list, or one the teacher touched, is left alone.
+        let rosterTouched = Boolean(lesson);
+        const inGroupOn = (student, groupId, date) => student.groupId === groupId && !leftBy(student, date) && (student.groupJoinedAt || student.joinedAt || '') <= (date || '9999-12-31');
+        let students = [];
+        const offered = () => { students = allStudents.filter((student) => selectedStudents.has(student.id) || !leftBy(student, form.date.value)); };
+        const defaultRoster = () => {
+          if (!groupSelect.value || rosterTouched) return;
+          selectedStudents.clear();
+          for (const student of allStudents) if (inGroupOn(student, groupSelect.value, form.date.value)) selectedStudents.add(student.id);
+        };
 
         const renderStudentPicker = () => {
           window.UI.clear(studentPicker);
-          for (const student of students) {
+          const groupId = groupSelect.value;
+          const rank = (student) => (selectedStudents.has(student.id) ? 0 : groupId && student.groupId === groupId ? 1 : 2);
+          for (const student of [...students].sort((a, b) => rank(a) - rank(b))) {
             const box = h('input', { type: 'checkbox' });
             box.checked = selectedStudents.has(student.id);
-            box.addEventListener('change', () => { if (box.checked) selectedStudents.add(student.id); else selectedStudents.delete(student.id); renderAttendance(); });
+            box.addEventListener('change', () => { rosterTouched = true; if (box.checked) selectedStudents.add(student.id); else selectedStudents.delete(student.id); renderAttendance(); });
             studentPicker.append(h('label', { class: 'attendance-item', style: { cursor: 'pointer' } }, h('span', null, student.name), box));
           }
         };
         const renderAttendance = () => {
           window.UI.clear(attendanceGrid);
-          const groupId = groupSelect.value;
-          const list = groupId ? students.filter((student) => student.groupId === groupId) : students.filter((student) => selectedStudents.has(student.id));
+          const list = students.filter((student) => selectedStudents.has(student.id));
           if (!list.length) { attendanceGrid.append(h('div', { class: 'muted small' }, t('none'))); return; }
           for (const student of list) {
             const current = attendanceState[student.id] || 'present';
@@ -196,15 +237,22 @@
           }
         };
         const groupField = field(t('forGroup'), groupSelect);
-        const studentsField = field(t('forStudents'), studentPicker, { full: true });
+        const studentsLabel = h('label', null, t('forStudents'));
+        const studentsHint = h('div', { class: 'hint' }, t('groupRosterHint'));
+        const studentsField = h('div', { class: 'field full' }, studentsLabel, studentPicker, studentsHint);
         const sync = () => {
+          offered();
           const isGroup = Boolean(groupSelect.value);
-          studentsField.hidden = isGroup;
+          studentsLabel.textContent = isGroup ? t('groupRoster') : t('forStudents');
+          studentsHint.hidden = !isGroup;
+          defaultRoster();
+          renderStudentPicker();
           renderAttendance();
         };
         groupSelect.addEventListener('change', () => {
           const group = window.APP.groups.find((entry) => entry.id === groupSelect.value);
           if (group?.schedule?.[0] && !form.startTime.value) { form.startTime.value = group.schedule[0].startTime; form.durationMinutes.value = group.schedule[0].durationMinutes; }
+          rosterTouched = false;
           sync();
         });
         kindSelect.addEventListener('change', () => { if (kindSelect.value === 'private' || kindSelect.value === 'trial') { groupSelect.value = ''; } sync(); });
@@ -234,14 +282,20 @@
             h('button', { class: 'btn btn-primary', type: 'submit' }, t('save'))
           )
         );
-        renderStudentPicker();
+        form.date.addEventListener('change', sync);
         sync();
         form.addEventListener('submit', async (event) => {
           event.preventDefault();
           const values = formValues(form);
-          values.studentIds = groupSelect.value ? [] : Array.from(selectedStudents);
+          values.studentIds = Array.from(selectedStudents);
+          if (!values.studentIds.length) {
+            form.querySelector('.form-error')?.remove();
+            form.prepend(errorBox(t('pickLessonStudents')));
+            form.scrollIntoView({ block: 'start' });
+            return;
+          }
           values.gameRefs = pickedGames.map((game) => ({ id: game.id, title: game.title }));
-          values.attendance = attendanceState;
+          values.attendance = Object.fromEntries(Object.entries(attendanceState).filter(([id]) => selectedStudents.has(id)));
           // The server picks a new lesson's teacher from the teachers list
           // (the group's, else the default); an edit keeps the lesson's own.
           try {
@@ -261,4 +315,5 @@
   }
 
   window.VIEWS.lessonForm = lessonForm;
+  window.VIEWS.logLesson = logLesson;
 })();

@@ -130,7 +130,8 @@
         detail(t('goals'), student.goals, true),
         detail(t('progressNotes'), student.notes, true)
       ),
-      h('div', null, h('div', { class: 'small strong', style: { marginBottom: '6px' } }, t('topics')), data.topics.length ? h('div', { class: 'chips' }, data.topics.map((topic) => h('span', { class: 'chip' }, topic))) : h('div', { class: 'muted small' }, t('noTopics')))
+      h('div', null, h('div', { class: 'small strong', style: { marginBottom: '6px' } }, t('topics')), data.topics.length ? h('div', { class: 'chips' }, data.topics.map((topic) => h('span', { class: 'chip' }, topic))) : h('div', { class: 'muted small' }, t('noTopics'))),
+      h('div', { style: { marginTop: '12px' } }, h('div', { class: 'small strong', style: { marginBottom: '6px' } }, t('gamesSeen')), data.games?.length ? h('div', { class: 'chips' }, data.games.map((game) => h('a', { class: 'chip chip-game', href: `#/content/${game.id}` }, '♞ ', game.title))) : h('div', { class: 'muted small' }, t('noGamesSeen')))
     ));
 
     const lessons = card(t('lessonHistory'), data.lessons.length ? h('div', { class: 'list' }, data.lessons.map((lesson) => h('div', { class: 'list-item clickable', onclick: () => { location.hash = `#/lessons/${lesson.id}`; } },
@@ -139,7 +140,7 @@
         h('div', { class: 'list-sub' }, [lesson.homework ? `${t('homework')}: ${lesson.homework}` : '', lesson.nextSteps ? `${t('nextSteps')}: ${lesson.nextSteps}` : ''].filter(Boolean).join(' · ')),
         window.UI.gameChips(lesson) ? h('div', { style: { marginTop: '4px' } }, window.UI.gameChips(lesson)) : null
       )
-    ))) : empty(t('noLessonsYet')), { count: data.lessons.length, sub: t('attendanceSummary', { attended: data.attendance.attended, absent: data.attendance.absent }), actions: [h('a', { class: 'btn btn-sm', href: `#/lessons?new=1&studentId=${student.id}` }, `+ ${t('logLesson')}`)] });
+    ))) : empty(t('noLessonsYet')), { count: data.lessons.length, sub: t('attendanceSummary', { attended: data.attendance.attended, absent: data.attendance.absent }), actions: [h('button', { class: 'btn btn-sm', type: 'button', onclick: () => window.VIEWS.logLesson({ studentId: student.id, onSaved: refresh }) }, `+ ${t('logLesson')}`)] });
 
     const payments = card(t('paymentHistory'), data.payments.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
       h('thead', null, h('tr', null, h('th', null, t('date')), h('th', { class: 'num' }, t('amount')), h('th', null, t('method')), h('th', null, t('periodLabel')), h('th', null, t('receipt')), h('th', null, ''))),
