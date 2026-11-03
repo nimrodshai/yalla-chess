@@ -318,6 +318,59 @@
     return h('div', { class: 'phone-input', dir: 'ltr' }, countrySelect, number, hidden);
   }
 
+  // Time zones for pickers: the ones students and parents usually live in
+  // first, then every zone the browser knows, ordered by UTC offset.
+  const COMMON_TIMEZONES = ['Asia/Jerusalem', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Toronto', 'America/Sao_Paulo', 'Australia/Sydney'];
+
+  function zoneInfo(zone) {
+    const locale = window.I18N.locale;
+    const part = (style) => {
+      try {
+        return new Intl.DateTimeFormat(locale, { timeZone: zone, timeZoneName: style }).formatToParts(new Date()).find((entry) => entry.type === 'timeZoneName')?.value || '';
+      } catch {
+        return '';
+      }
+    };
+    const offset = part('shortOffset').replace(/^GMT$/, 'GMT+0');
+    const match = /([+-])(\d+)(?::(\d+))?/.exec(offset);
+    const minutes = match ? (match[1] === '-' ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3] || 0)) : 0;
+    const city = zone.split('/').pop().replace(/_/g, ' ');
+    const generic = part('longGeneric');
+    return { zone, minutes, offset, city, generic: generic && !/^GMT/.test(generic) ? generic : '' };
+  }
+
+  // "Israel Time (GMT+2)"; the city is added only where several zones share
+  // a name (Paris and Berlin are both Central European Time).
+  function zoneLabels(infos) {
+    const counts = new Map();
+    for (const info of infos) counts.set(info.generic, (counts.get(info.generic) || 0) + 1);
+    for (const info of infos) {
+      const name = !info.generic ? info.city : counts.get(info.generic) > 1 ? `${info.generic} · ${info.city}` : info.generic;
+      info.label = `${name} (${info.offset})`;
+    }
+    return infos;
+  }
+
+  // A dropdown of time zones. A stored zone missing from the list stays
+  // selectable so saving the form does not silently change it.
+  function timezoneSelect(name, value = '', { blank = '' } = {}) {
+    let all = [];
+    try { all = Intl.supportedValuesOf('timeZone'); } catch { all = [...COMMON_TIMEZONES]; }
+    if (!all.includes('UTC')) all.push('UTC');
+    const infos = zoneLabels([...new Set([...COMMON_TIMEZONES, ...all])].map(zoneInfo));
+    const byZone = new Map(infos.map((info) => [info.zone, info]));
+    const option = (info) => h('option', { value: info.zone, selected: info.zone === value }, info.label);
+    const node = h('select', { name, dir: 'auto' });
+    if (blank !== '') node.append(h('option', { value: '', selected: !value }, blank));
+    if (value && !all.includes(value) && !COMMON_TIMEZONES.includes(value)) node.append(h('option', { value, selected: true }, value));
+    node.append(
+      h('optgroup', { label: t('timezonesCommon') }, COMMON_TIMEZONES.map((zone) => byZone.get(zone)).map(option)),
+      h('optgroup', { label: t('timezonesAll') }, all.filter((zone) => !COMMON_TIMEZONES.includes(zone)).map((zone) => byZone.get(zone))
+        .sort((a, b) => a.minutes - b.minutes || a.label.localeCompare(b.label)).map(option))
+    );
+    return node;
+  }
+
   function checkbox(name, checked, label) {
     const box = h('input', { type: 'checkbox', name });
     box.checked = Boolean(checked);
@@ -414,8 +467,8 @@
     return new Intl.DateTimeFormat(locale(), { timeZone: 'UTC', month: 'long', year: 'numeric' }).format(new Date(Date.UTC(year, month - 1, 1)));
   }
 
-  function todayIso(timeZone) {
-    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timeZone || undefined, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  function todayIso(timeZone, at = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timeZone || undefined, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(at);
     const get = (type) => parts.find((part) => part.type === type).value;
     return `${get('year')}-${get('month')}-${get('day')}`;
   }
@@ -687,7 +740,8 @@
         );
         form.addEventListener('submit', async (event) => {
           event.preventDefault();
-          const values = { ...formValues(form), studentId: student.id };
+          // A student record carries `id`; a payments-due row carries `studentId`.
+          const values = { ...formValues(form), studentId: student.id || student.studentId };
           try {
             if (isEdit) await api(`/payments/${payment.id}`, { method: 'PATCH', body: values });
             else await api('/payments', { method: 'POST', body: values });
@@ -745,7 +799,7 @@
   }
 
   window.UI = {
-    h, append, clear, api, toast, modal, confirmDialog, field, input, phoneInput, fmtPhone, textarea, select, enumSelect, teacherSelect, checkbox, formValues, errorBox,
+    h, append, clear, api, toast, modal, confirmDialog, field, input, phoneInput, fmtPhone, timezoneSelect, textarea, select, enumSelect, teacherSelect, checkbox, formValues, errorBox,
     scheduleEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, todayIso, addDays, weekdayOf,
     initials, scheduleText, statusBadge, board, animateBoard, gameChips, composeMessage, paymentDialog, pageHead, card, stat, empty, link, t, guard: guarded
   };

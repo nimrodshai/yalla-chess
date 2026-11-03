@@ -16,31 +16,28 @@
   };
 
   async function studentList(query, refresh) {
-    const state = { q: query.q || '', status: query.status || '', groupId: query.groupId || '' };
+    const state = { q: query.q || '', groupId: query.groupId || '' };
     const listNode = h('div');
     const load = async () => {
       const params = new URLSearchParams();
       if (state.q) params.set('q', state.q);
-      if (state.status) params.set('status', state.status);
       if (state.groupId) params.set('groupId', state.groupId);
       const data = await api(`/students?${params}`);
       window.UI.clear(listNode).append(renderTable(data.students));
-      sub.textContent = t('studentsSub', { n: data.students.length, active: data.students.filter((student) => student.status === 'active').length });
+      sub.textContent = t('studentsSub', { n: data.students.length });
     };
     // User-triggered reloads report failures as a toast; the first load
     // below stays unguarded so the router can show sign-in or an error page.
     const reload = window.UI.guard(load);
     const sub = h('span');
     const searchBox = h('input', { type: 'search', value: state.q, placeholder: t('search'), oninput: (event) => { state.q = event.target.value; clearTimeout(searchBox._timer); searchBox._timer = setTimeout(reload, 250); } });
-    const statusSelect = enumSelect('status', window.VOCAB.studentStatuses, 'status', state.status, { blank: t('filterStatus') });
-    statusSelect.addEventListener('change', () => { state.status = statusSelect.value; reload(); });
     const groupSelect = select('groupId', [['', t('filterGroup')], ...window.APP.groups.map((group) => [group.id, group.name])], state.groupId);
     groupSelect.addEventListener('change', () => { state.groupId = groupSelect.value; reload(); });
 
     await load();
     return h('div', null,
       window.UI.pageHead(t('studentsTitle'), sub, [h('button', { class: 'btn btn-primary', type: 'button', onclick: () => studentForm({ onSaved: (student) => { location.hash = `#/students/${student.id}`; } }) }, `+ ${t('newStudent')}`)]),
-      h('div', { class: 'filters' }, searchBox, statusSelect, groupSelect),
+      h('div', { class: 'filters' }, searchBox, groupSelect),
       h('div', { class: 'card' }, listNode)
     );
   }
@@ -48,15 +45,14 @@
   function renderTable(students) {
     if (!students.length) return empty(t('noStudents'));
     return h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
-      h('thead', null, h('tr', null, h('th', null, t('name')), h('th', null, t('age')), h('th', null, t('group')), h('th', null, t('level')), h('th', null, t('parent')), h('th', null, t('status')), h('th', null, t('payments')))),
+      h('thead', null, h('tr', null, h('th', null, t('name')), h('th', null, t('age')), h('th', null, t('group')), h('th', null, t('level')), h('th', null, t('parent')), h('th', null, t('payments')))),
       h('tbody', null, students.map((student) => h('tr', { class: 'clickable', onclick: () => { location.hash = `#/students/${student.id}`; } },
-        h('td', null, h('div', { class: 'row', style: { gap: '8px' } }, h('span', { class: 'avatar', style: { width: '30px', height: '30px', fontSize: '12px', borderRadius: '9px' } }, initials(student.name)), h('span', { class: 'strong' }, student.name))),
+        h('td', null, h('div', { class: 'row', style: { gap: '8px' } }, h('span', { class: 'avatar', style: { width: '30px', height: '30px', fontSize: '12px', borderRadius: '9px' } }, initials(student.name)), h('a', { class: 'strong', href: `#/students/${student.id}` }, student.name))),
         h('td', null, student.age ?? ''),
         h('td', null, student.groupName || (student.lessonType === 'private' ? t('lessonType.private') : h('span', { class: 'muted' }, t('noGroup')))),
         h('td', null, t(`level.${student.level}`), student.chesscomRating ? h('span', { class: 'muted small' }, ` · ${student.chesscomRating}`) : null),
         h('td', { class: 'small' }, student.parentName, h('div', { class: 'muted tiny', dir: 'ltr' }, student.parentPhone)),
-        h('td', null, statusBadge(student.status)),
-        h('td', null, ['active', 'trial'].includes(student.status) ? statusBadge(student.paymentState, 'pay') : '')
+        h('td', null, statusBadge(student.paymentState, 'pay'))
       )))
     ));
   }
@@ -74,7 +70,6 @@
         h('div', null,
           h('div', { class: 'profile-name' }, student.name),
           h('div', { class: 'profile-meta' },
-            statusBadge(student.status),
             h('span', { class: 'badge' }, t(`lessonType.${student.lessonType}`)),
             student.age ? h('span', { class: 'badge' }, `${t('age')} ${student.age}`) : null,
             h('span', { class: 'badge' }, t(`level.${student.level}`)),
@@ -92,7 +87,7 @@
     ));
 
     const payment = data.payment;
-    const paymentLine = ['active', 'trial'].includes(student.status)
+    const paymentLine = student.status !== 'inactive'
       ? h('div', { class: `alert ${payment.state === 'overdue' ? 'alert-danger' : payment.state === 'due_soon' ? 'alert-warn' : 'alert-sage'}` },
         statusBadge(payment.state, 'pay'),
         h('span', null, student.billingType === 'monthly'
@@ -190,12 +185,10 @@
   // A new student is added in five short steps. Only the first is required;
   // every later step can be skipped, and "finish" saves from anywhere. When
   // editing, the same steps are tabs and Save is always available.
-  const COMMON_TIMEZONES = ['Asia/Jerusalem', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Toronto', 'America/Sao_Paulo', 'Australia/Sydney'];
-
   function studentForm({ student = null, defaults = {}, onSaved }) {
     const isNew = !student;
     const today = window.UI.todayIso(window.SETTINGS.businessTimezone);
-    const s = student || { status: 'active', language: 'he', level: 'beginner', lessonType: 'group', billingType: 'monthly', currency: window.SETTINGS.defaultCurrency || 'ILS', price: window.SETTINGS.defaultGroupPrice, remindersEnabled: true, timezone: window.SETTINGS.businessTimezone, joinedAt: today, teacher: window.APP.teachers.some((teacher) => teacher.name === window.SETTINGS.teacherName) ? window.SETTINGS.teacherName : '', ...defaults };
+    const s = student || { status: 'active', language: 'he', level: 'beginner', lessonType: 'group', billingType: 'monthly', currency: 'ILS', remindersEnabled: true, timezone: window.SETTINGS.businessTimezone, joinedAt: today, teacher: window.APP.teachers.some((teacher) => teacher.name === window.SETTINGS.teacherName) ? window.SETTINGS.teacherName : '', ...defaults };
 
     modal({
       title: isNew ? t('newStudent') : `${t('editStudent')}: ${[s.firstName, s.lastName].filter(Boolean).join(' ')}`,
@@ -225,9 +218,9 @@
           field(t('lastName'), input('lastName', s.lastName || '', { autocomplete: 'off' })),
           field(t('age'), h('input', { name: 'age', type: 'number', min: 3, max: 99, value: s.age ?? '', inputmode: 'numeric' })),
           field(t('language'), enumSelect('language', window.VOCAB.languages, 'lang', s.language)),
-          field(t('parentName'), input('parentName', s.parentName || '', { autocomplete: 'off' })),
-          field(t('parentPhone'), input('parentPhone', s.parentPhone || '', { dir: 'ltr', placeholder: '050-1234567', inputmode: 'tel' }), { hint: t('wizPhoneHint') }),
-          field(t('status'), choice('status', window.VOCAB.studentStatuses.map((value) => [value, t(`status.${value}`)]), s.status), { full: true })
+          field(t('parentFirstName'), input('parentFirstName', s.parentFirstName || '', { autocomplete: 'off' })),
+          field(t('parentLastName'), input('parentLastName', s.parentLastName || '', { autocomplete: 'off' })),
+          field(t('parentPhone'), input('parentPhone', s.parentPhone || '', { dir: 'ltr', placeholder: '050-1234567', inputmode: 'tel' }), { hint: t('wizPhoneHint') })
         );
 
         // ---- step 2: where
@@ -291,10 +284,9 @@
         );
 
         // ---- step 5: everything else
-        const tzList = h('datalist', { id: 'tzOptions' }, COMMON_TIMEZONES.map((zone) => h('option', { value: zone })));
         const more = h('div', { class: 'form' },
           field(t('country'), input('country', s.country || '')),
-          field(t('timezone'), h('div', null, input('timezone', s.timezone || '', { dir: 'ltr', list: 'tzOptions' }), tzList), { hint: t('timezoneHint') }),
+          field(t('timezone'), window.UI.timezoneSelect('timezone', s.timezone || '', { blank: '—' })),
           field(t('parentEmail'), input('parentEmail', s.parentEmail || '', { type: 'email', dir: 'ltr' })),
           field(t('parentPhone2'), input('parentPhone2', s.parentPhone2 || '', { dir: 'ltr', inputmode: 'tel' })),
           field(t('birthDate'), h('input', { name: 'birthDate', type: 'date', value: s.birthDate || '' })),

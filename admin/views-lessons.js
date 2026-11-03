@@ -143,7 +143,6 @@
     }
     modal({
       title: lesson ? t('editLesson') : t('newLesson'),
-      size: 'modal-lg',
       body: (dialog) => {
         const attendanceState = { ...(l.attendance || {}) };
 
@@ -210,7 +209,7 @@
         });
         kindSelect.addEventListener('change', () => { if (kindSelect.value === 'private' || kindSelect.value === 'trial') { groupSelect.value = ''; } sync(); });
 
-        const form = h('form', { class: 'form form-3' },
+        const form = h('form', { class: 'form' },
           field(t('rawSummary'), textarea('rawSummary', l.rawSummary || '', { rows: 2 }), { full: true, hint: t('rawSummaryHint') }),
           field(t('lessonKind'), kindSelect),
           groupField,

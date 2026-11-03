@@ -206,6 +206,12 @@ describe('business API', () => {
 
     const again = await server.fetch(`/api/business/leads/${lead.id}/convert`, json(teacher.cookie, {}));
     assert.equal(again.status, 409, 'a prospect converts once');
+    // A converted lead is a student now, so it leaves the leads list.
+    const open = await (await server.fetch('/api/business/leads', { headers: { Cookie: teacher.cookie } })).json();
+    assert.ok(!open.leads.some((entry) => entry.id === lead.id));
+    // Students have no status to set: whatever is asked for, a student is active.
+    const patched = await (await server.fetch(`/api/business/students/${body.student.id}`, json(teacher.cookie, { status: 'waitlist' }, 'PATCH'))).json();
+    assert.equal(patched.student.status, 'active');
   });
 
   it('applies cancellations and reschedules to the calendar', async () => {
@@ -233,7 +239,8 @@ describe('business API', () => {
     const students = (await (await server.fetch('/api/business/students?status=active', { headers: { Cookie: teacher.cookie } })).json()).students;
     const target = students.find((entry) => entry.parentPhone);
     const composed = await (await server.fetch('/api/business/messages/compose', json(teacher.cookie, { kind: 'payment_reminder', studentId: target.id }))).json();
-    assert.ok(composed.message.body.includes(target.parentName), 'the parent name is filled in');
+    assert.ok(composed.message.body.includes(`${target.parentFirstName},`), 'the parent is greeted by first name');
+    assert.ok(!composed.message.body.includes(target.parentName), 'not by full name');
     assert.match(composed.message.whatsappLink, /^https:\/\/wa\.me\/\d+\?text=/);
 
     const logged = await server.fetch('/api/business/messages', json(teacher.cookie, { kind: 'payment_reminder', studentId: target.id, recipientPhone: target.parentPhone, body: composed.message.body, status: 'sent' }));
@@ -253,6 +260,22 @@ describe('business API', () => {
     assert.equal(report.trend[5].month, '2026-11');
   });
 
+  it('keeps the parent name as first and last, and still accepts one full name', async () => {
+    const split = (await (await server.fetch('/api/business/leads', json(teacher.cookie, { parentFirstName: 'Bob', parentLastName: 'Cohen', parentPhone: '+972500000777' }))).json()).lead;
+    assert.equal(split.parentName, 'Bob Cohen');
+    const legacy = (await (await server.fetch('/api/business/leads', json(teacher.cookie, { parentName: 'Mary Ann Smith', parentPhone: '+972500000778' }))).json()).lead;
+    assert.equal(legacy.parentFirstName, 'Mary');
+    assert.equal(legacy.parentLastName, 'Ann Smith');
+    const edited = (await (await server.fetch(`/api/business/leads/${legacy.id}`, json(teacher.cookie, { parentFirstName: 'Mary Ann', parentLastName: 'Smith' }, 'PATCH'))).json()).lead;
+    assert.equal(edited.parentName, 'Mary Ann Smith');
+    const renamed = (await (await server.fetch(`/api/business/leads/${split.id}`, json(teacher.cookie, { parentFirstName: 'Robert' }, 'PATCH'))).json()).lead;
+    assert.equal(renamed.parentLastName, 'Cohen', 'a partial update keeps the other half');
+    assert.equal(renamed.parentName, 'Robert Cohen');
+    const composed = await (await server.fetch('/api/business/messages/compose', json(teacher.cookie, { kind: 'followup', leadId: edited.id, lang: 'en' }))).json();
+    assert.match(composed.message.body, /^Hi Mary Ann, /);
+    assert.equal(composed.message.recipientName, 'Mary Ann Smith');
+  });
+
   it('persists settings and uses them when composing', async () => {
     const updated = await server.fetch('/api/business/settings', json(teacher.cookie, { teacherName: 'Coach Test', templates: { custom: { he: 'שלום {parentName}, {notes} — {teacherName}' } } }, 'PUT'));
     assert.equal(updated.status, 200);
@@ -261,7 +284,7 @@ describe('business API', () => {
 
     const lead = (await (await server.fetch('/api/business/leads', { headers: { Cookie: teacher.cookie } })).json()).leads.find((entry) => entry.parentPhone && entry.language === 'he');
     const composed = await (await server.fetch('/api/business/messages/compose', json(teacher.cookie, { kind: 'custom', leadId: lead.id, lang: 'he', values: { notes: 'בדיקה' } }))).json();
-    assert.equal(composed.message.body, `שלום ${lead.parentName}, בדיקה — Coach Test`);
+    assert.equal(composed.message.body, `שלום ${lead.parentFirstName}, בדיקה — Coach Test`);
   });
 
   it('gives every group the capacity from settings, ignoring any per-group value', async () => {

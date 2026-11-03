@@ -1,4 +1,4 @@
-// Groups: cards with seats and level, group page with profile, members,
+// Groups: a table with seats and level, group page with profile, members,
 // waitlist, lessons and topics, plus the matching tool.
 (function () {
   'use strict';
@@ -21,31 +21,33 @@
         h('a', { class: 'btn', href: '/', target: '_blank', rel: 'noopener' }, t('openPortal')),
         h('button', { class: 'btn btn-primary', type: 'button', onclick: () => newGroupForm(refresh) }, `+ ${t('newGroup')}`)
       ]),
-      h('div', { class: 'grid grid-3 grid-even' }, groups.map(groupCard))
+      h('div', { class: 'card' }, groupTable(groups))
     );
   }
 
-  function groupCard(group) {
+  // One line per group; the group page has the full profile and members.
+  function groupTable(groups) {
+    if (!groups.length) return empty(t('none'));
+    return h('div', { class: 'table-wrap' }, h('table', { class: 'table table-compact' },
+      h('thead', null, h('tr', null,
+        h('th', null, t('name')), h('th', null, t('schedule')), h('th', null, t('level')), h('th', null, t('teacher')),
+        h('th', { class: 'center' }, t('students')), h('th', null, t('lastLesson')), h('th', { class: 'center' }, t('status'))
+      )),
+      h('tbody', null, groups.map(groupRow))
+    ));
+  }
+
+  function groupRow(group) {
     const profile = group.profile;
-    const fill = Math.min(100, Math.round((group.studentCount / group.seatsTotal) * 100));
-    return h('a', { class: 'card', href: `#/groups/${group.id}`, style: { display: 'block' } },
-      h('div', { class: 'row-between' },
-        h('div', { class: 'card-title' }, group.name),
-        statusBadge(profile.status, 'groupStatus')
-      ),
-      h('div', { class: 'muted small', style: { marginTop: '4px' } }, scheduleText(group.schedule) || '—'),
-      h('div', { class: 'chips', style: { marginTop: '10px' } },
-        profile.level ? h('span', { class: 'chip' }, t(`level.${profile.level}`)) : null,
-        profile.minAge || profile.maxAge ? h('span', { class: 'chip' }, `${t('age')} ${profile.minAge ?? '?'}–${profile.maxAge ?? '?'}`) : null,
-        profile.ratingMin !== null || profile.ratingMax !== null ? h('span', { class: 'chip' }, `♟ ${profile.ratingMin ?? 0}–${profile.ratingMax ?? '∞'}`) : null,
-        h('span', { class: 'chip' }, t(`lang.${profile.language}`))
-      ),
-      h('div', { style: { marginTop: '12px' } },
-        h('div', { class: 'row-between small' }, h('span', { class: 'strong' }, `${group.studentCount}/${group.seatsTotal} ${t('students')}`), h('span', { class: group.seatsFree ? 'badge badge-gold' : 'badge badge-danger' }, group.seatsFree ? `${group.seatsFree} ${t('seatsFree')}` : t('full'))),
-        h('div', { style: { height: '6px', background: 'var(--cream)', borderRadius: '4px', marginTop: '6px', overflow: 'hidden' } }, h('div', { style: { width: `${fill}%`, height: '100%', background: fill >= 100 ? 'var(--danger)' : 'var(--gold)' } }))
-      ),
-      h('div', { class: 'muted small', style: { marginTop: '8px' } }, group.students.map((student) => student.name).join(', ') || t('none')),
-      group.lastLessonTopic ? h('div', { class: 'muted tiny', style: { marginTop: '6px' } }, `${t('lastTime', { date: fmtDate(group.lastLessonAt), topic: group.lastLessonTopic })}`) : null
+    const dash = () => h('span', { class: 'muted' }, '—');
+    return h('tr', { class: 'clickable', onclick: () => { location.hash = `#/groups/${group.id}`; } },
+      h('td', null, h('a', { class: 'strong', href: `#/groups/${group.id}` }, group.name)),
+      h('td', null, scheduleText(group.schedule) || dash()),
+      h('td', null, profile.level ? t(`level.${profile.level}`) : dash()),
+      h('td', null, profile.teacher || dash()),
+      h('td', { class: 'center' }, h('span', { class: group.seatsFree ? 'strong' : 'badge badge-danger' }, `${group.studentCount}/${group.seatsTotal}`)),
+      h('td', { class: 'truncate', title: group.lastLessonTopic || '' }, group.lastLessonTopic || dash()),
+      h('td', { class: 'center' }, statusBadge(profile.status, 'groupStatus'))
     );
   }
 
@@ -139,7 +141,8 @@
     modal({
       title: `${t('editProfile')}: ${group.name}`,
       body: (dialog) => {
-        const form = h('form', { class: 'form form-3' },
+        const form = h('form', { class: 'form' },
+          field(t('zoomLink'), input('zoomLink', group.zoomLink || '', { dir: 'ltr' }), { full: true }),
           field(t('groupStatus'), enumSelect('status', window.VOCAB.groupStatuses, 'groupStatus', profile.status)),
           field(t('language'), enumSelect('language', window.VOCAB.languages, 'lang', profile.language)),
           field(t('level'), enumSelect('level', window.VOCAB.levels, 'level', profile.level, { blank: '—' })),
@@ -159,7 +162,11 @@
         form.addEventListener('submit', async (event) => {
           event.preventDefault();
           try {
-            await api(`/groups/${group.id}/profile`, { method: 'PATCH', body: formValues(form) });
+            // The Zoom link lives on the portal's group, the rest on the profile here.
+            // It is always sent: the link loaded with the page may be stale.
+            const { zoomLink, ...values } = formValues(form);
+            await api(`/groups/${group.id}/zoom-link`, { root: '/api', method: 'POST', body: { zoomLink } });
+            await api(`/groups/${group.id}/profile`, { method: 'PATCH', body: values });
             toast(t('saved'), 'success');
             dialog.close();
             refresh();
@@ -182,10 +189,10 @@
       body: (dialog) => {
         const schedule = scheduleEditor([{ weekday: 0, startTime: '17:00', durationMinutes: 60 }]);
         let createdId = '';
-        const form = h('form', { class: 'form form-3' },
+        const form = h('form', { class: 'form' },
           field(t('groupNameHe'), input('nameHe', '', { required: true })),
           field(t('groupNameEn'), input('nameEn', '')),
-          field(t('zoomLink'), input('zoomLink', '')),
+          field(t('zoomLink'), input('zoomLink', '', { dir: 'ltr' })),
           field(t('groupSchedule'), schedule, { full: true }),
           field(t('groupStatus'), enumSelect('status', window.VOCAB.groupStatuses, 'groupStatus', 'forming')),
           field(t('language'), enumSelect('language', window.VOCAB.languages, 'lang', 'he')),
@@ -287,7 +294,7 @@
     const results = h('div');
     const suggestions = h('div');
     const days = weekdayPicker([]);
-    const form = h('form', { class: 'form form-3' },
+    const form = h('form', { class: 'form' },
       field(t('age'), h('input', { name: 'age', type: 'number', min: 3, max: 99, value: query.age || '' })),
       field(t('rating'), h('input', { name: 'rating', type: 'number', min: 0, max: 4000, value: query.rating || '' })),
       field(t('level'), enumSelect('level', window.VOCAB.levels, 'level', query.level || '', { blank: '—' })),

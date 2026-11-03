@@ -12,7 +12,12 @@
     const from = anchor;
     const to = addDays(from, 6);
     const mode = query.mode === 'agenda' ? 'agenda' : 'week';
-    const data = await api(`/calendar?from=${from}&to=${to}`);
+    // The grid places lessons by their date in the business zone. Zones span
+    // UTC-12 to UTC+14, so a stored date can be two days off that, plus a day
+    // for a lesson running past midnight into Sunday.
+    const MARGIN_DAYS = 3;
+    const data = await api(`/calendar?from=${addDays(from, -MARGIN_DAYS)}&to=${addDays(to, MARGIN_DAYS)}`);
+    const occurrences = data.occurrences.filter((occurrence) => occurrence.date >= from && occurrence.date <= to);
     const nav = (target) => `#/calendar?from=${target}${mode === 'agenda' ? '&mode=agenda' : ''}`;
 
     const head = window.UI.pageHead(t('calendarTitle'), t('calendarSub', { tz }), [
@@ -30,12 +35,10 @@
       h('span', { class: 'cal-range' }, `${fmtDate(from)} – ${fmtDate(to, { year: 'numeric' })}`)
     );
 
-    const byDate = {};
-    for (const occurrence of data.occurrences) (byDate[occurrence.date] ||= []).push(occurrence);
 
     let body;
     if (mode === 'agenda') {
-      body = data.occurrences.length ? h('div', { class: 'card cal-agenda' }, h('div', { class: 'list' }, data.occurrences.map((occurrence) => h('div', { class: 'list-item clickable', onclick: () => occurrenceDialog(occurrence, tz, refresh) },
+      body = occurrences.length ? h('div', { class: 'card cal-agenda' }, h('div', { class: 'list' }, occurrences.map((occurrence) => h('div', { class: 'list-item clickable', onclick: () => occurrenceDialog(occurrence, tz, refresh) },
         h('div', { style: { minWidth: '110px' } }, h('div', { class: 'strong small' }, fmtDate(occurrence.date, { weekday: 'short' })), h('span', { class: 'time-pill' }, fmtTime(occurrence.startAt, tz))),
         h('div', { class: 'list-main' },
           h('div', { class: 'list-title' }, occurrence.title, h('span', { class: 'badge' }, t(`kind.${occurrence.kind}`)), occurrence.conflicts?.length ? h('span', { class: 'badge badge-danger' }, t('conflict')) : null, occurrence.loggedLessonId ? h('span', { class: 'badge badge-sage' }, t('lessonStatus.held')) : null),
@@ -43,23 +46,119 @@
         )
       )))) : h('div', { class: 'card' }, empty(t('noEventsWeek')));
     } else {
-      body = h('div', { class: 'cal-week' }, Array.from({ length: 7 }, (_, index) => {
-        const date = addDays(from, index);
-        const items = byDate[date] || [];
-        return h('div', { class: `cal-day ${date === today ? 'today' : ''}` },
-          h('div', { class: 'cal-day-head' }, h('span', { class: 'cal-day-name' }, t('weekdays')[weekdayOf(date)]), h('span', { class: 'cal-day-num' }, fmtDate(date))),
-          items.map((occurrence) => h('div', { class: `cal-slot kind-${occurrence.kind} ${occurrence.conflicts?.length ? 'conflict' : ''} ${occurrence.loggedLessonId ? 'logged' : ''}`, onclick: () => occurrenceDialog(occurrence, tz, refresh) },
-            h('div', { class: 'cal-slot-time' }, `${fmtTime(occurrence.startAt, tz)} · ${occurrence.durationMinutes}′`),
-            h('div', { class: 'cal-slot-title' }, occurrence.title),
-            h('div', { class: 'cal-slot-sub' }, occurrence.kind === 'group' ? `${occurrence.students.length} ${t('students')}` : t(`kind.${occurrence.kind}`))
-          )),
-          h('button', { class: 'btn btn-xs btn-ghost', type: 'button', style: { width: '100%', marginTop: '4px' }, onclick: () => eventForm({ defaults: { date }, onSaved: refresh }) }, '+')
-        );
-      }));
+      body = weekGrid({ from, today, tz, occurrences: data.occurrences, refresh });
     }
 
     return h('div', null, head, calNav, body);
   };
+
+  // Week view as a time grid: an hour rail on the side, one column per day,
+  // each occurrence placed by its start and length. Overlapping occurrences
+  // share the column side by side; a click on empty space adds an event there.
+  const HOUR_PX = 64; // keep in sync with --hour in admin.css
+  const minutesOf = (isoInstant, tz) => {
+    const [hours, minutes] = fmtTime(isoInstant, tz).split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+
+  const daysBetween = (fromIso, toIso) => Math.round((Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`)) / 86_400_000);
+
+  // Split each occurrence into per-day pieces in wall-clock time, so one running
+  // past midnight also fills the start of the next day. The end comes from the
+  // real end instant (a spring-forward night skips an hour); on a fall-back
+  // night the repeated hour can't be drawn, so the slot is never drawn shorter
+  // than the lesson itself.
+  function segmentsByDate(occurrences, tz) {
+    const byDate = {};
+    for (const occurrence of occurrences) {
+      const startDate = todayIso(tz, new Date(occurrence.startAt));
+      const start = minutesOf(occurrence.startAt, tz);
+      const duration = occurrence.durationMinutes || 60;
+      const endAt = new Date(Date.parse(occurrence.startAt) + duration * 60_000).toISOString();
+      const end = Math.max(start + duration, daysBetween(startDate, todayIso(tz, new Date(endAt))) * 1440 + minutesOf(endAt, tz));
+      for (let dayOffset = 0; dayOffset * 1440 < end; dayOffset += 1) {
+        const date = addDays(startDate, dayOffset);
+        (byDate[date] ||= []).push({ occurrence, start: Math.max(0, start - dayOffset * 1440), end: Math.min(1440, end - dayOffset * 1440), continued: dayOffset > 0 });
+      }
+    }
+    return byDate;
+  }
+
+  function layoutDay(segments) {
+    const placed = segments.map((segment) => ({ ...segment })).sort((a, b) => a.start - b.start || b.end - a.end);
+    let cluster = [];
+    let clusterEnd = -1;
+    const closeCluster = () => {
+      const lanes = Math.max(1, ...cluster.map((item) => item.lane + 1));
+      for (const item of cluster) item.lanes = lanes;
+      cluster = [];
+    };
+    for (const item of placed) {
+      if (item.start >= clusterEnd) closeCluster();
+      const laneEnds = [];
+      for (const other of cluster) laneEnds[other.lane] = Math.max(laneEnds[other.lane] ?? -1, other.end);
+      let lane = 0;
+      while (laneEnds[lane] !== undefined && laneEnds[lane] > item.start) lane += 1;
+      item.lane = lane;
+      cluster.push(item);
+      clusterEnd = Math.max(clusterEnd, item.end);
+    }
+    closeCluster();
+    return placed;
+  }
+
+  function weekGrid({ from, today, tz, occurrences, refresh }) {
+    const days = Array.from({ length: 7 }, (_, index) => addDays(from, index));
+    const byDate = segmentsByDate(occurrences, tz);
+    const laidOut = Object.fromEntries(days.map((date) => [date, layoutDay(byDate[date] || [])]));
+    const all = Object.values(laidOut).flat();
+    const firstHour = Math.min(8, ...all.map((item) => Math.floor(item.start / 60)));
+    const lastHour = Math.min(24, Math.max(21, ...all.map((item) => Math.ceil(item.end / 60))));
+    const height = (lastHour - firstHour) * HOUR_PX;
+    const y = (minutes) => ((minutes - firstHour * 60) / 60) * HOUR_PX;
+    const pad = (value) => String(value).padStart(2, '0');
+    const nowMinutes = minutesOf(new Date().toISOString(), tz);
+
+    const addAt = (event, date) => {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const minutes = Math.max(0, Math.min(24 * 60 - 15, firstHour * 60 + Math.floor(((event.clientY - rect.top) / HOUR_PX) * 4) * 15));
+      eventForm({ defaults: { date, startTime: `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}` }, onSaved: refresh });
+    };
+
+    return h('div', { class: 'cal-grid-wrap' },
+      h('div', { class: 'cal-grid' },
+        h('div', { class: 'cal-corner' }),
+        days.map((date) => h('div', { class: `cal-day-head ${date === today ? 'today' : ''}` },
+          h('span', { class: 'cal-day-name' }, t('weekdays')[weekdayOf(date)]),
+          h('span', { class: 'cal-day-num' }, fmtDate(date))
+        )),
+        h('div', { class: 'cal-hours', style: { height: `${height}px` } },
+          Array.from({ length: lastHour - firstHour }, (_, index) => h('div', { class: 'cal-hour', style: { top: `${index * HOUR_PX}px` } }, `${pad(firstHour + index)}:00`))
+        ),
+        days.map((date) => h('div', {
+          class: `cal-col ${date === today ? 'today' : ''}`,
+          style: { height: `${height}px` },
+          title: t('addEvent'),
+          onclick: (event) => addAt(event, date)
+        },
+          date === today && nowMinutes >= firstHour * 60 && nowMinutes <= lastHour * 60 ? h('div', { class: 'cal-now', style: { top: `${y(nowMinutes)}px` } }) : null,
+          laidOut[date].map(({ occurrence, start, end, continued, lane, lanes }) => {
+            const slotHeight = Math.max(22, y(end) - y(start) - 2);
+            return h('div', {
+              class: `cal-slot kind-${occurrence.kind} ${occurrence.conflicts?.length ? 'conflict' : ''} ${occurrence.loggedLessonId ? 'logged' : ''} ${slotHeight < 44 ? 'short' : ''} ${lanes >= 3 ? 'narrow' : ''}`,
+              style: { top: `${y(start) + 1}px`, height: `${slotHeight}px`, insetInlineStart: `calc(${(lane / lanes) * 100}% + 2px)`, width: `calc(${100 / lanes}% - 4px)` },
+              title: `${fmtTime(occurrence.startAt, tz)} · ${occurrence.durationMinutes}′ · ${occurrence.title}`,
+              onclick: (event) => { event.stopPropagation(); occurrenceDialog(occurrence, tz, refresh); }
+            },
+              h('div', { class: 'cal-slot-time' }, `${continued ? '↳ ' : ''}${fmtTime(occurrence.startAt, tz)} · ${occurrence.durationMinutes}′`),
+              h('div', { class: 'cal-slot-title' }, occurrence.title),
+              slotHeight >= 60 ? h('div', { class: 'cal-slot-sub' }, occurrence.kind === 'group' ? `${occurrence.students.length} ${t('students')}` : t(`kind.${occurrence.kind}`)) : null
+            );
+          })
+        ))
+      )
+    );
+  }
 
   function occurrenceDialog(occurrence, tz, refresh) {
     const dialog = modal({
@@ -96,7 +195,7 @@
             } }, t('delete'))
             : [
               h('button', { class: 'btn btn-sm btn-danger', type: 'button', onclick: () => { api_.close(); eventForm({ defaults: { kind: 'cancel', date: occurrence.date, groupId: occurrence.groupId, studentId: occurrence.groupId ? '' : occurrence.studentIds[0] || '', title: occurrence.title }, onSaved: refresh }); } }, t('cancelLesson')),
-              h('button', { class: 'btn btn-sm', type: 'button', onclick: () => { api_.close(); eventForm({ defaults: { kind: 'reschedule', date: occurrence.date, originalDate: occurrence.date, originalTime: occurrence.startTime, startTime: occurrence.startTime, durationMinutes: occurrence.durationMinutes, groupId: occurrence.groupId, studentId: occurrence.groupId ? '' : occurrence.studentIds[0] || '', title: occurrence.title, zoomLink: occurrence.zoomLink }, onSaved: refresh }); } }, t('rescheduleLesson'))
+              h('button', { class: 'btn btn-sm', type: 'button', onclick: () => { api_.close(); eventForm({ defaults: { kind: 'reschedule', date: occurrence.date, originalDate: occurrence.date, originalTime: occurrence.startTime, startTime: occurrence.startTime, durationMinutes: occurrence.durationMinutes, groupId: occurrence.groupId, studentId: occurrence.groupId ? '' : occurrence.studentIds[0] || '', title: occurrence.title, zoomLink: '' }, onSaved: refresh }); } }, t('rescheduleLesson'))
             ]
         )
       )
