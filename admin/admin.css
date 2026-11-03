@@ -140,7 +140,7 @@ input, select, textarea { font: inherit; color: inherit; }
   box-shadow: var(--shadow-sm); padding: 18px 20px;
 }
 .card + .card { margin-top: 16px; }
-.card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; min-height: 30px; }
 .card-title { font-size: 15px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 8px; }
 .card-title .count { font-size: 12px; font-weight: 600; color: var(--text-light); background: var(--cream); padding: 2px 8px; border-radius: 999px; }
 .card-sub { color: var(--text-light); font-size: 13px; }
@@ -160,6 +160,9 @@ input, select, textarea { font: inherit; color: inherit; }
 .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 /* Cards in a grid line up by the grid gap, not the stacked-card margin. */
 .grid > .card + .card { margin-top: 0; }
+/* A column of cards inside a grid uses the same gap as the grid itself. */
+.grid > .stack { gap: 16px; }
+.stack > .card + .card { margin-top: 0; }
 .grid-even { grid-auto-rows: 1fr; }
 .span-2 { grid-column: span 2; }
 .divider { height: 1px; background: var(--line); margin: 14px 0; }
@@ -287,6 +290,9 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .wizard-title { font-size: 20px; font-weight: 800; color: var(--ink); margin-bottom: 2px; }
 .wizard-intro { color: var(--text-light); font-size: 14px; margin-bottom: 14px; }
 .wizard-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 14px; margin-top: 4px; }
+.phone-input { display: flex; min-width: 0; }
+.field .phone-input .phone-country { width: auto; flex: 0 0 auto; padding: 0 8px; border-start-end-radius: 0; border-end-end-radius: 0; border-inline-end: 0; background: var(--cream); font-weight: 600; cursor: pointer; }
+.field .phone-input input { flex: 1 1 auto; min-width: 0; border-start-start-radius: 0; border-end-start-radius: 0; letter-spacing: .02em; }
 .field input.invalid { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
 .choice { display: flex; gap: 6px; flex-wrap: wrap; }
 .choice-item { flex: 1 1 0; min-width: 96px; padding: 10px 12px; border-radius: 12px; border: 1.5px solid var(--line-strong); background: var(--paper); font-weight: 700; font-size: 14px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
@@ -344,7 +350,9 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 /* pipeline (board) */
 .main--board { height: calc(100vh - var(--topbar-h)); overflow: hidden; padding-bottom: 16px; display: flex; flex-direction: column; }
 .board-page { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.pipeline { display: flex; gap: 8px; align-items: stretch; overflow-x: auto; overflow-y: hidden; flex: 1; min-height: 0; padding-bottom: 6px; }
+.pipeline { display: flex; gap: 8px; align-items: stretch; overflow-x: auto; overflow-y: hidden; flex: 1; min-height: 0; padding: 10px 0 6px; }
+/* The top padding leaves room for .pipe-end-title, which sits above its box
+   and would otherwise be clipped by the scroll container. */
 /* Bleed through .main's side padding so scrolled columns run to the edge
    instead of being clipped short of it; the padding keeps the start aligned. */
 .main--board .pipeline { margin-inline: -28px; padding-inline: 28px; }
@@ -503,6 +511,39 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
   .pipe-arrow { display: none; }
   .pipe-end { flex-direction: column; }
 }
+/* teachers */
+.teacher-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 16px; align-items: stretch; }
+.teacher-card { display: flex; flex-direction: column; gap: 14px; margin: 0; min-width: 0; }
+.card + .teacher-card, .teacher-card + .card { margin-top: 0; }
+.teacher-head { display: flex; align-items: center; gap: 12px; }
+.teacher-avatar { width: 48px; height: 48px; border-radius: 14px; font-size: 17px; }
+.teacher-id { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.teacher-name { font-size: 17px; font-weight: 800; color: var(--ink); overflow-wrap: anywhere; }
+.teacher-actions { display: flex; gap: 2px; align-self: flex-start; }
+.teacher-delete { color: var(--danger); }
+.teacher-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.teacher-stat { background: var(--cream); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; }
+.teacher-stat-value { font-size: 22px; font-weight: 800; color: var(--ink); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.teacher-stat-label { font-size: 12px; color: var(--text-light); font-weight: 600; margin-top: 2px; }
+.teacher-group { color: var(--ink); font-weight: 600; max-width: 100%; overflow-wrap: anywhere; }
+.teacher-group:hover { border-color: var(--gold); background: var(--gold-soft); }
+.teacher-foot { min-width: 0; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.teacher-contact { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); max-width: 100%; min-width: 0; }
+.teacher-contact > span:last-child { overflow-wrap: anywhere; min-width: 0; }
+.teacher-contact:hover { color: var(--gold-dark); }
+.teacher-contact-empty { background: none; border: 0; padding: 0; color: var(--text-light); cursor: pointer; font: inherit; font-size: 13px; }
+.teacher-notes { margin: 2px 0 0; font-size: 13px; color: var(--text-light); white-space: pre-line; overflow-wrap: anywhere; max-width: 100%; }
+.teacher-add {
+  min-height: 220px; border: 1.5px dashed var(--line-strong); border-radius: var(--radius); background: transparent;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  color: var(--text-light); font: inherit; font-weight: 600; cursor: pointer; transition: border-color .15s, background .15s, color .15s;
+}
+.teacher-add:hover { border-color: var(--gold); background: var(--gold-soft); color: var(--ink); }
+.teacher-add-plus { width: 44px; height: 44px; border-radius: 50%; background: var(--paper); border: 1px solid var(--line-strong); display: inline-flex; align-items: center; justify-content: center; font-size: 22px; line-height: 1; }
+.teacher-empty { text-align: center; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 12px; color: var(--text-light); }
+.teacher-empty-icon { font-size: 34px; }
+@media (max-width: 760px) { .teacher-grid { grid-template-columns: 1fr; } .teacher-add { min-height: 120px; } }
+
 @media print {
   .topbar, .sidebar, .page-actions, .btn { display: none !important; }
   .main { padding: 0; }

@@ -195,7 +195,7 @@
   function studentForm({ student = null, defaults = {}, onSaved }) {
     const isNew = !student;
     const today = window.UI.todayIso(window.SETTINGS.businessTimezone);
-    const s = student || { status: 'active', language: 'he', level: 'beginner', lessonType: 'group', billingType: 'monthly', currency: window.SETTINGS.defaultCurrency || 'ILS', price: window.SETTINGS.defaultGroupPrice, remindersEnabled: true, timezone: window.SETTINGS.businessTimezone, joinedAt: today, teacher: window.SETTINGS.teacherName || '', ...defaults };
+    const s = student || { status: 'active', language: 'he', level: 'beginner', lessonType: 'group', billingType: 'monthly', currency: window.SETTINGS.defaultCurrency || 'ILS', price: window.SETTINGS.defaultGroupPrice, remindersEnabled: true, timezone: window.SETTINGS.businessTimezone, joinedAt: today, teacher: window.APP.teachers.some((teacher) => teacher.name === window.SETTINGS.teacherName) ? window.SETTINGS.teacherName : '', ...defaults };
 
     modal({
       title: isNew ? t('newStudent') : `${t('editStudent')}: ${[s.firstName, s.lastName].filter(Boolean).join(' ')}`,
@@ -243,7 +243,7 @@
           groupField,
           scheduleField,
           field(t('joinedAt'), h('input', { name: 'joinedAt', type: 'date', value: s.joinedAt || '' })),
-          field(t('teacher'), input('teacher', s.teacher || ''))
+          field(t('teacher'), window.UI.teacherSelect('teacher', s.teacher || ''))
         );
         const syncPlacement = () => {
           const type = form.elements.lessonType.value;

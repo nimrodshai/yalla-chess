@@ -264,6 +264,63 @@ describe('business API', () => {
     assert.equal(composed.message.body, `שלום ${lead.parentName}, בדיקה — Coach Test`);
   });
 
+  it('gives every group the capacity from settings, ignoring any per-group value', async () => {
+    const groupsNow = async () => (await (await server.fetch('/api/business/groups', { headers: { Cookie: teacher.cookie } })).json()).groups;
+    const saved = await server.fetch('/api/business/groups/rookies/profile', json(teacher.cookie, { maxStudents: 2 }, 'PATCH'));
+    assert.equal(saved.status, 200);
+    assert.ok((await groupsNow()).every((group) => group.seatsTotal === 5));
+
+    await server.fetch('/api/business/settings', json(teacher.cookie, { maxGroupSize: 7 }, 'PUT'));
+    const groups = await groupsNow();
+    assert.ok(groups.every((group) => group.seatsTotal === 7 && group.seatsFree === Math.max(0, 7 - group.studentCount)));
+    assert.ok(groups.every((group) => !('maxStudents' in group.profile)));
+    await server.fetch('/api/business/settings', json(teacher.cookie, { maxGroupSize: 5 }, 'PUT'));
+  });
+
+  it('keeps a teachers list, and renames or unassigns a teacher everywhere it is used', async () => {
+    const list = async () => (await (await server.fetch('/api/business/teachers', { headers: { Cookie: teacher.cookie } })).json()).teachers;
+    const profileOf = async (id) => (await (await server.fetch('/api/business/groups', { headers: { Cookie: teacher.cookie } })).json()).groups.find((group) => group.id === id).profile;
+    assert.ok((await list()).some((entry) => entry.name === 'דולב'));
+
+    const created = await (await server.fetch('/api/business/teachers', json(teacher.cookie, { name: 'Maya', phone: '050-1234567' }))).json();
+    assert.equal(created.teacher.phone, '+972501234567');
+    assert.equal((await server.fetch('/api/business/teachers', json(teacher.cookie, { name: 'maya' }))).status, 409);
+    assert.equal((await server.fetch('/api/business/teachers', json(teacher.cookie, { name: '  ' }))).status, 400);
+    // A phone that cannot be a phone is refused rather than dropped, and two teachers cannot share one.
+    assert.equal((await server.fetch('/api/business/teachers', json(teacher.cookie, { name: 'Typo', phone: '050-12' }))).status, 400);
+    assert.equal((await server.fetch('/api/business/teachers', json(teacher.cookie, { name: 'Twin', phone: '+972 50 123 4567' }))).status, 409);
+    assert.equal((await server.fetch(`/api/business/teachers/${created.teacher.id}`, json(teacher.cookie, { phone: 'call me' }, 'PATCH'))).status, 400);
+
+    await server.fetch('/api/business/groups/rookies/profile', json(teacher.cookie, { teacher: 'Maya' }, 'PATCH'));
+    const renamed = await server.fetch(`/api/business/teachers/${created.teacher.id}`, json(teacher.cookie, { name: 'Maya Cohen' }, 'PATCH'));
+    assert.equal(renamed.status, 200);
+    assert.equal((await profileOf('rookies')).teacher, 'Maya Cohen');
+    assert.equal((await list()).find((entry) => entry.id === created.teacher.id).groupCount, 1);
+
+    const dolev = (await list()).find((entry) => entry.name === 'דולב');
+    await server.fetch('/api/business/settings', json(teacher.cookie, { teacherName: 'דולב' }, 'PUT'));
+    await server.fetch(`/api/business/teachers/${dolev.id}`, json(teacher.cookie, { name: 'דולב ש' }, 'PATCH'));
+    const settings = (await (await server.fetch('/api/business/settings', { headers: { Cookie: teacher.cookie } })).json()).settings;
+    assert.equal(settings.teacherName, 'דולב ש');
+    await server.fetch(`/api/business/teachers/${dolev.id}`, json(teacher.cookie, { name: 'דולב' }, 'PATCH'));
+
+    const removed = await server.fetch(`/api/business/teachers/${created.teacher.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+    assert.equal(removed.status, 200);
+    assert.equal((await profileOf('rookies')).teacher, '');
+    assert.ok(!(await list()).some((entry) => entry.id === created.teacher.id));
+
+    // A new lesson cannot bring a removed teacher back.
+    const lesson = await (await server.fetch('/api/business/lessons', json(teacher.cookie, { date: '2026-11-01', groupId: 'rookies', teacher: 'Maya Cohen', topic: 'Forks' }))).json();
+    assert.notEqual(lesson.lesson.teacher, 'Maya Cohen');
+    assert.ok(lesson.lesson.teacher === '' || (await list()).some((entry) => entry.name === lesson.lesson.teacher));
+    // An edit keeps the lesson's teacher unless a listed one is asked for.
+    const lessonUrl = `/api/business/lessons/${lesson.lesson.id}`;
+    const original = lesson.lesson.teacher;
+    assert.equal((await (await server.fetch(lessonUrl, json(teacher.cookie, { topic: 'Pins' }, 'PATCH'))).json()).lesson.teacher, original);
+    assert.equal((await (await server.fetch(lessonUrl, json(teacher.cookie, { teacher: 'Nobody' }, 'PATCH'))).json()).lesson.teacher, original);
+    await server.fetch(lessonUrl, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+  });
+
   it('imports every game from a PGN file as a content item', async () => {
     const pgn = `[Event "London"]
 [White "Edward Lasker"]

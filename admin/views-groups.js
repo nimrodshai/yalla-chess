@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   window.VIEWS = window.VIEWS || {};
-  const { h, api, t, card, empty, fmtDate, statusBadge, link, modal, field, input, textarea, select, enumSelect, formValues, errorBox, toast, scheduleText, scheduleEditor, weekdayPicker, initials, confirmDialog } = window.UI;
+  const { h, api, t, card, empty, fmtDate, statusBadge, link, modal, field, input, textarea, select, enumSelect, teacherSelect, formValues, errorBox, toast, scheduleText, scheduleEditor, weekdayPicker, initials, confirmDialog } = window.UI;
 
   window.VIEWS.groups = async ({ id, query, refresh }) => {
     if (id === 'match') return matchTool(query);
@@ -82,7 +82,6 @@
       detail(t('language'), t(`lang.${profile.language}`)),
       detail(t('teacher'), profile.teacher),
       detail(t('price'), profile.price !== null ? window.UI.fmtMoney(profile.price, profile.currency) : ''),
-      detail(t('maxStudents'), profile.maxStudents),
       detail(t('description'), profile.description)
     ));
 
@@ -101,14 +100,14 @@
           refresh();
         } }, t('removeFromGroup'))
       )
-    ))) : empty(t('none')), { count: `${group.studentCount}/${group.seatsTotal}`, actions: [h('button', { class: 'btn btn-sm', type: 'button', onclick: () => addDialog(group, unassigned, refresh) }, `+ ${t('addStudentToGroup')}`)] });
+    ))) : empty(t('noMembersYet')), { count: `${group.studentCount}/${group.seatsTotal}`, actions: [h('button', { class: 'btn btn-sm', type: 'button', onclick: () => addDialog(group, unassigned, refresh) }, `+ ${t('addStudentToGroup')}`)] });
 
     const waitlist = group.waitlist.length ? card(t('waitlistFor'), h('div', { class: 'list' }, group.waitlist.map((student) => h('div', { class: 'list-item' },
       h('div', { class: 'list-main' }, link(`#/students/${student.id}`, student.name)),
       h('button', { class: 'btn btn-xs', type: 'button', onclick: async () => { await api(`/students/${student.id}`, { method: 'PATCH', body: { status: 'active', groupId: group.id } }); toast(t('saved'), 'success'); refresh(); } }, t('status.active'))
     ))), { count: group.waitlist.length }) : null;
 
-    const topics = card(t('groupTopics'), group.topicsLearned.length ? h('div', { class: 'chips' }, group.topicsLearned.map((topic) => h('span', { class: 'chip' }, topic))) : h('div', { class: 'muted small' }, t('noTopics')), { count: group.topicsLearned.length });
+    const topics = card(t('groupTopics'), group.topicsLearned.length ? h('div', { class: 'chips' }, group.topicsLearned.map((topic) => h('span', { class: 'chip' }, topic))) : empty(t('noTopics')), { count: group.topicsLearned.length });
 
     const lessons = card(t('groupLessons'), lessonsResponse.lessons.length ? h('div', { class: 'list' }, lessonsResponse.lessons.map((lesson) => h('div', { class: 'list-item clickable', onclick: () => { location.hash = `#/lessons/${lesson.id}`; } },
       h('div', { class: 'list-main' },
@@ -125,9 +124,12 @@
     return h('div', null,
       h('div', { class: 'breadcrumb' }, link('#/groups', t('navGroups')), '›', group.name),
       head,
+      // Short summary cards share a row and stretch to the same height; the
+      // two lists below grow independently but start on the same line.
+      h('div', { class: 'grid grid-2', style: { marginTop: '16px' } }, profileCard, topics),
       h('div', { class: 'grid grid-2', style: { marginTop: '16px' } },
-        h('div', { class: 'stack' }, members, waitlist, profileCard),
-        h('div', { class: 'stack' }, topics, lessons)
+        h('div', { class: 'stack' }, members, waitlist),
+        h('div', { class: 'stack' }, lessons)
       )
     );
   }
@@ -139,14 +141,13 @@
       body: (dialog) => {
         const form = h('form', { class: 'form form-3' },
           field(t('groupStatus'), enumSelect('status', window.VOCAB.groupStatuses, 'groupStatus', profile.status)),
-          field(t('maxStudents'), h('input', { name: 'maxStudents', type: 'number', min: 1, max: 30, value: profile.maxStudents })),
           field(t('language'), enumSelect('language', window.VOCAB.languages, 'lang', profile.language)),
           field(t('level'), enumSelect('level', window.VOCAB.levels, 'level', profile.level, { blank: '—' })),
           field(t('minAge'), h('input', { name: 'minAge', type: 'number', min: 3, max: 99, value: profile.minAge ?? '' })),
           field(t('maxAge'), h('input', { name: 'maxAge', type: 'number', min: 3, max: 99, value: profile.maxAge ?? '' })),
           field(t('ratingMin'), h('input', { name: 'ratingMin', type: 'number', min: 0, max: 4000, value: profile.ratingMin ?? '' })),
           field(t('ratingMax'), h('input', { name: 'ratingMax', type: 'number', min: 0, max: 4000, value: profile.ratingMax ?? '' })),
-          field(t('teacher'), input('teacher', profile.teacher || '')),
+          field(t('teacher'), teacherSelect('teacher', profile.teacher || ''), { hint: h('a', { class: 'link', href: '#/teachers', onclick: () => dialog.close() }, t('manageTeachers')) }),
           field(t('price'), h('input', { name: 'price', type: 'number', step: '0.01', min: 0, value: profile.price ?? '' })),
           field(t('currency'), select('currency', window.VOCAB.currencies, profile.currency)),
           field(t('description'), textarea('description', profile.description || '', { rows: 3 }), { full: true }),
@@ -187,11 +188,11 @@
           field(t('zoomLink'), input('zoomLink', '')),
           field(t('groupSchedule'), schedule, { full: true }),
           field(t('groupStatus'), enumSelect('status', window.VOCAB.groupStatuses, 'groupStatus', 'forming')),
-          field(t('maxStudents'), h('input', { name: 'maxStudents', type: 'number', min: 1, max: 30, value: settings.maxGroupSize || 5 })),
           field(t('language'), enumSelect('language', window.VOCAB.languages, 'lang', 'he')),
           field(t('level'), enumSelect('level', window.VOCAB.levels, 'level', '', { blank: '—' })),
           field(t('minAge'), h('input', { name: 'minAge', type: 'number', min: 3, max: 99 })),
           field(t('maxAge'), h('input', { name: 'maxAge', type: 'number', min: 3, max: 99 })),
+          field(t('teacher'), teacherSelect('teacher', window.APP.teachers.length === 1 ? window.APP.teachers[0].name : '')),
           h('div', { class: 'form-actions' },
             h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, t('cancel')),
             h('button', { class: 'btn btn-primary', type: 'submit' }, t('save'))

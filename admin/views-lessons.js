@@ -243,7 +243,8 @@
           values.studentIds = groupSelect.value ? [] : Array.from(selectedStudents);
           values.gameRefs = pickedGames.map((game) => ({ id: game.id, title: game.title }));
           values.attendance = attendanceState;
-          values.teacher = window.SETTINGS.teacherName;
+          // The server picks a new lesson's teacher from the teachers list
+          // (the group's, else the default); an edit keeps the lesson's own.
           try {
             const response = lesson ? await api(`/lessons/${lesson.id}`, { method: 'PATCH', body: values }) : await api('/lessons', { method: 'POST', body: values });
             toast(t('saved'), 'success');

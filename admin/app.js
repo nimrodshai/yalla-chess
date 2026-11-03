@@ -29,7 +29,7 @@
     paymentMethods: ['bit', 'paybox', 'bank', 'paypal', 'credit', 'cash', 'other']
   };
   window.SETTINGS = {};
-  window.APP = { user: null, groups: [] };
+  window.APP = { user: null, groups: [], teachers: [] };
 
   // ----------------------------------------------------------- language
   function applyStaticText() {
@@ -109,11 +109,12 @@
     const view = window.VIEWS[route] || window.VIEWS.dashboard;
     clear(main).append(h('div', { class: 'loading' }, t('loading')));
     try {
-      // Settings and groups are cheap and most views need them.
-      const [settingsResponse, groupsResponse] = await Promise.all([api('/settings'), api('/groups')]);
+      // Settings, groups and teachers are cheap and most views need them.
+      const [settingsResponse, groupsResponse, teachersResponse] = await Promise.all([api('/settings'), api('/groups'), api('/teachers')]);
       window.SETTINGS = settingsResponse.settings;
       window.VOCAB = settingsResponse.vocabulary || window.VOCAB;
       window.APP.groups = groupsResponse.groups;
+      window.APP.teachers = teachersResponse.teachers;
       if (token !== renderToken) return;
       const content = await view({ id, sub, query, refresh: render });
       if (token !== renderToken) return;

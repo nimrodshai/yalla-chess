@@ -170,6 +170,154 @@
     return select(name, options, value);
   }
 
+  // A dropdown of the teachers list. A name that is no longer on the list
+  // stays selectable so saving the form does not silently clear it.
+  function teacherSelect(name, value = '') {
+    const names = window.APP.teachers.map((teacher) => teacher.name);
+    const options = [['', '—'], ...names.map((entry) => [entry, entry])];
+    if (value && !names.includes(value)) options.push([value, t('teacherNotListed', { name: value })]);
+    return select(name, options, value);
+  }
+
+  // Countries for phone fields, matching the portal's sign-in picker. The
+  // example sets the digit grouping and how long a national number may be.
+  const PHONE_COUNTRIES = [
+    ['IL', '🇮🇱', '+972', '50 123 4567', 8, 9],
+    ['US', '🇺🇸', '+1', '555 123 4567', 10, 10],
+    ['GB', '🇬🇧', '+44', '7400 123456', 9, 10],
+    ['FR', '🇫🇷', '+33', '6 12 34 56 78', 9, 9],
+    ['DE', '🇩🇪', '+49', '1512 3456789', 7, 11],
+    ['ES', '🇪🇸', '+34', '612 34 56 78', 9, 9],
+    ['IT', '🇮🇹', '+39', '312 345 6789', 6, 11, true],
+    ['NL', '🇳🇱', '+31', '6 12345678', 9, 9],
+    ['BE', '🇧🇪', '+32', '470 12 34 56', 8, 9],
+    ['CH', '🇨🇭', '+41', '76 123 45 67', 9, 9],
+    ['AT', '🇦🇹', '+43', '664 1234567', 7, 13],
+    ['PT', '🇵🇹', '+351', '912 345 678', 9, 9],
+    ['IE', '🇮🇪', '+353', '85 123 4567', 7, 9],
+    ['DK', '🇩🇰', '+45', '20 12 34 56', 8, 8],
+    ['SE', '🇸🇪', '+46', '70 123 45 67', 7, 9],
+    ['NO', '🇳🇴', '+47', '400 12 345', 8, 8],
+    ['FI', '🇫🇮', '+358', '40 123 4567', 6, 10],
+    ['PL', '🇵🇱', '+48', '512 345 678', 9, 9],
+    ['GR', '🇬🇷', '+30', '691 234 5678', 10, 10],
+    ['AU', '🇦🇺', '+61', '412 345 678', 9, 9],
+    ['NZ', '🇳🇿', '+64', '21 123 4567', 8, 10],
+    ['ZA', '🇿🇦', '+27', '82 123 4567', 9, 9],
+    ['AE', '🇦🇪', '+971', '50 123 4567', 8, 9],
+    ['IN', '🇮🇳', '+91', '98765 43210', 10, 10],
+    ['SG', '🇸🇬', '+65', '8123 4567', 8, 8],
+    ['HK', '🇭🇰', '+852', '5123 4567', 8, 8],
+    ['JP', '🇯🇵', '+81', '90 1234 5678', 9, 10],
+    ['KR', '🇰🇷', '+82', '10 1234 5678', 8, 10],
+    ['BR', '🇧🇷', '+55', '11 91234 5678', 10, 11],
+    ['AR', '🇦🇷', '+54', '9 11 2345 6789', 10, 11],
+    ['MX', '🇲🇽', '+52', '55 1234 5678', 10, 10],
+    // Any other country: the whole international number, dial code included.
+    ['XX', '🌐', '+', '+7 912 345 6789', 8, 15]
+  ].map(([code, flag, dial, example, min, max, keepZero = false]) => ({ code, flag, dial, example, min, max, keepZero, groups: example.split(' ').map((part) => part.length) }));
+
+  const OTHER_COUNTRY = PHONE_COUNTRIES.find((country) => country.code === 'XX');
+
+  // The listed country whose dial code starts an international number,
+  // longest first; null for a dial code the list does not have.
+  function phoneCountryOf(e164) {
+    return PHONE_COUNTRIES.filter((country) => country !== OTHER_COUNTRY)
+      .sort((a, b) => b.dial.length - a.dial.length)
+      .find((country) => e164.startsWith(country.dial)) || null;
+  }
+
+  function groupDigits(digits, groups) {
+    const parts = [];
+    let rest = digits;
+    for (const size of groups) {
+      if (!rest) break;
+      parts.push(rest.slice(0, size));
+      rest = rest.slice(size);
+    }
+    if (rest) parts[parts.length - 1] += rest;
+    return parts.join(' ');
+  }
+
+  // "+972501234567" → "+972 50 123 4567", for showing a stored number.
+  function fmtPhone(value) {
+    const raw = String(value || '');
+    const country = raw.startsWith('+') ? phoneCountryOf(raw) : null;
+    if (!country) return raw;
+    return `${country.dial} ${groupDigits(raw.slice(country.dial.length), country.groups)}`;
+  }
+
+  // A country code picker and a national number, submitted as one E.164
+  // value under `name` (for example +972501234567) so it can later be used
+  // to sign in. A pasted international number picks its country itself; one
+  // from a country not on the list (stored or pasted) moves to "other" and
+  // is kept whole, never re-prefixed with the selected country's code.
+  function phoneInput(name, value = '', { required = false } = {}) {
+    const stored = String(value || '');
+    const known = stored.startsWith('+') ? (phoneCountryOf(stored) || OTHER_COUNTRY) : null;
+    const countrySelect = h('select', { class: 'phone-country', 'aria-label': t('phoneCountry'), autocomplete: 'tel-country-code' },
+      PHONE_COUNTRIES.map((country) => h('option', { value: country.code }, country === OTHER_COUNTRY ? `${country.flag} ${t('phoneOtherCountry')}` : `${country.flag} ${country.dial}`)));
+    countrySelect.value = (known || PHONE_COUNTRIES[0]).code;
+    const number = h('input', { type: 'tel', inputmode: 'tel', autocomplete: 'tel-national', dir: 'ltr', required, spellcheck: 'false' });
+    const hidden = h('input', { type: 'hidden', name });
+    const country = () => PHONE_COUNTRIES.find((entry) => entry.code === countrySelect.value);
+    let previous = country();
+    const national = () => {
+      const digits = number.value.replace(/\D/g, '');
+      if (country() === OTHER_COUNTRY) return digits.replace(/^00/, '');
+      return country().keepZero ? digits : digits.replace(/^0+/, '');
+    };
+    const sync = () => {
+      const digits = national();
+      const { min, max, dial, example } = country();
+      hidden.value = digits ? `${dial}${digits}` : '';
+      const outOfRange = digits.length < min || digits.length > max || (country() === OTHER_COUNTRY && digits.startsWith('0'));
+      number.setCustomValidity(digits && outOfRange ? t('phoneInvalid', { example: country() === OTHER_COUNTRY ? example : `${dial} ${example}` }) : '');
+      number.classList.toggle('invalid', Boolean(number.validationMessage) && number.dataset.touched === 'true');
+    };
+    const reformat = () => {
+      const raw = number.value.trim();
+      if (/^(\+|00)/.test(raw)) {
+        const e164 = `+${raw.replace(/\D/g, '').replace(/^00/, '')}`;
+        const pasted = phoneCountryOf(e164) || OTHER_COUNTRY;
+        countrySelect.value = pasted.code;
+        previous = pasted;
+        number.value = e164.slice(pasted.dial.length);
+      }
+      const digits = national();
+      if (digits) number.value = country() === OTHER_COUNTRY ? `+${digits}` : groupDigits(digits, country().groups);
+      number.placeholder = country().example;
+      sync();
+    };
+    number.value = known && known !== OTHER_COUNTRY ? stored.slice(known.dial.length) : stored;
+    number.addEventListener('input', () => { if (/^(\+|00)/.test(number.value.trim())) reformat(); else sync(); });
+    number.addEventListener('blur', () => { number.dataset.touched = 'true'; reformat(); });
+    number.addEventListener('invalid', () => { number.dataset.touched = 'true'; number.classList.add('invalid'); });
+    // Switching country keeps the number the same person's: into "other" the
+    // old dial code is written out, out of it a matching dial code is dropped.
+    // A full number whose code is not the chosen country's stays on "other"
+    // rather than having its digits read as that country's national number;
+    // to use another country, clear the number first.
+    countrySelect.addEventListener('change', () => {
+      const digits = number.value.replace(/\D/g, '');
+      if (country() === OTHER_COUNTRY && previous !== OTHER_COUNTRY && digits) number.value = `${previous.dial}${previous.keepZero ? digits : digits.replace(/^0+/, '')}`;
+      else if (previous === OTHER_COUNTRY && digits) {
+        const dialDigits = country().dial.slice(1);
+        if (!digits.startsWith(dialDigits)) {
+          countrySelect.value = OTHER_COUNTRY.code;
+          number.focus();
+          return;
+        }
+        number.value = digits.slice(dialDigits.length);
+      }
+      previous = country();
+      reformat();
+      number.focus();
+    });
+    reformat();
+    return h('div', { class: 'phone-input', dir: 'ltr' }, countrySelect, number, hidden);
+  }
+
   function checkbox(name, checked, label) {
     const box = h('input', { type: 'checkbox', name });
     box.checked = Boolean(checked);
@@ -597,7 +745,7 @@
   }
 
   window.UI = {
-    h, append, clear, api, toast, modal, confirmDialog, field, input, textarea, select, enumSelect, checkbox, formValues, errorBox,
+    h, append, clear, api, toast, modal, confirmDialog, field, input, phoneInput, fmtPhone, textarea, select, enumSelect, teacherSelect, checkbox, formValues, errorBox,
     scheduleEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, todayIso, addDays, weekdayOf,
     initials, scheduleText, statusBadge, board, animateBoard, gameChips, composeMessage, paymentDialog, pageHead, card, stat, empty, link, t, guard: guarded
   };

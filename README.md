@@ -45,7 +45,8 @@ with full profiles, groups with capacity and level, a weekly calendar with
 cancellations and reschedules, a lesson log that tracks what each student
 has learned, payments (monthly or per package, ILS/USD/EUR), prospects with
 trial scheduling and conversion, a content library (plans, exercises with a
-FEN board, famous games), monthly reports, WhatsApp message templates and a
+FEN board, famous games), a teachers list that groups and students pick
+their teacher from, monthly reports, WhatsApp message templates and a
 daily brief. Sign in to the portal as a teacher and open the "Management"
 pill, or go to `/admin` directly; it shares the session cookie.
 
