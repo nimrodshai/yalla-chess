@@ -6,6 +6,8 @@
   const { h, api, t, initials, modal, field, input, phoneInput, fmtPhone, textarea, select, formValues, errorBox, toast, confirmDialog, card, stat, empty, link, fmtDate, fmtMoney, fmtMonth, statusBadge, todayIso } = window.UI;
 
   window.VIEWS.teachers = async ({ id, query, refresh }) => {
+    // A teacher has one page here: their own.
+    if (!window.APP.isAdmin) return teacherDetail(window.APP.me.id, query, refresh);
     if (id) return teacherDetail(id, query, refresh);
     const teachers = window.APP.teachers;
     const add = () => teacherForm(null, refresh);
@@ -14,7 +16,7 @@
         h('button', { class: 'btn btn-primary', type: 'button', onclick: add }, `+ ${t('newTeacher')}`)
       ]),
       teachers.length
-        ? h('div', { class: 'card' }, h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
+        ? h('div', { class: 'card' }, h('div', { class: 'table-wrap' }, h('table', { class: 'table teachers-table' },
           h('thead', null, h('tr', null, h('th', null, t('name')), h('th', { class: 'center' }, t('phone')), h('th', { class: 'center' }, t('email')), h('th', { class: 'center' }, t('teacherGroups')), h('th', { class: 'center' }, t('teacherStudents')), h('th', { class: 'center' }, t('hourlyRate')), h('th', null))),
           h('tbody', null, teachers.map((teacher) => teacherRow(teacher, refresh)))
         )))
@@ -33,7 +35,7 @@
     const stop = (event) => event.stopPropagation();
     const remove = async (event) => {
       event.stopPropagation();
-      if (!(await confirmDialog(t('confirmDeleteTeacher', { name: teacher.name, groups: teacher.groupCount, students: teacher.studentCount })))) return;
+      if (!(await confirmDialog(t('confirmDeleteTeacher', { name: teacher.name, groups: teacher.groupCount, students: teacher.assignedStudentCount })))) return;
       await api(`/teachers/${teacher.id}`, { method: 'DELETE' });
       toast(t('teacherRemoved'));
       refresh();
@@ -44,7 +46,7 @@
           h('span', { class: 'avatar ink', style: { width: '30px', height: '30px', fontSize: '12px', borderRadius: '9px', flexShrink: 0 } }, initials(teacher.name)),
           h('a', { class: 'strong', href: `#/teachers/${teacher.id}`, onclick: stop }, teacher.name)
         ),
-        teacher.notes ? h('div', { class: 'muted tiny teacher-notes' }, teacher.notes) : null
+        teacher.notes ? h('div', { class: 'muted tiny teacher-notes', title: teacher.notes }, teacher.notes) : null
       ),
       h('td', { class: 'center' }, teacher.phone ? h('a', { class: 'link', href: `https://wa.me/${teacher.phone.replace(/\D/g, '')}`, target: '_blank', rel: 'noopener', dir: 'ltr', onclick: stop }, fmtPhone(teacher.phone)) : h('span', { class: 'muted' }, '—')),
       h('td', { class: 'center' }, teacher.email ? h('a', { class: 'link', href: `mailto:${teacher.email}`, dir: 'ltr', onclick: stop }, teacher.email) : h('span', { class: 'muted' }, '—')),
@@ -110,6 +112,7 @@
     const month = /^\d{4}-\d{2}$/.test(query.month || '') ? query.month : '';
     const data = await api(`/teachers/${id}${month ? `?month=${month}` : ''}`);
     const { teacher, pay, currency } = data;
+    const admin = window.APP.isAdmin;
     const money = (amount) => (amount === null ? '—' : fmtMoney(amount, currency));
     const goMonth = (label) => { location.hash = `#/teachers/${teacher.id}?month=${label}`; };
     const isCurrent = data.month === data.today.slice(0, 7);
@@ -129,13 +132,15 @@
           )
         )
       ),
-      h('button', { class: 'btn btn-primary', type: 'button', onclick: () => teacherForm(teacher, refresh) }, t('edit'))
+      admin ? h('button', { class: 'btn btn-primary', type: 'button', onclick: () => teacherForm(teacher, refresh) }, t('edit')) : null
     ));
 
+    // ‹ is always back in time and › forward, in both languages, as on the
+    // calendar's week buttons.
     const monthNav = h('div', { class: 'row', style: { gap: '8px', alignItems: 'center' } },
-      h('button', { class: 'btn btn-sm', type: 'button', 'aria-label': t('prevMonth'), onclick: () => goMonth(shiftMonth(data.month, -1)) }, window.I18N.lang === 'he' ? '›' : '‹'),
+      h('button', { class: 'btn btn-sm', type: 'button', 'aria-label': t('prevMonth'), onclick: () => goMonth(shiftMonth(data.month, -1)) }, '‹'),
       h('span', { class: 'strong' }, fmtMonth(data.month)),
-      h('button', { class: 'btn btn-sm', type: 'button', 'aria-label': t('nextMonth'), onclick: () => goMonth(shiftMonth(data.month, 1)) }, window.I18N.lang === 'he' ? '‹' : '›'),
+      h('button', { class: 'btn btn-sm', type: 'button', 'aria-label': t('nextMonth'), onclick: () => goMonth(shiftMonth(data.month, 1)) }, '›'),
       isCurrent ? null : h('button', { class: 'btn btn-sm btn-ghost', type: 'button', onclick: () => goMonth(todayIso(window.SETTINGS.businessTimezone).slice(0, 7)) }, t('thisMonth'))
     );
 
@@ -149,8 +154,8 @@
 
     const noRate = teacher.hourlyRate === null
       ? h('div', { class: 'alert alert-warn', style: { marginBottom: '16px' } },
-        h('span', null, t('teacherNoRateAlert')),
-        h('button', { class: 'btn btn-sm', type: 'button', onclick: () => teacherForm(teacher, refresh) }, t('setHourlyRate')))
+        h('span', null, admin ? t('teacherNoRateAlert') : t('teacherNoRateAlertOwn')),
+        admin ? h('button', { class: 'btn btn-sm', type: 'button', onclick: () => teacherForm(teacher, refresh) }, t('setHourlyRate')) : null)
       : null;
 
     const logButton = (occurrence) => h('button', { class: 'btn btn-xs', type: 'button', onclick: () => window.VIEWS.logLesson({ occurrence: occurrence.key, slot: occurrence, durationMinutes: occurrence.minutes, onSaved: refresh }) }, t('logThisLesson'));
@@ -196,16 +201,13 @@
     )) : empty(t('teacherNoHistory')), { sub: teacher.hourlyRate !== null ? t('teacherHistoryRate') : '' });
 
     return h('div', null,
-      h('div', { class: 'breadcrumb' }, link('#/teachers', t('navTeachers')), '›', teacher.name),
+      admin ? h('div', { class: 'breadcrumb' }, link('#/teachers', t('navTeachers')), '›', teacher.name) : null,
       head,
       h('div', { class: 'row-between', style: { margin: '20px 0 12px' } }, h('h2', { class: 'card-title', style: { margin: 0 } }, t('teacherPayTitle')), monthNav),
       noRate,
       stats,
       unlogged,
-      h('div', { class: 'grid grid-2' },
-        h('div', { class: 'stack' }, lessonsCard),
-        h('div', { class: 'stack' }, upcomingCard, historyCard)
-      )
+      window.UI.masonry([lessonsCard, upcomingCard, historyCard])
     );
   }
 })();

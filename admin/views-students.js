@@ -7,7 +7,7 @@
 
   window.VIEWS.students = async ({ id, query, refresh }) => {
     if (id) return studentDetail(id, refresh);
-    if (query.new) {
+    if (query.new && window.APP.isAdmin) {
       const defaults = {};
       for (const key of ['firstName', 'lastName', 'userPhone', 'parentPhone', 'parentEmail', 'groupId']) if (query[key]) defaults[key] = query[key];
       setTimeout(() => studentForm({ defaults, onSaved: (student) => { location.hash = `#/students/${student.id}`; } }), 0);
@@ -36,23 +36,25 @@
 
     await load();
     return h('div', null,
-      window.UI.pageHead(t('studentsTitle'), sub, [h('button', { class: 'btn btn-primary', type: 'button', onclick: () => studentForm({ onSaved: (student) => { location.hash = `#/students/${student.id}`; } }) }, `+ ${t('newStudent')}`)]),
+      window.UI.pageHead(window.APP.isAdmin ? t('studentsTitle') : t('myStudentsTitle'), sub, window.APP.isAdmin ? [h('button', { class: 'btn btn-primary', type: 'button', onclick: () => studentForm({ onSaved: (student) => { location.hash = `#/students/${student.id}`; } }) }, `+ ${t('newStudent')}`)] : []),
       h('div', { class: 'filters' }, searchBox, groupSelect),
       h('div', { class: 'card' }, listNode)
     );
   }
 
+  // A teacher's list has no payments column: billing is the admin's.
   function renderTable(students) {
     if (!students.length) return empty(t('noStudents'));
+    const admin = window.APP.isAdmin;
     return h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
-      h('thead', null, h('tr', null, h('th', null, t('name')), h('th', null, t('age')), h('th', null, t('group')), h('th', null, t('level')), h('th', null, t('parent')), h('th', null, t('payments')))),
+      h('thead', null, h('tr', null, h('th', null, t('name')), h('th', null, t('age')), h('th', null, t('group')), h('th', null, t('level')), h('th', null, t('parent')), admin ? h('th', null, t('payments')) : null)),
       h('tbody', null, students.map((student) => h('tr', { class: 'clickable', onclick: () => { location.hash = `#/students/${student.id}`; } },
         h('td', null, h('div', { class: 'row', style: { gap: '8px' } }, h('span', { class: 'avatar', style: { width: '30px', height: '30px', fontSize: '12px', borderRadius: '9px' } }, initials(student.name)), h('a', { class: 'strong', href: `#/students/${student.id}` }, student.name))),
         h('td', null, student.age ?? ''),
         h('td', null, student.groupName || (student.lessonType === 'private' ? t('lessonType.private') : h('span', { class: 'muted' }, t('noGroup')))),
         h('td', null, t(`level.${student.level}`), student.chesscomRating ? h('span', { class: 'muted small' }, ` · ${student.chesscomRating}`) : null),
         h('td', { class: 'small' }, student.parentName, h('div', { class: 'muted tiny', dir: 'ltr' }, student.parentPhone)),
-        h('td', null, statusBadge(student.paymentState, 'pay'))
+        admin ? h('td', null, statusBadge(student.paymentState, 'pay')) : null
       )))
     ));
   }
@@ -61,6 +63,7 @@
   async function studentDetail(id, refresh) {
     const data = await api(`/students/${id}`);
     const student = data.student;
+    const admin = window.APP.isAdmin;
     const tz = window.SETTINGS.businessTimezone;
     const group = window.APP.groups.find((entry) => entry.id === student.groupId);
 
@@ -81,13 +84,13 @@
       ),
       h('div', { class: 'row' },
         h('button', { class: 'btn btn-wa', type: 'button', onclick: () => composeMessage({ kind: 'progress', studentId: student.id, name: student.parentName || student.name, onSent: refresh }) }, t('sendMessage')),
-        h('button', { class: 'btn', type: 'button', onclick: () => paymentDialog({ student, onSaved: refresh }) }, t('recordPayment')),
-        h('button', { class: 'btn btn-primary', type: 'button', onclick: () => studentForm({ student, onSaved: refresh }) }, t('edit'))
+        admin ? h('button', { class: 'btn', type: 'button', onclick: () => paymentDialog({ student, onSaved: refresh }) }, t('recordPayment')) : null,
+        admin ? h('button', { class: 'btn btn-primary', type: 'button', onclick: () => studentForm({ student, onSaved: refresh }) }, t('edit')) : null
       )
     ));
 
     const payment = data.payment;
-    const paymentLine = student.status !== 'inactive'
+    const paymentLine = admin && student.status !== 'inactive'
       ? h('div', { class: `alert ${payment.state === 'overdue' ? 'alert-danger' : payment.state === 'due_soon' ? 'alert-warn' : 'alert-sage'}` },
         statusBadge(payment.state, 'pay'),
         h('span', null, student.billingType === 'monthly'
@@ -111,12 +114,12 @@
         detail(t('teacher'), student.teacher),
         detail(t('joinedAt'), fmtDate(student.joinedAt, { year: 'numeric' })),
         detail(t('leftAt'), fmtDate(student.leftAt, { year: 'numeric' })),
-        detail(t('source'), student.source),
+        admin ? detail(t('source'), student.source) : null,
         detail(t('schedule'), group ? scheduleText(student.groupSchedule) : ''),
         detail(t('privateSchedule'), scheduleText(student.privateSchedule)),
         detail(t('privateZoomLink'), student.privateZoomLink ? h('a', { href: student.privateZoomLink, target: '_blank', rel: 'noopener' }, 'Zoom') : ''),
-        detail(t('billingType'), `${t(`billing.${student.billingType}`)}${student.billingDay ? ` · ${t('billingDay')} ${student.billingDay}` : ''}`),
-        detail(t('paymentTerms'), student.paymentTerms),
+        admin ? detail(t('billingType'), `${t(`billing.${student.billingType}`)}${student.billingDay ? ` · ${t('billingDay')} ${student.billingDay}` : ''}`) : null,
+        admin ? detail(t('paymentTerms'), student.paymentTerms) : null,
         detail(t('reminders'), student.remindersEnabled ? `${t('yes')}${student.reminderLeadHours !== null ? ` · ${student.reminderLeadHours}h` : ''}` : t('no')),
         detail(t('userPhone'), student.userPhone)
       ),
@@ -142,7 +145,7 @@
       )
     ))) : empty(t('noLessonsYet')), { count: data.lessons.length, sub: t('attendanceSummary', { attended: data.attendance.attended, absent: data.attendance.absent }), actions: [h('button', { class: 'btn btn-sm', type: 'button', onclick: () => window.VIEWS.logLesson({ studentId: student.id, onSaved: refresh }) }, `+ ${t('logLesson')}`)] });
 
-    const payments = card(t('paymentHistory'), data.payments.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
+    const payments = admin ? card(t('paymentHistory'), data.payments.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
       h('thead', null, h('tr', null, h('th', null, t('date')), h('th', { class: 'num' }, t('amount')), h('th', null, t('method')), h('th', null, t('periodLabel')), h('th', null, t('receipt')), h('th', null, ''))),
       h('tbody', null, data.payments.map((payment) => h('tr', null,
         h('td', null, fmtDate(payment.paidAt, { year: 'numeric' })),
@@ -152,7 +155,7 @@
         h('td', null, payment.receiptIssued ? h('span', { class: 'badge badge-sage' }, payment.receiptNumber || '✓') : h('span', { class: 'badge badge-warn' }, '—')),
         h('td', null, h('button', { class: 'btn btn-xs btn-ghost', type: 'button', onclick: () => paymentDialog({ student, payment, onSaved: refresh }) }, t('edit')))
       )))
-    )) : empty(t('noPaymentsYet')), { count: data.payments.length, sub: `${t('totalPaid')}: ${fmtMoney(payment.totalPaid, student.currency)}`, actions: [h('button', { class: 'btn btn-sm', type: 'button', onclick: () => paymentDialog({ student, onSaved: refresh }) }, `+ ${t('recordPayment')}`)] });
+    )) : empty(t('noPaymentsYet')), { count: data.payments.length, sub: `${t('totalPaid')}: ${fmtMoney(payment.totalPaid, student.currency)}`, actions: [h('button', { class: 'btn btn-sm', type: 'button', onclick: () => paymentDialog({ student, onSaved: refresh }) }, `+ ${t('recordPayment')}`)] }) : null;
 
     const messages = card(t('messageHistory'), data.messages.length ? h('div', { class: 'list' }, data.messages.map((message) => h('div', { class: 'list-item' },
       h('div', { class: 'list-main' },
@@ -161,7 +164,7 @@
       )
     ))) : empty(t('noMessagesYet')), { count: data.messages.length });
 
-    const danger = h('div', { class: 'row', style: { justifyContent: 'flex-end', marginTop: '16px' } },
+    const danger = admin && h('div', { class: 'row', style: { justifyContent: 'flex-end', marginTop: '16px' } },
       h('button', { class: 'btn btn-danger btn-sm', type: 'button', onclick: async () => {
         if (!(await confirmDialog(t('confirmDeleteStudent', { name: student.name })))) return;
         await api(`/students/${student.id}`, { method: 'DELETE' });
@@ -174,11 +177,8 @@
       h('div', { class: 'breadcrumb' }, link('#/students', t('navStudents')), '›', student.name),
       head,
       paymentLine ? h('div', { style: { marginTop: '12px' } }, paymentLine) : null,
-      h('div', { class: 'grid grid-2', style: { marginTop: '16px' } },
-        h('div', { class: 'stack' }, details, lessons),
-        h('div', { class: 'stack' }, learning, payments, messages)
-      ),
-      danger
+      h('div', { style: { marginTop: '16px' } }, window.UI.masonry([details, learning, lessons, payments, messages])),
+      danger || null
     );
   }
 

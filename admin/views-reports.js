@@ -96,10 +96,7 @@
       head,
       stats,
       h('div', { class: 'grid grid-3' }, incomeCard, expenseCard, groupsCard),
-      h('div', { class: 'grid grid-2', style: { marginTop: '16px' } },
-        h('div', { class: 'stack' }, trendCard),
-        h('div', { class: 'stack' }, outstandingCard, ledger)
-      )
+      h('div', { style: { marginTop: '16px' } }, window.UI.masonry([trendCard, outstandingCard, ledger]))
     );
   };
 

@@ -112,8 +112,9 @@
         h('div', { class: 'row' },
           involved.length ? h('button', { class: 'btn btn-wa', type: 'button', onclick: () => sendToParents(lesson, involved, 'lesson_summary', refresh) }, t('sendSummary')) : null,
           involved.length && lesson.homework ? h('button', { class: 'btn', type: 'button', onclick: () => sendToParents(lesson, involved, 'homework', refresh) }, t('sendHomework')) : null,
-          h('button', { class: 'btn btn-primary', type: 'button', onclick: () => lessonForm({ lesson, onSaved: refresh }) }, t('edit')),
-          h('button', { class: 'btn btn-danger', type: 'button', onclick: async () => { if (!(await confirmDialog(t('confirmDelete')))) return; await api(`/lessons/${lesson.id}`, { method: 'DELETE' }); toast(t('deleted')); location.hash = '#/lessons'; } }, t('delete'))
+          // A teacher edits the lessons they gave; deleting one is the admin's.
+          window.APP.isAdmin || lesson.teacher === window.APP.me?.name ? h('button', { class: 'btn btn-primary', type: 'button', onclick: () => lessonForm({ lesson, onSaved: refresh }) }, t('edit')) : null,
+          window.APP.isAdmin ? h('button', { class: 'btn btn-danger', type: 'button', onclick: async () => { if (!(await confirmDialog(t('confirmDelete')))) return; await api(`/lessons/${lesson.id}`, { method: 'DELETE' }); toast(t('deleted')); location.hash = '#/lessons'; } }, t('delete')) : null
         )
       )),
       h('div', { class: 'grid grid-2', style: { marginTop: '16px' } },

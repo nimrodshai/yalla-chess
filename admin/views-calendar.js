@@ -20,13 +20,15 @@
     const occurrences = data.occurrences.filter((occurrence) => occurrence.date >= from && occurrence.date <= to);
     const nav = (target) => `#/calendar?from=${target}${mode === 'agenda' ? '&mode=agenda' : ''}`;
 
+    // Cancelling, rescheduling and adding events is the admin's; a teacher
+    // sees their own lessons and logs them.
     const head = window.UI.pageHead(t('calendarTitle'), t('calendarSub', { tz }), [
       h('div', { class: 'seg' },
         h('a', { class: `btn btn-ghost btn-sm ${mode === 'week' ? 'active' : ''}`, href: `#/calendar?from=${from}` }, t('weekView')),
         h('a', { class: `btn btn-ghost btn-sm ${mode === 'agenda' ? 'active' : ''}`, href: `#/calendar?from=${from}&mode=agenda` }, t('agenda'))
       ),
-      h('button', { class: 'btn btn-primary', type: 'button', onclick: () => eventForm({ defaults: { date: today }, onSaved: refresh }) }, `+ ${t('addEvent')}`)
-    ]);
+      window.APP.isAdmin ? h('button', { class: 'btn btn-primary', type: 'button', onclick: () => eventForm({ defaults: { date: today }, onSaved: refresh }) }, `+ ${t('addEvent')}`) : null
+    ].filter(Boolean));
 
     const calNav = h('div', { class: 'cal-nav', style: { marginBottom: '14px' } },
       h('a', { class: 'btn btn-sm', href: nav(addDays(from, -7)) }, `‹ ${t('prevWeek')}`),
@@ -138,8 +140,8 @@
         days.map((date) => h('div', {
           class: `cal-col ${date === today ? 'today' : ''}`,
           style: { height: `${height}px` },
-          title: t('addEvent'),
-          onclick: (event) => addAt(event, date)
+          title: window.APP.isAdmin ? t('addEvent') : null,
+          onclick: window.APP.isAdmin ? (event) => addAt(event, date) : null
         },
           date === today && nowMinutes >= firstHour * 60 && nowMinutes <= lastHour * 60 ? h('div', { class: 'cal-now', style: { top: `${y(nowMinutes)}px` } }) : null,
           laidOut[date].map(({ occurrence, start, end, continued, lane, lanes }) => {
@@ -182,10 +184,10 @@
             ? h('a', { class: 'btn btn-sm', href: `#/lessons/${occurrence.loggedLessonId}`, onclick: () => api_.close() }, t('viewSummary'))
             : h('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => { api_.close(); window.VIEWS.logLesson({ occurrence: occurrence.key, slot: occurrence, durationMinutes: occurrence.durationMinutes, suggestedGame: occurrence.suggestedGame, onSaved: refresh }); } }, t('logThisLesson')),
           occurrence.studentIds.length === 1 ? h('button', { class: 'btn btn-sm btn-wa', type: 'button', onclick: () => { api_.close(); composeMessage({ kind: 'lesson_reminder', studentId: occurrence.studentIds[0], occurrenceKey: occurrence.key, reference: `${occurrence.key}:${occurrence.studentIds[0]}`, name: occurrence.title, onSent: refresh }); } }, t('sendReminder')) : null,
-          occurrence.leadId ? h('a', { class: 'btn btn-sm', href: `#/leads/${occurrence.leadId}`, onclick: () => api_.close() }, t('leadFor')) : null
+          occurrence.leadId && window.APP.isAdmin ? h('a', { class: 'btn btn-sm', href: `#/leads/${occurrence.leadId}`, onclick: () => api_.close() }, t('leadFor')) : null
         ),
-        h('div', { class: 'divider' }),
-        h('div', { class: 'row' },
+        window.APP.isAdmin && h('div', { class: 'divider' }),
+        window.APP.isAdmin && h('div', { class: 'row' },
           occurrence.eventId
             ? h('button', { class: 'btn btn-sm btn-danger', type: 'button', onclick: async () => {
               if (!(await confirmDialog(t('confirmDelete')))) return;

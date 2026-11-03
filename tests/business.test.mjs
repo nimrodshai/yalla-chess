@@ -548,3 +548,188 @@ describe('business API', () => {
     assert.equal(unknown.status, 404);
   });
 });
+
+// A teacher record with a phone is a sign-in. The teacher sees their own
+// groups, students, lessons and pay; the rest of the school stays with the
+// admin.
+describe('teacher accounts', () => {
+  let server;
+  let admin;
+  let teacher;
+  let teacherRecord;
+  const NAME = 'Rina Test';
+  const PHONE = '+972500000611';
+
+  const get = async (cookie, path) => {
+    const response = await server.fetch(`/api/business${path}`, { headers: { Cookie: cookie } });
+    return { status: response.status, body: await response.json() };
+  };
+  const send = async (cookie, path, body, method = 'POST') => {
+    const response = await server.fetch(`/api/business${path}`, json(cookie, body, method));
+    return { status: response.status, body: await response.json() };
+  };
+
+  before(async () => {
+    server = await startServer(devEnv);
+    admin = await signIn(server, TEACHER);
+    teacherRecord = (await send(admin.cookie, '/teachers', { name: NAME, phone: '050-000-0611', hourlyRate: 100 })).body.teacher;
+    await send(admin.cookie, '/groups/tactics/profile', { teacher: NAME }, 'PATCH');
+    teacher = await signIn(server, PHONE);
+  });
+  after(async () => { await server.stop(); });
+
+  it('gives a new teacher a sign-in with the teacher role', async () => {
+    const me = await (await server.fetch('/api/me', { headers: { Cookie: teacher.cookie } })).json();
+    assert.equal(me.user.role, 'teacher');
+    assert.equal(me.user.canUseManagement, true);
+    assert.equal(me.user.canManageUsers, false);
+    assert.equal(me.user.firstName, 'Rina');
+
+    const adminMe = await (await server.fetch('/api/me', { headers: { Cookie: admin.cookie } })).json();
+    assert.equal(adminMe.user.role, 'admin');
+  });
+
+  it('counts a teacher\'s group students as their students', async () => {
+    const inGroup = (await get(admin.cookie, '/students')).body.students.filter((entry) => entry.groupId === 'tactics');
+    const row = (await get(admin.cookie, '/teachers')).body.teachers.find((entry) => entry.id === teacherRecord.id);
+    assert.ok(inGroup.length > 0);
+    assert.equal(row.studentCount, inGroup.length);
+    assert.equal(row.assignedStudentCount, 0, 'none are assigned to them directly');
+  });
+
+  it('shows a teacher only their own groups and students, without prices', async () => {
+    const groups = (await get(teacher.cookie, '/groups')).body.groups;
+    assert.deepEqual(groups.map((group) => group.id), ['tactics']);
+    assert.equal('price' in groups[0].profile, false);
+
+    const students = (await get(teacher.cookie, '/students')).body.students;
+    assert.ok(students.length > 0);
+    for (const student of students) {
+      assert.equal(student.groupId, 'tactics');
+      assert.equal('price' in student, false);
+      assert.equal('paymentState' in student, false);
+    }
+
+    const everyone = (await get(admin.cookie, '/students')).body.students;
+    const outsider = everyone.find((student) => student.groupId === 'rookies');
+    assert.equal((await get(teacher.cookie, `/students/${outsider.id}`)).status, 404);
+    const own = await get(teacher.cookie, `/students/${students[0].id}`);
+    assert.equal(own.status, 200);
+    assert.equal(own.body.payments, undefined);
+    assert.equal(own.body.payment, undefined);
+
+    const portal = await (await server.fetch('/api/dashboard', { headers: { Cookie: teacher.cookie } })).json();
+    assert.deepEqual(portal.groups.map((group) => group.id), ['tactics']);
+    assert.deepEqual(portal.users, []);
+    assert.equal(portal.canManageGroups, false);
+  });
+
+  it('keeps payments, prospects, reports and changes to the school with the admin', async () => {
+    for (const path of ['/payments', '/leads', '/reports', '/expenses']) {
+      assert.equal((await get(teacher.cookie, path)).status, 403, path);
+    }
+    assert.equal((await send(teacher.cookie, '/settings', { teacherName: 'x' }, 'PUT')).status, 403);
+    assert.equal((await send(teacher.cookie, '/students', { firstName: 'Nope' })).status, 403);
+    assert.equal((await send(teacher.cookie, '/teachers', { name: 'Nope' })).status, 403);
+    assert.equal((await send(teacher.cookie, '/groups/tactics/profile', { teacher: '' }, 'PATCH')).status, 403);
+    const create = await server.fetch('/api/groups', json(teacher.cookie, { title: 'Not allowed' }));
+    assert.equal(create.status, 403);
+
+    const settings = (await get(teacher.cookie, '/settings')).body;
+    assert.equal(settings.settings.defaultGroupPrice, undefined);
+    assert.ok(!settings.vocabulary.messageKinds.includes('payment_reminder'));
+
+    const teachers = (await get(teacher.cookie, '/teachers')).body.teachers;
+    assert.deepEqual(teachers.map((entry) => entry.id), [teacherRecord.id]);
+    const others = (await get(admin.cookie, '/teachers')).body.teachers.filter((entry) => entry.id !== teacherRecord.id);
+    assert.equal((await get(teacher.cookie, `/teachers/${others[0].id}`)).status, 404);
+    assert.equal((await get(teacher.cookie, `/teachers/${teacherRecord.id}`)).status, 200);
+  });
+
+  it('lets a teacher log and edit only their own lessons, credited to them', async () => {
+    const rookies = await send(teacher.cookie, '/lessons', { groupId: 'rookies', date: '2026-11-01', topic: 'Not mine' });
+    assert.equal(rookies.status, 403);
+
+    const logged = await send(teacher.cookie, '/lessons', { groupId: 'tactics', date: '2026-11-01', startTime: '18:30', topic: 'Pins', teacher: 'דולב' });
+    assert.equal(logged.status, 200);
+    assert.equal(logged.body.lesson.teacher, NAME, 'a teacher always logs as themselves');
+    const edited = await send(teacher.cookie, `/lessons/${logged.body.lesson.id}`, { topic: 'Pins and skewers' }, 'PATCH');
+    assert.equal(edited.status, 200);
+    assert.equal(edited.body.lesson.teacher, NAME);
+    assert.equal((await server.fetch(`/api/business/lessons/${logged.body.lesson.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } })).status, 403);
+
+    const byAdmin = await send(admin.cookie, '/lessons', { groupId: 'tactics', date: '2026-10-25', topic: 'Given by the owner', teacher: 'דולב' });
+    assert.equal((await send(teacher.cookie, `/lessons/${byAdmin.body.lesson.id}`, { topic: 'Mine now' }, 'PATCH')).status, 403);
+
+    const lessons = (await get(teacher.cookie, '/lessons')).body.lessons;
+    assert.ok(lessons.every((lesson) => lesson.groupId === 'tactics' || lesson.teacher === NAME));
+
+    const calendar = (await get(teacher.cookie, '/calendar?from=2026-11-08&to=2026-11-14')).body;
+    assert.ok(calendar.occurrences.length > 0);
+    assert.ok(calendar.occurrences.every((occurrence) => occurrence.teacher === NAME), 'only the lessons the teacher gives');
+  });
+
+  it('lets a teacher message their own families about lessons only, under their name', async () => {
+    const student = (await get(teacher.cookie, '/students')).body.students[0];
+    const summary = await send(teacher.cookie, '/messages/compose', { kind: 'progress', studentId: student.id, values: { notes: 'Great week' } });
+    assert.equal(summary.status, 200);
+    assert.match(summary.body.message.body, /Rina Test/);
+    assert.equal((await send(teacher.cookie, '/messages/compose', { kind: 'payment_reminder', studentId: student.id })).status, 403);
+
+    const outsider = (await get(admin.cookie, '/students')).body.students.find((entry) => entry.groupId === 'rookies');
+    assert.equal((await send(teacher.cookie, '/messages/compose', { kind: 'progress', studentId: outsider.id })).status, 403);
+    assert.equal((await send(teacher.cookie, '/messages', { kind: 'progress', studentId: outsider.id, body: 'Hi' })).status, 403);
+  });
+
+  it('keeps other groups\' students off a teacher\'s lesson roster', async () => {
+    const everyone = (await get(admin.cookie, '/students')).body.students;
+    const outsider = everyone.find((entry) => entry.groupId === 'rookies');
+    const own = everyone.find((entry) => entry.groupId === 'tactics');
+    const before = (await get(admin.cookie, `/students/${outsider.id}`)).body.topics;
+
+    const sneaky = await send(teacher.cookie, '/lessons', { groupId: 'tactics', date: '2026-11-02', topic: 'Roster', topics: ['Sneaky topic'], studentIds: [own.id, outsider.id], attendance: { [outsider.id]: 'present' } });
+    assert.equal(sneaky.status, 403);
+
+    const logged = await send(teacher.cookie, '/lessons', { groupId: 'tactics', date: '2026-11-02', topic: 'Roster', studentIds: [own.id] });
+    assert.equal(logged.status, 200);
+    const widened = await send(teacher.cookie, `/lessons/${logged.body.lesson.id}`, { studentIds: [own.id, outsider.id], topics: ['Sneaky topic'] }, 'PATCH');
+    assert.equal(widened.status, 403);
+    assert.deepEqual((await get(admin.cookie, `/students/${outsider.id}`)).body.topics, before, 'nothing was written to the other student');
+  });
+
+  it('composes a teacher\'s message only from a lesson they give', async () => {
+    const zoom = 'https://zoom.us/j/rookies-only';
+    assert.equal((await server.fetch('/api/groups/rookies/zoom-link', json(admin.cookie, { zoomLink: zoom }))).status, 200);
+    const calendar = (await get(admin.cookie, '/calendar?from=2026-11-08&to=2026-11-14')).body;
+    const rookies = calendar.occurrences.find((occurrence) => occurrence.groupId === 'rookies');
+    const own = (await get(teacher.cookie, '/students')).body.students[0];
+
+    const composed = await send(teacher.cookie, '/messages/compose', { kind: 'lesson_reminder', studentId: own.id, occurrenceKey: rookies.key });
+    assert.equal(composed.status, 200);
+    assert.ok(!composed.body.message.body.includes(zoom), 'another group\'s Zoom link must not leak');
+  });
+
+  it('refuses a teacher phone that already signs in a student', async () => {
+    const clash = await send(admin.cookie, '/teachers', { name: 'Clash Teacher', phone: STUDENT });
+    assert.equal(clash.status, 409);
+    const names = (await get(admin.cookie, '/teachers')).body.teachers.map((entry) => entry.name);
+    assert.ok(!names.includes('Clash Teacher'));
+    const student = await signIn(server, STUDENT);
+    const me = await (await server.fetch('/api/me', { headers: { Cookie: student.cookie } })).json();
+    assert.equal(me.user.role, 'student');
+  });
+
+  it('moves the sign-in with a new phone and closes it when the teacher is removed', async () => {
+    const moved = await send(admin.cookie, `/teachers/${teacherRecord.id}`, { phone: '+972500000612' }, 'PATCH');
+    assert.equal(moved.status, 200);
+    assert.equal((await server.fetch('/api/me', { headers: { Cookie: teacher.cookie } })).status, 401, 'the old number is signed out');
+    const again = await signIn(server, '+972500000612');
+    assert.equal((await get(again.cookie, '/groups')).status, 200);
+
+    const removed = await server.fetch(`/api/business/teachers/${teacherRecord.id}`, { method: 'DELETE', headers: { Cookie: admin.cookie } });
+    assert.equal(removed.status, 200);
+    assert.equal((await server.fetch('/api/me', { headers: { Cookie: again.cookie } })).status, 401, 'a removed teacher is signed out');
+    const login = await server.fetch('/api/login', json('', { phone: '+972500000612' }));
+    assert.equal(login.status, 403, 'and cannot sign in again');
+  });
+});

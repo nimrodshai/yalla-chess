@@ -5,8 +5,10 @@
   window.VIEWS = window.VIEWS || {};
   const { h, clear, api, t, card, empty, fmtDate, statusBadge, link, modal, field, input, textarea, select, enumSelect, teacherSelect, formValues, errorBox, toast, scheduleText, scheduleEditor, weekdayPicker, initials, confirmDialog } = window.UI;
 
+  // A teacher sees their own groups to teach, not to arrange: no new
+  // groups, placement, profile edits or moving students.
   window.VIEWS.groups = async ({ id, query, refresh }) => {
-    if (id === 'match') return matchTool(query);
+    if (id === 'match' && window.APP.isAdmin) return matchTool(query);
     if (id) return groupDetail(id, refresh);
     return groupList(refresh);
   };
@@ -16,11 +18,11 @@
     const totalStudents = groups.reduce((sum, group) => sum + group.studentCount, 0);
     const totalFree = groups.filter((group) => group.profile.status !== 'closed').reduce((sum, group) => sum + group.seatsFree, 0);
     return h('div', null,
-      window.UI.pageHead(t('groupsTitle'), t('groupsSub', { n: groups.length, students: totalStudents, free: totalFree }), [
+      window.UI.pageHead(window.APP.isAdmin ? t('groupsTitle') : t('myGroupsTitle'), t('groupsSub', { n: groups.length, students: totalStudents, free: totalFree }), window.APP.isAdmin ? [
         h('a', { class: 'btn', href: '#/groups/match' }, `🔍 ${t('findGroup')}`),
         h('a', { class: 'btn', href: '/', target: '_blank', rel: 'noopener' }, t('openPortal')),
         h('button', { class: 'btn btn-primary', type: 'button', onclick: () => newGroupForm(refresh) }, `+ ${t('newGroup')}`)
-      ]),
+      ] : []),
       h('div', { class: 'card' }, groupTable(groups))
     );
   }
@@ -57,6 +59,7 @@
     if (!group) return h('div', { class: 'card' }, empty(t('none')));
     const [lessonsResponse, studentsResponse, formerResponse] = await Promise.all([api(`/lessons?groupId=${id}&limit=100`), api('/students'), api('/students?status=inactive')]);
     const profile = group.profile;
+    const admin = window.APP.isAdmin;
     const unassigned = studentsResponse.students.filter((student) => student.groupId !== id && student.status !== 'inactive');
 
     const head = h('div', { class: 'card' }, h('div', { class: 'row-between' },
@@ -72,7 +75,7 @@
       ),
       h('div', { class: 'row' },
         h('button', { class: 'btn', type: 'button', onclick: () => window.VIEWS.logLesson({ groupId: group.id, onSaved: refresh }) }, `+ ${t('logLesson')}`),
-        h('button', { class: 'btn btn-primary', type: 'button', onclick: () => profileForm(group, refresh) }, t('editProfile'))
+        admin ? h('button', { class: 'btn btn-primary', type: 'button', onclick: () => profileForm(group, refresh) }, t('editProfile')) : null
       )
     ));
 
@@ -83,7 +86,7 @@
       detail(t('ratingRange'), profile.ratingMin !== null || profile.ratingMax !== null ? `${profile.ratingMin ?? 0}–${profile.ratingMax ?? '∞'}` : ''),
       detail(t('language'), t(`lang.${profile.language}`)),
       detail(t('teacher'), profile.teacher),
-      detail(t('price'), profile.price !== null ? window.UI.fmtMoney(profile.price, profile.currency) : ''),
+      admin ? detail(t('price'), profile.price !== null ? window.UI.fmtMoney(profile.price, profile.currency) : '') : null,
       detail(t('description'), profile.description)
     ));
 
@@ -93,7 +96,7 @@
         h('div', { class: 'list-title' }, link(`#/students/${student.id}`, student.name), statusBadge(student.status), student.userPhone ? h('span', { class: 'badge badge-sage' }, t('portalLinked')) : null),
         h('div', { class: 'list-sub' }, [student.age ? `${t('age')} ${student.age}` : '', t(`level.${student.level}`), student.chesscomRating ? `♟ ${student.chesscomRating}` : ''].filter(Boolean).join(' · '))
       ),
-      h('div', { class: 'list-side' },
+      admin && h('div', { class: 'list-side' },
         h('button', { class: 'btn btn-xs', type: 'button', onclick: () => moveDialog(student, group, refresh) }, t('moveToGroup')),
         h('button', { class: 'btn btn-xs btn-danger', type: 'button', onclick: async () => {
           if (!(await confirmDialog(t('removeFromGroup') + '?', { okLabel: t('removeFromGroup') }))) return;
@@ -102,11 +105,11 @@
           refresh();
         } }, t('removeFromGroup'))
       )
-    ))) : empty(t('noMembersYet')), { count: `${group.studentCount}/${group.seatsTotal}`, actions: [h('button', { class: 'btn btn-sm', type: 'button', onclick: () => addDialog(group, unassigned, refresh) }, `+ ${t('addStudentToGroup')}`)] });
+    ))) : empty(t('noMembersYet')), { count: `${group.studentCount}/${group.seatsTotal}`, actions: admin ? [h('button', { class: 'btn btn-sm', type: 'button', onclick: () => addDialog(group, unassigned, refresh) }, `+ ${t('addStudentToGroup')}`)] : [] });
 
     const waitlist = group.waitlist.length ? card(t('waitlistFor'), h('div', { class: 'list' }, group.waitlist.map((student) => h('div', { class: 'list-item' },
       h('div', { class: 'list-main' }, link(`#/students/${student.id}`, student.name)),
-      h('button', { class: 'btn btn-xs', type: 'button', onclick: async () => { await api(`/students/${student.id}`, { method: 'PATCH', body: { status: 'active', groupId: group.id } }); toast(t('saved'), 'success'); refresh(); } }, t('status.active'))
+      admin && h('button', { class: 'btn btn-xs', type: 'button', onclick: async () => { await api(`/students/${student.id}`, { method: 'PATCH', body: { status: 'active', groupId: group.id } }); toast(t('saved'), 'success'); refresh(); } }, t('status.active'))
     ))), { count: group.waitlist.length }) : null;
 
     const topics = card(t('groupTopics'), group.topicsLearned.length ? h('div', { class: 'chips' }, group.topicsLearned.map((topic) => h('span', { class: 'chip' }, topic))) : empty(t('noTopics')), { count: group.topicsLearned.length });
@@ -129,10 +132,7 @@
       // Short summary cards share a row and stretch to the same height; the
       // two lists below grow independently but start on the same line.
       h('div', { class: 'grid grid-2', style: { marginTop: '16px' } }, profileCard, topics),
-      h('div', { class: 'grid grid-2', style: { marginTop: '16px' } },
-        h('div', { class: 'stack' }, members, waitlist),
-        h('div', { class: 'stack' }, lessons)
-      )
+      h('div', { style: { marginTop: '16px' } }, window.UI.masonry([members, lessons, waitlist]))
     );
   }
 

@@ -25,12 +25,12 @@ That sets `TWILIO_ALLOW_CONSOLE_FALLBACK=true`, so sign-in codes are printed to
 the terminal instead of sent by SMS, and `ENABLE_DEBUG_ENDPOINTS=true`, which
 exposes `/api/debug/*`. Both are ignored when `NODE_ENV=production`.
 
-Then open http://127.0.0.1:8001 and sign in as `+972500000001` (a teacher) or
-`+972500000004` (a student). Those demo accounts are seeded only outside
-production.
+Then open http://127.0.0.1:8001 and sign in as `+972500000001` (the admin),
+`+972500000005` (a teacher, from the demo business data) or `+972500000004`
+(a student). Those demo accounts are seeded only outside production.
 
 ```bash
-npm test      # 27 tests against a real server on a throwaway database
+npm test      # 57 tests against a real server on a throwaway database
 npm run check # syntax check every module
 ```
 
@@ -40,15 +40,28 @@ credential-shaped is ever committed.
 
 ## Management app
 
-`/admin` is the business side of the portal, for teachers only: students
+`/admin` is the business side of the portal, for staff only: students
 with full profiles, groups with capacity and level, a weekly calendar with
 cancellations and reschedules, a lesson log that tracks what each student
 has learned, payments (monthly or per package, ILS/USD/EUR), prospects with
 trial scheduling and conversion, a content library (plans, exercises with a
 FEN board, famous games), a teachers list that groups and students pick
 their teacher from, monthly reports, WhatsApp message templates and a
-daily brief. Sign in to the portal as a teacher and open the "Management"
+daily brief. Sign in to the portal as staff and open the "Management"
 pill, or go to `/admin` directly; it shares the session cookie.
+
+There are two staff roles. The **admin** (the owner) sees and changes
+everything, in the portal and in `/admin`. A **teacher** signs in with the
+phone on their teacher record: saving a teacher with a phone creates their
+account, a new phone moves it, and removing the teacher or the phone closes
+it. A teacher sees only their own groups and the students in them (without
+prices or payments), the calendar lessons they give, the lesson log for
+their students, the content library to read, and their own pay. They log
+and edit their own lessons and message their students' families about
+lessons. Students, groups, payments, prospects, expenses, reports,
+settings and the portal's user management stay with the admin. The server
+enforces this (`ctx.teacher` in `lib/business.mjs`); the views only hide
+what would be refused.
 
 Data lives in extra tables in the same SQLite file (`lib/business-db.mjs`);
 the API is `/api/business/*` (`lib/business.mjs`), the front end is plain
@@ -73,7 +86,7 @@ the full list. The ones that matter:
 | `DATA_DIR` | Where the SQLite database lives. A persistent volume, or an ephemeral directory plus the `LITESTREAM_*` variables below. |
 | `LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT`, `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` | Docker image only. Replicate the database to an S3-compatible bucket and restore from it at boot, for hosts without a persistent disk. Empty bucket means off. |
 | `TWILIO_VERIFY_SERVICE_SID` + API key or account token | Required in production. |
-| `BOOTSTRAP_TEACHER_PHONE` | Creates the first teacher when the database is empty. Remove after first boot. |
+| `BOOTSTRAP_TEACHER_PHONE` | Creates the admin account when the database is empty. Remove after first boot. |
 
 A production process **refuses to start** (exit code 78) without Twilio
 credentials and an https `PUBLIC_ORIGIN`, rather than starting in a state where

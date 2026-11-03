@@ -29,14 +29,18 @@
     paymentMethods: ['bit', 'paybox', 'bank', 'paypal', 'credit', 'cash', 'other']
   };
   window.SETTINGS = {};
-  window.APP = { user: null, groups: [], teachers: [] };
+  // isAdmin: the owner, who runs everything. Otherwise the signed-in user is
+  // a teacher and `me` is their teacher record: the server scopes every
+  // answer to their own groups, students and lessons, and the views hide
+  // what only the admin can do.
+  window.APP = { user: null, isAdmin: false, me: null, groups: [], teachers: [] };
 
   // ----------------------------------------------------------- language
   function applyStaticText() {
     document.documentElement.setAttribute('lang', window.I18N.lang);
     document.documentElement.setAttribute('dir', window.I18N.lang === 'he' ? 'rtl' : 'ltr');
     document.title = window.I18N.lang === 'he' ? 'ניהול | Yalla-Chess' : 'Management | Yalla-Chess';
-    for (const node of document.querySelectorAll('[data-i18n]')) node.textContent = t(node.dataset.i18n);
+    for (const node of document.querySelectorAll('[data-i18n]')) node.textContent = t(!window.APP.isAdmin && node.dataset.i18nTeacher ? node.dataset.i18nTeacher : node.dataset.i18n);
     for (const node of document.querySelectorAll('[data-i18n-placeholder]')) node.placeholder = t(node.dataset.i18nPlaceholder);
     document.getElementById('langToggle').textContent = window.I18N.lang === 'he' ? 'EN' : 'עב';
   }
@@ -70,7 +74,7 @@
       try {
         const [students, leads] = await Promise.all([
           api(`/students?q=${encodeURIComponent(q)}`),
-          api(`/leads?q=${encodeURIComponent(q)}`)
+          window.APP.isAdmin ? api(`/leads?q=${encodeURIComponent(q)}`) : { leads: [] }
         ]);
         clear(searchResults);
         const rows = [
@@ -115,6 +119,7 @@
       window.VOCAB = settingsResponse.vocabulary || window.VOCAB;
       window.APP.groups = groupsResponse.groups;
       window.APP.teachers = teachersResponse.teachers;
+      if (!window.APP.isAdmin) window.APP.me = teachersResponse.teachers[0] || null;
       if (token !== renderToken) return;
       const content = await view({ id, sub, query, refresh: render });
       if (token !== renderToken) return;
@@ -129,7 +134,10 @@
         return;
       }
       if (error.status === 403) {
-        clear(main).append(h('div', { class: 'card' }, h('p', null, t('notTeacher')), h('p', { style: { marginTop: '12px' } }, h('a', { class: 'btn', href: '/' }, t('toPortal')))));
+        // A teacher who opens an admin page by its address, or whose account
+        // has no teacher record yet (then nothing loads, not even settings).
+        const reason = window.APP.isAdmin || !window.APP.user?.canUseManagement ? t('notTeacher') : window.APP.me ? t('adminOnly') : t('teacherNotLinked');
+        clear(main).append(h('div', { class: 'card' }, h('p', null, reason), h('p', { style: { marginTop: '12px' } }, h('a', { class: 'btn', href: window.APP.me ? '#/dashboard' : '/' }, window.APP.me ? t('navDashboard') : t('toPortal')))));
         return;
       }
       clear(main).append(h('div', { class: 'card' }, h('div', { class: 'alert alert-danger' }, error.message || t('errorGeneric'))));
@@ -145,8 +153,11 @@
       const data = await response.json();
       if (!response.ok || !data.ok) throw Object.assign(new Error(t('signInFirst')), { status: 401 });
       window.APP.user = data.user;
+      window.APP.isAdmin = data.user.role === 'admin';
       document.getElementById('topbarUser').textContent = [data.user.firstName, data.user.lastName].filter(Boolean).join(' ') || data.user.phone || data.user.username;
-      if (!data.user.canManageUsers) throw Object.assign(new Error(t('notTeacher')), { status: 403 });
+      if (!data.user.canUseManagement) throw Object.assign(new Error(t('notTeacher')), { status: 403 });
+      for (const node of sidebar.querySelectorAll('[data-admin-only]')) node.hidden = !window.APP.isAdmin;
+      applyStaticText();
     } catch (error) {
       if (error.status === 403) {
         clear(main).append(h('div', { class: 'card' }, h('p', null, t('notTeacher')), h('p', { style: { marginTop: '12px' } }, h('a', { class: 'btn', href: '/' }, t('toPortal')))));

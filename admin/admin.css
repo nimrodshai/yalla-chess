@@ -164,6 +164,10 @@ input, select, textarea { font: inherit; color: inherit; }
 .grid > .stack { gap: 16px; }
 .stack > .card + .card { margin-top: 0; }
 .grid-even { grid-auto-rows: 1fr; }
+/* Balanced card columns (UI.masonry). */
+.masonry { display: flex; gap: 16px; align-items: flex-start; }
+.masonry-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.masonry-col > .card + .card { margin-top: 0; }
 .span-2 { grid-column: span 2; }
 .divider { height: 1px; background: var(--line); margin: 14px 0; }
 
@@ -536,7 +540,11 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
 }
 /* teachers */
 .teacher-actions { white-space: nowrap; text-align: end; }
-.teacher-notes { margin-top: 4px; max-width: 320px; white-space: pre-line; overflow-wrap: anywhere; }
+/* Every row is as tall as one with a line of notes, so the list reads as
+   even rows; long notes stay on one line and show in full on hover. */
+.teachers-table tbody td { height: 76px; }
+.teachers-table td a[dir="ltr"] { white-space: nowrap; }
+.teacher-notes { margin-top: 4px; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .teacher-delete { color: var(--danger); }
 .teacher-groups { min-width: 220px; }
 .teacher-group { color: var(--ink); font-weight: 600; max-width: 100%; overflow-wrap: anywhere; }

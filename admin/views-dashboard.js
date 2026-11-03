@@ -1,11 +1,80 @@
 // Overview: the business at a glance. Today's lessons, groups and their
 // open seats, the students, the open leads and the payments to collect.
+// A teacher's overview is their own teaching: today, the week and their
+// groups.
 (function () {
   'use strict';
   window.VIEWS = window.VIEWS || {};
-  const { h, api, t, card, stat, empty, fmtMoney, fmtTime, statusBadge, composeMessage, link, scheduleText } = window.UI;
+  const { h, api, t, card, stat, empty, fmtMoney, fmtTime, fmtDate, statusBadge, composeMessage, link, scheduleText } = window.UI;
+
+  // ---- one calendar lesson, with Zoom and logging
+  const lessonRow = (occurrence, tz, refresh, { withDate = false } = {}) => h('div', { class: 'list-item' },
+    withDate ? h('div', { style: { minWidth: '90px' } }, h('div', { class: 'strong small' }, fmtDate(occurrence.date, { weekday: 'short' })), h('span', { class: 'time-pill' }, fmtTime(occurrence.startAt, tz))) : h('span', { class: 'time-pill' }, fmtTime(occurrence.startAt, tz)),
+    h('div', { class: 'list-main' },
+      h('div', { class: 'list-title' },
+        occurrence.groupId ? link(`#/groups/${occurrence.groupId}`, occurrence.title)
+          : occurrence.studentIds.length === 1 ? link(`#/students/${occurrence.studentIds[0]}`, occurrence.title)
+          : occurrence.title,
+        occurrence.kind !== 'group' ? h('span', { class: 'badge' }, t(`kind.${occurrence.kind}`)) : null,
+        occurrence.conflicts?.length ? h('span', { class: 'badge badge-danger' }, t('conflict')) : null),
+      h('div', { class: 'list-sub' }, `${occurrence.durationMinutes} ${t('minutes')}${occurrence.kind === 'group' ? ` · ${occurrence.students.length} ${t('students')}` : ''}`),
+      window.UI.suggestedGame(occurrence)
+    ),
+    h('div', { class: 'list-side' },
+      occurrence.zoomLink ? h('a', { class: 'btn btn-sm', href: occurrence.zoomLink, target: '_blank', rel: 'noopener' }, 'Zoom') : null,
+      occurrence.loggedLessonId
+        ? h('a', { class: 'btn btn-sm', href: `#/lessons/${occurrence.loggedLessonId}` }, t('viewSummary'))
+        : h('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => window.VIEWS.logLesson({ occurrence: occurrence.key, slot: occurrence, durationMinutes: occurrence.durationMinutes, suggestedGame: occurrence.suggestedGame, onSaved: refresh }) }, t('logLesson'))
+    )
+  );
+
+  // ---- a group, with its seats
+  const groupRow = (group) => h('div', { class: 'list-item' },
+    h('div', { class: 'list-main' },
+      h('div', { class: 'list-title' }, link(`#/groups/${group.id}`, group.name)),
+      h('div', { class: 'list-sub' }, scheduleText(group.schedule) || '—')
+    ),
+    h('div', { class: 'list-side' },
+      h('span', { class: 'muted small' }, `${group.studentCount}/${group.seatsTotal}`),
+      h('span', { class: group.seatsFree ? 'badge badge-gold' : 'badge' }, group.seatsFree ? t('seatsFreeCount', { n: group.seatsFree }) : t('full'))
+    )
+  );
+
+  async function teacherDashboard(refresh) {
+    const data = await api('/overview');
+    const tz = data.timezone;
+    const s = data.stats;
+    const groups = window.APP.groups.filter((group) => group.profile.status !== 'closed');
+    const later = data.lessonsWeek.filter((occurrence) => occurrence.date > data.date);
+
+    const head = window.UI.pageHead(t('dashTitle', { name: data.teacher.name }), t('dashSubTeacher'), [
+      h('a', { class: 'btn', href: '#/teachers' }, t('navMyPay'))
+    ]);
+    const stats = h('div', { class: 'stats' },
+      stat(t('lessonsToday'), s.lessonsToday),
+      stat(t('statLessonsWeek'), s.lessonsWeek),
+      stat(t('statGroups'), s.groups),
+      stat(t('statMyStudents'), s.students)
+    );
+    const todayCard = card(t('lessonsToday'), data.lessonsToday.length ? h('div', { class: 'list' }, data.lessonsToday.map((occurrence) => lessonRow(occurrence, tz, refresh))) : empty(t('noLessonsToday')), {
+      count: data.lessonsToday.length || undefined,
+      actions: [h('a', { class: 'btn btn-sm', href: '#/calendar' }, t('navCalendar'))]
+    });
+    const weekCard = card(t('laterThisWeek'), later.length ? h('div', { class: 'list' }, later.map((occurrence) => lessonRow(occurrence, tz, refresh, { withDate: true }))) : empty(t('noLessonsLaterWeek')), { count: later.length || undefined });
+    const groupsCard = card(t('myGroupsTitle'), groups.length ? h('div', { class: 'list' }, groups.map(groupRow)) : empty(t('noGroupsAssigned')), {
+      count: groups.length,
+      actions: [h('a', { class: 'btn btn-sm', href: '#/groups' }, t('viewAll'))]
+    });
+
+    return h('div', null,
+      head,
+      stats,
+      window.UI.masonry([todayCard, groupsCard, weekCard])
+    );
+  }
 
   window.VIEWS.dashboard = async ({ refresh }) => {
+    if (!window.APP.isAdmin) return teacherDashboard(refresh);
     const [data, leadsResponse] = await Promise.all([api('/overview'), api('/leads')]);
     const leads = leadsResponse.leads;
     const groups = window.APP.groups.filter((group) => group.profile.status !== 'closed');
@@ -30,41 +99,12 @@
 
     // ---- today's lessons, in order
     const tz = data.timezone;
-    const lessonRow = (occurrence) => h('div', { class: 'list-item' },
-      h('span', { class: 'time-pill' }, fmtTime(occurrence.startAt, tz)),
-      h('div', { class: 'list-main' },
-        h('div', { class: 'list-title' },
-          occurrence.groupId ? link(`#/groups/${occurrence.groupId}`, occurrence.title)
-            : occurrence.studentIds.length === 1 ? link(`#/students/${occurrence.studentIds[0]}`, occurrence.title)
-            : occurrence.title,
-          occurrence.kind !== 'group' ? h('span', { class: 'badge' }, t(`kind.${occurrence.kind}`)) : null,
-          occurrence.conflicts?.length ? h('span', { class: 'badge badge-danger' }, t('conflict')) : null),
-        h('div', { class: 'list-sub' }, `${occurrence.durationMinutes} ${t('minutes')}${occurrence.kind === 'group' ? ` · ${occurrence.students.length} ${t('students')}` : ''}`),
-        window.UI.suggestedGame(occurrence)
-      ),
-      h('div', { class: 'list-side' },
-        occurrence.zoomLink ? h('a', { class: 'btn btn-sm', href: occurrence.zoomLink, target: '_blank', rel: 'noopener' }, 'Zoom') : null,
-        occurrence.loggedLessonId
-          ? h('a', { class: 'btn btn-sm', href: `#/lessons/${occurrence.loggedLessonId}` }, t('viewSummary'))
-          : h('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => window.VIEWS.logLesson({ occurrence: occurrence.key, slot: occurrence, durationMinutes: occurrence.durationMinutes, suggestedGame: occurrence.suggestedGame, onSaved: refresh }) }, t('logLesson'))
-      )
-    );
-    const todayCard = card(t('lessonsToday'), data.lessonsToday.length ? h('div', { class: 'list' }, data.lessonsToday.map(lessonRow)) : empty(t('noLessonsToday')), {
+    const todayCard = card(t('lessonsToday'), data.lessonsToday.length ? h('div', { class: 'list' }, data.lessonsToday.map((occurrence) => lessonRow(occurrence, tz, refresh))) : empty(t('noLessonsToday')), {
       count: data.lessonsToday.length || undefined,
       actions: [h('a', { class: 'btn btn-sm', href: '#/calendar' }, t('navCalendar'))]
     });
 
     // ---- groups, the ones with room first
-    const groupRow = (group) => h('div', { class: 'list-item' },
-      h('div', { class: 'list-main' },
-        h('div', { class: 'list-title' }, link(`#/groups/${group.id}`, group.name)),
-        h('div', { class: 'list-sub' }, scheduleText(group.schedule) || '—')
-      ),
-      h('div', { class: 'list-side' },
-        h('span', { class: 'muted small' }, `${group.studentCount}/${group.seatsTotal}`),
-        h('span', { class: group.seatsFree ? 'badge badge-gold' : 'badge' }, group.seatsFree ? t('seatsFreeCount', { n: group.seatsFree }) : t('full'))
-      )
-    );
     const sortedGroups = [...groups].sort((a, b) => b.seatsFree - a.seatsFree || a.name.localeCompare(b.name));
     const groupsCard = card(t('navGroups'), groups.length ? h('div', { class: 'list' }, sortedGroups.map(groupRow)) : empty(t('none')), {
       count: groups.length,
@@ -109,10 +149,7 @@
     return h('div', null,
       head,
       stats,
-      h('div', { class: 'grid grid-2' },
-        h('div', { class: 'stack' }, todayCard, groupsCard),
-        h('div', { class: 'stack' }, paymentsCard, leadsCard)
-      )
+      window.UI.masonry([todayCard, paymentsCard, groupsCard, leadsCard])
     );
   };
 })();

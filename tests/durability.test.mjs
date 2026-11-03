@@ -12,7 +12,7 @@ describe('concurrent writes', () => {
 
   before(async () => {
     server = await startServer(devEnv);
-    ({ cookie } = await signIn(server, '+972500000002'));
+    ({ cookie } = await signIn(server, '+972500000001'));
   });
   after(async () => { await server.stop(); });
 
@@ -70,7 +70,7 @@ describe('concurrent writes', () => {
 describe('restart', () => {
   it('keeps sessions and data across a restart', async () => {
     const server = await startServer(devEnv);
-    const { cookie } = await signIn(server, '+972500000002');
+    const { cookie } = await signIn(server, '+972500000001');
 
     const created = await server.fetch('/api/groups', {
       method: 'POST',
@@ -90,7 +90,7 @@ describe('restart', () => {
       assert.equal(response.status, 200, 'session must survive a restart');
 
       const dashboard = await response.json();
-      assert.equal(dashboard.user.role, 'teacher');
+      assert.equal(dashboard.user.role, 'admin');
       assert.ok(
         dashboard.groups.some((group) => /Survives restart/.test(JSON.stringify(group.title))),
         'data written before the restart must still be there'

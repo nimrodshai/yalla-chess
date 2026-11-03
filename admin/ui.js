@@ -808,9 +808,55 @@
     return h('a', { href: hash, class: 'link' }, ...children);
   }
 
+  // Cards in balanced columns. Pass them in order of importance: each goes
+  // to whichever column is shorter at that point, so the first two sit side
+  // by side at the top and no column runs far past the other. Laid out again
+  // when the page's width or a card's height changes; one column on narrow
+  // screens (the same breakpoint as .grid-2), in the same order.
+  const narrowScreen = window.matchMedia('(max-width: 760px)');
+  function masonry(cards, { columns = 2, gap = 16 } = {}) {
+    const items = cards.filter(Boolean);
+    const root = h('div', { class: 'masonry' });
+    let plan = '';
+    let attached = false;
+    const place = (assignment, count) => {
+      const key = `${count}:${assignment.join(',')}`;
+      if (key === plan) return;
+      plan = key;
+      const cols = Array.from({ length: count }, () => h('div', { class: 'masonry-col' }));
+      items.forEach((card, index) => cols[assignment[index]].append(card));
+      clear(root).append(...cols);
+    };
+    const layout = () => {
+      if (!root.isConnected) {
+        // The page was replaced: stop watching its cards.
+        if (attached) observer.disconnect();
+        return;
+      }
+      attached = true;
+      const count = narrowScreen.matches ? 1 : columns;
+      // Heights depend on the column width, so measure with the cards
+      // already in columns of the final width.
+      if (!plan.startsWith(`${count}:`)) place(items.map((_, index) => index % count), count);
+      if (count === 1) return;
+      const heights = Array(count).fill(0);
+      const assignment = items.map((card) => {
+        const target = heights.indexOf(Math.min(...heights));
+        heights[target] += card.offsetHeight + gap;
+        return target;
+      });
+      place(assignment, count);
+    };
+    place(items.map(() => 0), 1);
+    const observer = new ResizeObserver(layout);
+    observer.observe(root);
+    for (const card of items) observer.observe(card);
+    return root;
+  }
+
   window.UI = {
     h, append, clear, api, toast, modal, confirmDialog, field, input, phoneInput, fmtPhone, timezoneSelect, textarea, select, enumSelect, teacherSelect, checkbox, formValues, errorBox,
     scheduleEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, todayIso, addDays, weekdayOf,
-    initials, scheduleText, statusBadge, board, animateBoard, gameChips, suggestedGame, composeMessage, paymentDialog, pageHead, card, stat, empty, link, t, guard: guarded
+    initials, scheduleText, statusBadge, board, animateBoard, gameChips, suggestedGame, composeMessage, paymentDialog, pageHead, card, stat, empty, link, masonry, t, guard: guarded
   };
 })();

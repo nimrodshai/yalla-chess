@@ -6711,7 +6711,7 @@
             <span class="portal-manager-field-label" id="portalCreateRoleLabel">Role</span>
             <select id="portalCreateRole" name="role">
               <option value="student">Student account</option>
-              <option value="teacher">Teacher account</option>
+              <option value="admin">Admin account</option>
             </select>
           </label>
           <label class="portal-manager-field">
@@ -7710,6 +7710,7 @@
         accountTab: 'Personal details',
         preferencesTab: 'Preferences',
         accountLabel: 'Signed in as',
+        accountRoleAdmin: 'Admin',
         accountRoleTeacher: 'Teacher',
         accountRoleStudent: 'Student',
         signOut: 'Sign out',
@@ -7746,6 +7747,7 @@
         accountTab: 'פרטים אישיים',
         preferencesTab: 'העדפות',
         accountLabel: 'מחובר כ',
+        accountRoleAdmin: 'מנהל',
         accountRoleTeacher: 'מורה',
         accountRoleStudent: 'תלמיד',
         signOut: 'התנתקות',
@@ -7906,6 +7908,7 @@
         userNameLabel: 'Name',
         userContactLabel: 'Contact',
         userRoleLabel: 'Role',
+        accountRoleAdmin: 'Admin account',
         accountRoleTeacher: 'Teacher account',
         accountRoleStudent: 'Student account',
         billingSectionTitle: 'Student file (management app)',
@@ -8069,6 +8072,7 @@
         userNameLabel: 'שם',
         userContactLabel: 'פרטים',
         userRoleLabel: 'סוג',
+        accountRoleAdmin: 'חשבון מנהל',
         accountRoleTeacher: 'חשבון מורה',
         accountRoleStudent: 'חשבון תלמיד',
         billingSectionTitle: 'תיק תלמיד (מערכת הניהול)',
@@ -9615,8 +9619,9 @@
 
     function sortPortalUsers(users) {
       const roleRank = {
-        teacher: 0,
-        student: 1
+        admin: 0,
+        teacher: 1,
+        student: 2
       };
 
       return users.slice().sort(function(a, b) {
@@ -9637,6 +9642,10 @@
     }
 
     function getPortalUserRoleLabel(user) {
+      if (user?.role === 'admin') {
+        return getSettingsText().accountRoleAdmin;
+      }
+
       if (user?.role === 'teacher') {
         return getSettingsText().accountRoleTeacher;
       }
@@ -9675,6 +9684,12 @@
 
     function isPortalManager() {
       return Boolean(memberPortalData?.canManageGroups || currentAuthUser?.canManageGroups);
+    }
+
+    // A teacher (not the admin): sees the groups they teach and opens the
+    // management app for their students, lessons and pay.
+    function isPortalTeacher() {
+      return String(currentAuthUser?.role || '') === 'teacher';
     }
 
     function normalizePortalIdentifier(value) {
@@ -10029,13 +10044,15 @@
 
       container.innerHTML = '';
       const canManage = isPortalManager();
-      container.hidden = !canManage;
-      if (!canManage) {
+      // A teacher has no portal tabs, only the way to the management app.
+      const teacherOnly = !canManage && isPortalTeacher();
+      container.hidden = !canManage && !teacherOnly;
+      if (!canManage && !teacherOnly) {
         return;
       }
 
       const t = getPortalText();
-      const segments = [
+      const segments = teacherOnly ? [] : [
         {
           view: 'groups',
           label: t.workspaceGroupsTab || t.managerKicker || 'Groups',
@@ -11153,6 +11170,7 @@
       const roleInput = document.createElement('select');
       roleInput.innerHTML = '';
       [
+        ['admin', t.accountRoleAdmin],
         ['teacher', t.accountRoleTeacher],
         ['student', t.accountRoleStudent]
       ].forEach(function(optionData) {
@@ -11707,7 +11725,9 @@
 
       setPortalSelectOptions(role, [
         ['student', t.accountRoleStudent || settingsText.accountRoleStudent || 'Student account'],
-        ['teacher', t.accountRoleTeacher || settingsText.accountRoleTeacher || 'Teacher account']
+        // Teacher accounts come from the teacher's record in the management
+        // app, so the portal creates students and admins only.
+        ['admin', t.accountRoleAdmin || settingsText.accountRoleAdmin || 'Admin account']
       ]);
 
       Array.from(document.querySelectorAll('#portalUserCreateForm input, #portalUserCreateForm select, #portalUserCreateForm textarea, #portalUserCreateForm button')).forEach(function(control) {
@@ -12637,7 +12657,7 @@
 
       if (!canManage) {
         memberPortalView = 'groups';
-        const studentGroup = [getActivePortalGroup()].filter(Boolean);
+        const studentGroup = isPortalTeacher() ? groups : [getActivePortalGroup()].filter(Boolean);
         if (!memberPortalLoading && !studentGroup.length) {
           const t = getPortalText();
           const empty = document.createElement('div');
@@ -12695,7 +12715,7 @@
       const settingsTitle = getSettingsText().title;
 
       if (brandKicker) brandKicker.textContent = t.brandKicker;
-      if (brandTitle) brandTitle.textContent = isPortalManager() ? t.brandTitle : (t.brandTitleStudent || t.brandTitle);
+      if (brandTitle) brandTitle.textContent = isPortalManager() || isPortalTeacher() ? t.brandTitle : (t.brandTitleStudent || t.brandTitle);
       if (settingsButton) {
         settingsButton.setAttribute('aria-label', settingsTitle);
         settingsButton.setAttribute('title', settingsTitle);
@@ -13341,7 +13361,7 @@
       const phone = normalizePhone(payload.phone || '');
       const contactEmail = String(payload.contactEmail || '').trim();
       const fullName = splitPortalFullName(`${payload.firstName || ''} ${payload.lastName || ''}`.trim());
-      const role = payload.role === 'teacher' ? 'teacher' : 'student';
+      const role = ['admin', 'teacher'].includes(payload.role) ? payload.role : 'student';
 
       if (!currentAuthUser) {
         openLogin();
@@ -13485,7 +13505,7 @@
             firstName: String(payload.firstName || '').trim(),
             lastName: String(payload.lastName || '').trim(),
             contactEmail,
-            role: payload.role === 'teacher' ? 'teacher' : 'student',
+            role: ['admin', 'teacher'].includes(payload.role) ? payload.role : 'student',
             planName: payload.planName,
             notes: payload.notes
           })
@@ -13654,7 +13674,8 @@
 
     function formatSettingsRole(role) {
       const t = getSettingsText();
-      if (role === 'teacher' || role === 'admin') return t.accountRoleTeacher;
+      if (role === 'admin') return t.accountRoleAdmin;
+      if (role === 'teacher') return t.accountRoleTeacher;
       if (role === 'student') return t.accountRoleStudent;
       return role || '';
     }

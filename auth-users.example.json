@@ -1,7 +1,7 @@
 {
   "users": [
     {
-      "role": "teacher",
+      "role": "admin",
       "username": "teacher@example.test",
       "phone": "+972500000001",
       "contactEmail": "",

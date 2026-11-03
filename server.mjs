@@ -22,7 +22,11 @@ import {
   closeDatabase,
   deleteExpiredSessions,
   deleteSession,
+  deleteSessionsForUser,
+  getMeta,
+  renameSessionUser,
   getSession,
+  getUserRole,
   insertSession,
   listContactRequests,
   listGroups,
@@ -32,11 +36,12 @@ import {
   replaceGroups,
   replaceUsers,
   seedIfEmpty,
+  setMeta,
   updateSession
 } from './lib/db.mjs';
 import { withWriteLock } from './lib/mutex.mjs';
-import { isBusinessStoreEmpty, openBusinessStore } from './lib/business-db.mjs';
-import { billingByPhone, handleBusinessRequest } from './lib/business.mjs';
+import { isBusinessStoreEmpty, openBusinessStore, teachers as teacherRecords } from './lib/business-db.mjs';
+import { billingByPhone, getSettings, handleBusinessRequest, HttpError, teacherForPhone, teacherGroupIds } from './lib/business.mjs';
 import { seedBusinessDemo } from './lib/business-seed.mjs';
 
 const ROOT = process.cwd();
@@ -56,11 +61,13 @@ const otpChallenges = new Map();
 
 // Development-only seed data. Production seeds from BOOTSTRAP_TEACHER_PHONE
 // instead, so these placeholders never reach a real database. Keep real names,
-// emails and phone numbers out of here: this file is committed.
+// emails and phone numbers out of here: this file is committed. The demo
+// business data adds a teacher who signs in with +972500000005
+// (lib/business-seed.mjs).
 const DEFAULT_USERS = [
-  { role: 'teacher', username: 'admin@yalla-chess.test', phone: '+972500000001' },
-  { role: 'teacher', username: 'teacher@yalla-chess.test', phone: '+972500000002' },
-  { role: 'teacher', username: 'coach@yalla-chess.test', phone: '+972500000003' },
+  { role: 'admin', username: 'admin@yalla-chess.test', phone: '+972500000001' },
+  { role: 'admin', username: 'teacher@yalla-chess.test', phone: '+972500000002' },
+  { role: 'admin', username: 'coach@yalla-chess.test', phone: '+972500000003' },
   { role: 'student', username: 'student@yalla-chess.test', phone: '+972500000004' }
 ];
 
@@ -732,12 +739,20 @@ function buildNewGroup(payload, groups) {
   return group;
 }
 
+// Roles: the admin (the owner) runs everything, in the portal and in the
+// management app. A teacher signs in to the management app and sees only
+// their own groups, students and lessons (lib/business.mjs). A student sees
+// their own group in the portal.
 function canManageGroups(user) {
-  return user?.role === 'teacher';
+  return user?.role === 'admin';
 }
 
 function canManageUsers(user) {
   return canManageGroups(user);
+}
+
+function isStaff(user) {
+  return user?.role === 'admin' || user?.role === 'teacher';
 }
 
 function getLocalizedValue(value, lang = 'en') {
@@ -931,8 +946,7 @@ async function saveContactRequests(requests) {
 }
 
 function normalizeRole(role) {
-  if (role === 'teacher' || role === 'admin') return 'teacher';
-  if (role === 'student') return 'student';
+  if (role === 'admin' || role === 'teacher' || role === 'student') return role;
   return null;
 }
 
@@ -1075,7 +1089,8 @@ function serializeUser(user, phone = '') {
     paidUntil: normalizePaidUntil(user?.paidUntil),
     notes: normalizeUserNotes(user?.notes),
     canManageGroups: canManageGroups(user),
-    canManageUsers: canManageUsers(user)
+    canManageUsers: canManageUsers(user),
+    canUseManagement: isStaff(user)
   };
 }
 
@@ -1174,6 +1189,15 @@ function getSessionFromRequest(req) {
     deleteSession(sessionId);
     return null;
   }
+  // The account decides the role, not the session: a teacher who is
+  // removed or changed is signed out or narrowed on their next request.
+  const role = normalizeRole(getUserRole(session.username));
+  if (!role) {
+    deleteSession(sessionId);
+    return null;
+  }
+  session.role = role;
+  session.canManageGroups = canManageGroups(session);
   return session;
 }
 
@@ -1640,9 +1664,12 @@ async function handleDashboard(req, res) {
   const canEditGroups = canManageGroups(session);
   const canEditUsers = canManageUsers(session);
   const users = canEditUsers ? await loadUsers() : [];
+  // A teacher sees the groups they teach; a student the ones they are in.
+  const taught = session.role === 'teacher' ? teacherGroupIds(teacherForPhone(session.phone)) : new Set();
   const visibleSource = canManageGroups(session)
     ? groups
     : groups.filter((group) => {
+      if (taught.has(group.id)) return true;
       const members = normalizeGroupMembers(group.members);
       return members.some((member) => sameUserIdentifier(member, session.username) || sameUserIdentifier(member, session.phone));
     });
@@ -1686,6 +1713,10 @@ function getUserPayloadIdentifiers(payload, fallbackUser = {}) {
   }
 
   return nextUser;
+}
+
+function countAdmins(users) {
+  return users.filter((user) => user.role === 'admin').length;
 }
 
 function findUserConflict(users, candidate, currentIndex = -1) {
@@ -1849,6 +1880,11 @@ async function handleUserUpdate(req, res, userId) {
     return;
   }
 
+  if (countAdmins(users) === 1 && currentUser.role === 'admin' && nextUser.role !== 'admin') {
+    sendJson(res, 409, { ok: false, error: 'The school needs an admin. Make someone else admin first.' }, getCorsHeaders(req));
+    return;
+  }
+
   const previousIdentifiers = getUserIdentifierSet(currentUser);
   const nextPrimaryIdentifier = getUserPrimaryIdentifier(nextUser);
   users[index] = nextUser;
@@ -1860,6 +1896,7 @@ async function handleUserUpdate(req, res, userId) {
   }
 
   await saveUsers(users);
+  if (currentUser.username !== nextUser.username) renameSessionUser(currentUser.username, nextUser.username);
 
   if (previousIdentifiers.some((identifier) => sameUserIdentifier(identifier, session.username) || sameUserIdentifier(identifier, session.phone))) {
     updateSession(session.id, {
@@ -1900,6 +1937,10 @@ async function handleUserDelete(req, res, userId) {
   }
 
   const removedUser = users[index];
+  if (removedUser.role === 'admin' && countAdmins(users) === 1) {
+    sendJson(res, 409, { ok: false, error: 'The school needs an admin. Make someone else admin first.' }, getCorsHeaders(req));
+    return;
+  }
   users.splice(index, 1);
 
   const groups = await loadGroups();
@@ -2167,6 +2208,51 @@ async function syncStudentPortal(student, previous, session) {
   if (changed) await saveGroups(groups);
 }
 
+// A teacher record with a phone is a sign-in: saving it creates or updates a
+// teacher account, and removing the record or its phone closes the account.
+// An admin's account is left as it is, so the owner can be on the teachers
+// list too. A phone that already signs in a student is refused before
+// anything changes.
+async function syncTeacherAccount(teacher, previous) {
+  const nextPhone = normalizePhone(teacher?.phone || '');
+  const previousPhone = normalizePhone(previous?.phone || '');
+  const users = await loadUsers();
+  const [firstName = '', ...rest] = String(teacher?.name || '').trim().split(/\s+/);
+  const names = { firstName, lastName: rest.join(' ') };
+
+  const nextIndex = nextPhone ? findUserIndexByIdentifier(users, nextPhone) : -1;
+  if (nextIndex !== -1 && users[nextIndex].role === 'student') {
+    throw new HttpError(409, 'This phone number already signs in a student. Use a different number for the teacher.');
+  }
+  const previousIndex = previousPhone && previousPhone !== nextPhone ? findUserIndexByIdentifier(users, previousPhone) : -1;
+  const previousAccount = previousIndex !== -1 && users[previousIndex].role === 'teacher' ? users[previousIndex] : null;
+
+  let changed = false;
+  if (nextPhone && nextIndex === -1) {
+    if (previousAccount) {
+      // A new number moves the account; sessions on the old number end.
+      deleteSessionsForUser(previousAccount.username);
+      users[previousIndex] = normalizeUserRecord({ ...previousAccount, username: nextPhone, phone: nextPhone, ...names });
+    } else {
+      users.push(normalizeUserRecord({ role: 'teacher', username: nextPhone, phone: nextPhone, contactEmail: teacher.email, ...names }));
+      logInfo('business.teacher_account_created', { phone: nextPhone, teacher: teacher.id });
+    }
+    changed = true;
+  } else {
+    if (nextIndex !== -1 && users[nextIndex].role === 'teacher' && (users[nextIndex].firstName !== names.firstName || users[nextIndex].lastName !== names.lastName)) {
+      users[nextIndex] = normalizeUserRecord({ ...users[nextIndex], ...names });
+      changed = true;
+    }
+    if (previousAccount) {
+      deleteSessionsForUser(previousAccount.username);
+      users.splice(previousIndex, 1);
+      logInfo('business.teacher_account_removed', { phone: previousPhone });
+      changed = true;
+    }
+  }
+  if (changed) await saveUsers(users);
+}
+
 async function handleBusiness(req, res, url) {
   const session = getSessionFromRequest(req);
   if (!session) {
@@ -2174,8 +2260,15 @@ async function handleBusiness(req, res, url) {
     return;
   }
 
-  if (!canManageUsers(session)) {
+  if (!isStaff(session)) {
     sendJson(res, 403, { ok: false, error: 'Not authorized.' }, getCorsHeaders(req));
+    return;
+  }
+
+  // A teacher's view is built from their teacher record, found by phone.
+  const teacher = session.role === 'teacher' ? teacherForPhone(session.phone) : null;
+  if (session.role === 'teacher' && !teacher) {
+    sendJson(res, 403, { ok: false, error: 'This account is not linked to a teacher. Ask the admin to add your phone number to your teacher record.' }, getCorsHeaders(req));
     return;
   }
 
@@ -2185,6 +2278,7 @@ async function handleBusiness(req, res, url) {
   const ctx = {
     session,
     url,
+    teacher,
     async body() {
       if (bodyCache !== undefined) return bodyCache;
       try {
@@ -2201,7 +2295,8 @@ async function handleBusiness(req, res, url) {
     },
     groups: () => loadGroups(),
     saveGroups: (groups) => saveGroups(groups),
-    syncStudentPortal: (student, previous) => syncStudentPortal(student, previous, session)
+    syncStudentPortal: (student, previous) => syncStudentPortal(student, previous, session),
+    syncTeacherAccount
   };
 
   const run = () => handleBusinessRequest(method, path, ctx);
@@ -2603,7 +2698,9 @@ async function seedDatabase() {
   const groupsJson = await readJsonFile(GROUPS_FILE);
   const contactJson = await readJsonFile(CONTACT_REQUESTS_FILE);
 
-  let seedUsers = normalizeUserList(Array.isArray(usersJson?.users) ? usersJson.users : []);
+  // The JSON file is from before teachers had their own sign-in, when every
+  // staff account ran everything: its teachers are admins.
+  let seedUsers = normalizeUserList((Array.isArray(usersJson?.users) ? usersJson.users : []).map((user) => (user?.role === 'teacher' ? { ...user, role: 'admin' } : user)));
   let seedGroups = normalizeGroupsPayload(groupsJson || {});
   const seedContact = normalizeContactRequestList(Array.isArray(contactJson?.requests) ? contactJson.requests : []);
   let source = 'auth-users.json';
@@ -2611,7 +2708,7 @@ async function seedDatabase() {
   if (!seedUsers.length) {
     if (config.bootstrapTeacherPhone) {
       seedUsers = normalizeUserList([{
-        role: 'teacher',
+        role: 'admin',
         username: config.bootstrapTeacherPhone,
         phone: config.bootstrapTeacherPhone
       }]);
@@ -2640,8 +2737,39 @@ if (problems.length) {
   process.exit(78); // EX_CONFIG
 }
 
+// Before teachers had their own sign-in, every staff account was a
+// "teacher" with full access. Once, make those accounts admins, except a
+// phone on a teacher record other than the default teacher's (the owner):
+// those are the teachers the narrower role is for.
+async function splitStaffRoles() {
+  if (getMeta('roles_split_at')) return;
+  const users = await loadUsers();
+  const owner = getSettings().teacherName;
+  const staffPhones = new Set(teacherRecords.list().filter((teacher) => teacher.phone && teacher.name !== owner).map((teacher) => teacher.phone));
+  const promoted = users.filter((user) => user.role === 'teacher' && !staffPhones.has(getUserPhone(user)));
+  for (const user of promoted) user.role = 'admin';
+  if (promoted.length) await saveUsers(users);
+  setMeta('roles_split_at', new Date().toISOString());
+  if (promoted.length) logInfo('db.roles_split', { admins: promoted.length });
+}
+
+// Every teacher record with a phone has its sign-in, including records
+// saved before teachers could sign in.
+async function syncTeacherAccounts() {
+  for (const teacher of teacherRecords.list()) {
+    if (!teacher.phone) continue;
+    try {
+      await syncTeacherAccount(teacher, teacher);
+    } catch (error) {
+      logWarn('business.teacher_account_skipped', { teacher: teacher.id, detail: error.message });
+    }
+  }
+}
+
 openDatabase();
 openBusinessStore();
+// Before seeding, so a fresh database's demo teacher accounts stay teachers.
+await splitStaffRoles();
 await seedDatabase();
 
 // Demo students, lessons, payments and prospects, so the management app has
@@ -2658,6 +2786,7 @@ if (!config.isProduction && isBusinessStoreEmpty()) {
     if (users.length !== (await loadUsers()).length) logInfo('business.demo_accounts_created');
   }
 }
+await syncTeacherAccounts();
 
 server.listen(PORT, config.host, () => {
   logInfo('server.listening', {

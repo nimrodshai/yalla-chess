@@ -32,14 +32,17 @@
       h('a', { class: `tab ${tab === 'puzzles' ? 'active' : ''}`, href: '#/content?tab=puzzles' }, t('tabPuzzles'))
     );
 
-    const actions = tab === 'games'
+    // Teachers use the library; adding to it and changing it is the admin's.
+    const admin = window.APP.isAdmin;
+    const actions = !admin ? []
+      : tab === 'games'
       ? [uploadControl(refresh, true)]
       : [h('button', { class: 'btn btn-primary', type: 'button', onclick: () => puzzleForm({ onSaved: refresh }) }, `+ ${t('newPuzzle')}`)];
 
     return h('div', null,
       window.UI.pageHead(t('contentTitle'), t('contentSub'), actions),
       tabs,
-      tab === 'games' ? h('div', { class: 'upload-box', style: { marginBottom: '14px' } }, h('div', { class: 'small muted', style: { flex: 1 } }, t('uploadHint')), uploadControl(refresh)) : null,
+      tab === 'games' && admin ? h('div', { class: 'upload-box', style: { marginBottom: '14px' } }, h('div', { class: 'small muted', style: { flex: 1 } }, t('uploadHint')), uploadControl(refresh)) : null,
       h('div', { class: 'filters' }, searchBox, h('span', { class: 'muted small' }, countNode)),
       h('div', { class: 'card' }, listNode)
     );
@@ -201,7 +204,7 @@
             !isGame ? h('span', { class: `badge ${item.verified ? 'badge-sage' : 'badge-warn'}` }, item.verified ? t('verified') : t('notVerified')) : null
           )
         ),
-        h('div', { class: 'row' },
+        window.APP.isAdmin && h('div', { class: 'row' },
           h('button', { class: 'btn btn-primary', type: 'button', onclick: () => (isGame ? gameForm({ item, onSaved: refresh }) : puzzleForm({ item, onSaved: refresh })) }, t('edit')),
           h('button', { class: 'btn btn-danger', type: 'button', onclick: async () => { if (!(await confirmDialog(t('confirmDelete')))) return; await api(`/content/${item.id}`, { method: 'DELETE' }); toast(t('deleted')); location.hash = `#/content?tab=${isGame ? 'games' : 'puzzles'}`; } }, t('delete'))
         )
