@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   window.VIEWS = window.VIEWS || {};
-  const { h, api, t, card, empty, fmtDate, fmtDateTime, fmtMoney, statusBadge, composeMessage, paymentDialog, link, modal, field, input, textarea, select, enumSelect, checkbox, formValues, errorBox, scheduleEditor, toast, confirmDialog, initials, scheduleText } = window.UI;
+  const { h, api, t, card, empty, fmtDate, fmtDateTime, fmtMoney, statusBadge, composeMessage, paymentDialog, link, modal, field, input, textarea, select, enumSelect, checkbox, formValues, errorBox, scheduleEditor, toast, confirmDialog, initials, scheduleText, ratingsText } = window.UI;
 
   window.VIEWS.students = async ({ id, query, refresh }) => {
     if (id) return studentDetail(id, refresh);
@@ -52,7 +52,7 @@
         h('td', null, h('div', { class: 'row', style: { gap: '8px' } }, h('span', { class: 'avatar', style: { width: '30px', height: '30px', fontSize: '12px', borderRadius: '9px' } }, initials(student.name)), h('a', { class: 'strong', href: `#/students/${student.id}` }, student.name))),
         h('td', null, student.age ?? ''),
         h('td', null, student.groupName || (student.lessonType === 'private' ? t('lessonType.private') : h('span', { class: 'muted' }, t('noGroup')))),
-        h('td', null, t(`level.${student.level}`), student.chesscomRating ? h('span', { class: 'muted small' }, ` · ${student.chesscomRating}`) : null),
+        h('td', null, t(`level.${student.level}`), ratingsText(student) ? h('span', { class: 'muted small' }, ` · ${ratingsText(student)}`) : null),
         h('td', { class: 'small' }, student.parentName, h('div', { class: 'muted tiny', dir: 'ltr' }, student.parentPhone)),
         admin ? h('td', null, statusBadge(student.paymentState, 'pay')) : null
       )))
@@ -76,7 +76,8 @@
             h('span', { class: 'badge' }, t(`lessonType.${student.lessonType}`)),
             student.age ? h('span', { class: 'badge' }, `${t('age')} ${student.age}`) : null,
             h('span', { class: 'badge' }, t(`level.${student.level}`)),
-            student.chesscomRating ? h('span', { class: 'badge badge-gold' }, `♟ ${student.chesscomRating}`) : null,
+            student.chesscomRating ? h('span', { class: 'badge badge-gold' }, `Chess.com ${student.chesscomRating}`) : null,
+            student.lichessRating ? h('span', { class: 'badge badge-gold' }, `Lichess ${student.lichessRating}`) : null,
             group ? h('span', { class: 'badge badge-gold' }, link(`#/groups/${group.id}`, group.name)) : null,
             student.userPhone ? h('span', { class: 'badge badge-sage' }, t('portalLinked')) : null
           )
@@ -111,6 +112,7 @@
         detail(t('timezone'), student.timezone),
         detail(t('language'), t(`lang.${student.language}`)),
         detail(t('chesscomUsername'), student.chesscomUsername),
+        detail(t('lichessUsername'), student.lichessUsername),
         detail(t('teacher'), student.teacher),
         detail(t('joinedAt'), fmtDate(student.joinedAt, { year: 'numeric' })),
         detail(t('leftAt'), fmtDate(student.leftAt, { year: 'numeric' })),
@@ -189,7 +191,7 @@
   function studentForm({ student = null, defaults = {}, onSaved }) {
     const isNew = !student;
     const today = window.UI.todayIso(window.SETTINGS.businessTimezone);
-    const s = student || { status: 'active', language: 'he', level: 'beginner', lessonType: 'group', billingType: 'monthly', currency: 'ILS', remindersEnabled: true, timezone: window.SETTINGS.businessTimezone, joinedAt: today, teacher: window.APP.teachers.some((teacher) => teacher.name === window.SETTINGS.teacherName) ? window.SETTINGS.teacherName : '', ...defaults };
+    const s = student || { status: 'active', language: 'he', level: 'basic', lessonType: 'group', billingType: 'monthly', currency: 'ILS', remindersEnabled: true, timezone: window.SETTINGS.businessTimezone, joinedAt: today, teacher: window.APP.teachers.some((teacher) => teacher.name === window.SETTINGS.teacherName) ? window.SETTINGS.teacherName : '', ...defaults };
 
     modal({
       title: isNew ? t('newStudent') : `${t('editStudent')}: ${[s.firstName, s.lastName].filter(Boolean).join(' ')}`,
@@ -278,7 +280,9 @@
         const chess = h('div', { class: 'form' },
           field(t('level'), enumSelect('level', window.VOCAB.levels, 'level', s.level)),
           field(t('rating'), h('input', { name: 'chesscomRating', type: 'number', min: 0, max: 4000, value: s.chesscomRating ?? '', inputmode: 'numeric' })),
-          field(t('chesscomUsername'), input('chesscomUsername', s.chesscomUsername || '', { dir: 'ltr' }), { full: true }),
+          field(t('chesscomUsername'), input('chesscomUsername', s.chesscomUsername || '', { dir: 'ltr' })),
+          field(t('lichessRating'), h('input', { name: 'lichessRating', type: 'number', min: 0, max: 4000, value: s.lichessRating ?? '', inputmode: 'numeric' })),
+          field(t('lichessUsername'), input('lichessUsername', s.lichessUsername || '', { dir: 'ltr' })),
           field(t('strengths'), textarea('strengths', s.strengths || '', { rows: 2 })),
           field(t('weaknesses'), textarea('weaknesses', s.weaknesses || '', { rows: 2 })),
           field(t('goals'), textarea('goals', s.goals || '', { rows: 2 }), { full: true })

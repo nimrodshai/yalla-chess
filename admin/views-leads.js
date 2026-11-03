@@ -73,6 +73,8 @@
             h('span', { class: 'badge badge-gold' }, t('leadBadge')),
             lead.childAge ? h('span', { class: 'badge' }, `${t('age')} ${lead.childAge}`) : null,
             lead.level ? h('span', { class: 'badge' }, t(`level.${lead.level}`)) : null,
+            lead.chesscomRating ? h('span', { class: 'badge badge-gold' }, `Chess.com ${lead.chesscomRating}`) : null,
+            lead.lichessRating ? h('span', { class: 'badge badge-gold' }, `Lichess ${lead.lichessRating}`) : null,
             h('span', { class: 'badge' }, t(`lang.${lead.language}`)),
             h('span', { class: 'badge' }, t(`pref.${lead.preference}`))
           )
@@ -128,6 +130,8 @@
           field(t('childName'), input('childName', l.childName || '')),
           field(t('childAge'), h('input', { name: 'childAge', type: 'number', min: 3, max: 99, value: l.childAge ?? '' })),
           field(t('level'), enumSelect('level', window.VOCAB.levels, 'level', l.level || '', { blank: '—' })),
+          field(t('rating'), h('input', { name: 'chesscomRating', type: 'number', min: 0, max: 4000, value: l.chesscomRating ?? '', inputmode: 'numeric' })),
+          field(t('lichessRating'), h('input', { name: 'lichessRating', type: 'number', min: 0, max: 4000, value: l.lichessRating ?? '', inputmode: 'numeric' })),
           field(t('language'), enumSelect('language', window.VOCAB.languages, 'lang', l.language)),
           field(t('preference'), enumSelect('preference', window.VOCAB.leadPreferences, 'pref', l.preference)),
           field(t('notes'), textarea('notes', l.notes || '', { rows: 3 }), { full: true }),

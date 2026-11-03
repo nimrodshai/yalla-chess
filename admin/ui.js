@@ -488,6 +488,11 @@
     return String(name || '').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || '?';
   }
 
+  // A student's or prospect's ratings, on whichever sites they have one.
+  function ratingsText(record) {
+    return [record.chesscomRating ? `Chess.com ${record.chesscomRating}` : '', record.lichessRating ? `Lichess ${record.lichessRating}` : ''].filter(Boolean).join(' · ');
+  }
+
   function scheduleText(rows = []) {
     return rows.map((row) => `${t('weekdays')[row.weekday]} ${row.startTime}`).join(' · ');
   }
@@ -857,6 +862,6 @@
   window.UI = {
     h, append, clear, api, toast, modal, confirmDialog, field, input, phoneInput, fmtPhone, timezoneSelect, textarea, select, enumSelect, teacherSelect, checkbox, formValues, errorBox,
     scheduleEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, todayIso, addDays, weekdayOf,
-    initials, scheduleText, statusBadge, board, animateBoard, gameChips, suggestedGame, composeMessage, paymentDialog, pageHead, card, stat, empty, link, masonry, t, guard: guarded
+    initials, scheduleText, ratingsText, statusBadge, board, animateBoard, gameChips, suggestedGame, composeMessage, paymentDialog, pageHead, card, stat, empty, link, masonry, t, guard: guarded
   };
 })();

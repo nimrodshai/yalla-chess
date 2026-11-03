@@ -188,7 +188,7 @@ describe('business API', () => {
 
   it('moves a prospect through a trial lesson into a student', async () => {
     const created = await (await server.fetch('/api/business/leads', json(teacher.cookie, {
-      parentName: 'Lead Parent', parentPhone: '+972500000888', childName: 'Lead Child', childAge: 10, level: 'novice', language: 'he', source: 'facebook', preference: 'group'
+      parentName: 'Lead Parent', parentPhone: '+972500000888', childName: 'Lead Child', childAge: 10, level: 'beginner', chesscomRating: 700, lichessRating: 1100, language: 'he', source: 'facebook', preference: 'group'
     }))).json();
     const lead = created.lead;
     assert.equal(lead.status, 'new');
@@ -207,6 +207,9 @@ describe('business API', () => {
     assert.equal(body.lead.status, 'converted');
     assert.equal(body.student.firstName, 'Lead');
     assert.equal(body.student.groupId, 'rookies');
+    assert.equal(body.student.level, 'beginner', 'the level carries over');
+    assert.equal(body.student.chesscomRating, 700);
+    assert.equal(body.student.lichessRating, 1100, 'so do both ratings');
 
     const again = await server.fetch(`/api/business/leads/${lead.id}/convert`, json(teacher.cookie, {}));
     assert.equal(again.status, 409, 'a prospect converts once');

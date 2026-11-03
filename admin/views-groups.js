@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   window.VIEWS = window.VIEWS || {};
-  const { h, clear, api, t, card, empty, fmtDate, statusBadge, link, modal, field, input, textarea, select, enumSelect, teacherSelect, formValues, errorBox, toast, scheduleText, scheduleEditor, weekdayPicker, initials, confirmDialog } = window.UI;
+  const { h, clear, api, t, card, empty, fmtDate, statusBadge, link, modal, field, input, textarea, select, enumSelect, teacherSelect, formValues, errorBox, toast, scheduleText, scheduleEditor, weekdayPicker, initials, confirmDialog, ratingsText } = window.UI;
 
   // A teacher sees their own groups to teach, not to arrange: no new
   // groups, placement, profile edits or moving students.
@@ -94,7 +94,7 @@
       h('span', { class: 'avatar' }, initials(student.name)),
       h('div', { class: 'list-main' },
         h('div', { class: 'list-title' }, link(`#/students/${student.id}`, student.name), statusBadge(student.status), student.userPhone ? h('span', { class: 'badge badge-sage' }, t('portalLinked')) : null),
-        h('div', { class: 'list-sub' }, [student.age ? `${t('age')} ${student.age}` : '', t(`level.${student.level}`), student.chesscomRating ? `♟ ${student.chesscomRating}` : ''].filter(Boolean).join(' · '))
+        h('div', { class: 'list-sub' }, [student.age ? `${t('age')} ${student.age}` : '', t(`level.${student.level}`), ratingsText(student)].filter(Boolean).join(' · '))
       ),
       admin && h('div', { class: 'list-side' },
         h('button', { class: 'btn btn-xs', type: 'button', onclick: () => moveDialog(student, group, refresh) }, t('moveToGroup')),
