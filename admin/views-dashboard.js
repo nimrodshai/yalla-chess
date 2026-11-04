@@ -40,6 +40,61 @@
     )
   );
 
+  // ---- a teacher's lessons as a table: one row per lesson, the same
+  // columns in every card so today and the rest of the week line up
+  const lessonsTable = (occurrences, tz, refresh, { withDate = false } = {}) => h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
+    h('thead', null, h('tr', null,
+      withDate ? h('th', null, t('date')) : null,
+      h('th', null, t('time')),
+      h('th', null, t('lesson')),
+      h('th', { class: 'num' }, t('duration')),
+      h('th', { class: 'num' }, t('students')),
+      h('th', null, t('suggestedGame')),
+      h('th', null)
+    )),
+    h('tbody', null, occurrences.map((occurrence) => {
+      const game = occurrence.suggestedGame;
+      return h('tr', null,
+        withDate ? h('td', { class: 'strong', style: { whiteSpace: 'nowrap' } }, fmtDate(occurrence.date, { weekday: 'short' })) : null,
+        h('td', null, h('span', { class: 'time-pill' }, fmtTime(occurrence.startAt, tz))),
+        h('td', null,
+          occurrence.groupId ? link(`#/groups/${occurrence.groupId}`, occurrence.title)
+            : occurrence.studentIds.length === 1 ? link(`#/students/${occurrence.studentIds[0]}`, occurrence.title)
+            : occurrence.title,
+          occurrence.kind !== 'group' ? h('span', { class: 'badge', style: { marginInlineStart: '6px' } }, t(`kind.${occurrence.kind}`)) : null,
+          occurrence.conflicts?.length ? h('span', { class: 'badge badge-danger', style: { marginInlineStart: '6px' } }, t('conflict')) : null),
+        h('td', { class: 'num' }, occurrence.durationMinutes),
+        h('td', { class: 'num' }, occurrence.students.length),
+        h('td', { style: { minWidth: '200px' } }, game ? [
+          link(`#/content/${game.id}`, game.title),
+          game.seenBy ? h('div', { class: 'muted tiny' }, t('suggestedGameSeen', { n: game.seenBy, of: game.of })) : null
+        ] : h('span', { class: 'muted' }, '—')),
+        h('td', { class: 'num' }, h('div', { class: 'row', style: { justifyContent: 'flex-end', flexWrap: 'nowrap' } },
+          occurrence.zoomLink ? h('a', { class: 'btn btn-sm', href: occurrence.zoomLink, target: '_blank', rel: 'noopener' }, 'Zoom') : null,
+          occurrence.loggedLessonId
+            ? h('a', { class: 'btn btn-sm', href: `#/lessons/${occurrence.loggedLessonId}` }, t('viewSummary'))
+            : h('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => window.VIEWS.logLesson({ occurrence: occurrence.key, slot: occurrence, durationMinutes: occurrence.durationMinutes, suggestedGame: occurrence.suggestedGame, onSaved: refresh }) }, t('logLesson'))
+        ))
+      );
+    }))
+  ));
+
+  // ---- a teacher's groups as a table
+  const groupsTable = (groups) => h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
+    h('thead', null, h('tr', null,
+      h('th', null, t('name')),
+      h('th', null, t('schedule')),
+      h('th', { class: 'num' }, t('students')),
+      h('th', null, t('seats'))
+    )),
+    h('tbody', null, groups.map((group) => h('tr', { class: 'clickable', onclick: () => { location.hash = `#/groups/${group.id}`; } },
+      h('td', { class: 'strong' }, link(`#/groups/${group.id}`, group.name)),
+      h('td', null, scheduleText(group.schedule) || '—'),
+      h('td', { class: 'num' }, `${group.studentCount}/${group.seatsTotal}`),
+      h('td', null, h('span', { class: group.seatsFree ? 'badge badge-gold' : 'badge' }, group.seatsFree ? t('seatsFreeCount', { n: group.seatsFree }) : t('full')))
+    )))
+  ));
+
   async function teacherDashboard(refresh) {
     const data = await api('/overview');
     const tz = data.timezone;
@@ -56,12 +111,12 @@
       stat(t('statGroups'), s.groups),
       stat(t('statMyStudents'), s.students)
     );
-    const todayCard = card(t('lessonsToday'), data.lessonsToday.length ? h('div', { class: 'list' }, data.lessonsToday.map((occurrence) => lessonRow(occurrence, tz, refresh))) : empty(t('noLessonsToday')), {
+    const todayCard = card(t('lessonsToday'), data.lessonsToday.length ? lessonsTable(data.lessonsToday, tz, refresh) : empty(t('noLessonsToday')), {
       count: data.lessonsToday.length || undefined,
       actions: [h('a', { class: 'btn btn-sm', href: '#/calendar' }, t('navCalendar'))]
     });
-    const weekCard = card(t('laterThisWeek'), later.length ? h('div', { class: 'list' }, later.map((occurrence) => lessonRow(occurrence, tz, refresh, { withDate: true }))) : empty(t('noLessonsLaterWeek')), { count: later.length || undefined });
-    const groupsCard = card(t('myGroupsTitle'), groups.length ? h('div', { class: 'list' }, groups.map(groupRow)) : empty(t('noGroupsAssigned')), {
+    const weekCard = card(t('laterThisWeek'), later.length ? lessonsTable(later, tz, refresh, { withDate: true }) : empty(t('noLessonsLaterWeek')), { count: later.length || undefined });
+    const groupsCard = card(t('myGroupsTitle'), groups.length ? groupsTable(groups) : empty(t('noGroupsAssigned')), {
       count: groups.length,
       actions: [h('a', { class: 'btn btn-sm', href: '#/groups' }, t('viewAll'))]
     });
@@ -69,7 +124,8 @@
     return h('div', null,
       head,
       stats,
-      window.UI.masonry([todayCard, groupsCard, weekCard])
+      // One card per row: each is a table and needs the full width.
+      window.UI.masonry([todayCard, weekCard, groupsCard], { columns: 1 })
     );
   }
 

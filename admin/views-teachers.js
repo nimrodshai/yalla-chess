@@ -182,13 +182,17 @@
       )))
     )) : empty(t('teacherNoLessonsMonth')), { count: data.lessons.filter((lesson) => lesson.status === 'held').length, sub: t('teacherPayRule') });
 
-    const upcomingCard = !isPast ? card(t('teacherUpcoming'), data.upcoming.length ? h('div', { class: 'list' }, data.upcoming.map((occurrence) => h('div', { class: 'list-item' },
-      h('div', { class: 'list-main' },
-        h('div', { class: 'list-title' }, fmtDate(occurrence.date), h('span', { dir: 'ltr' }, occurrence.startTime), h('span', { class: 'strong' }, occurrence.title)),
-        h('div', { class: 'list-sub' }, `${t(`kind.${occurrence.kind}`)} · ${occurrence.minutes} ${t('minutes')}`)
-      ),
-      h('span', { class: 'muted small' }, money(teacher.hourlyRate === null ? null : Math.round((occurrence.minutes / 60) * teacher.hourlyRate * 100) / 100))
-    ))) : empty(t('teacherNoUpcoming')), { count: data.upcoming.length }) : null;
+    const upcomingCard = !isPast ? card(t('teacherUpcoming'), data.upcoming.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
+      h('thead', null, h('tr', null, h('th', null, t('date')), h('th', null, t('time')), h('th', null, t('lesson')), h('th', null, t('kind')), h('th', { class: 'num' }, t('duration')), h('th', { class: 'num' }, t('amount')))),
+      h('tbody', null, data.upcoming.map((occurrence) => h('tr', null,
+        h('td', null, fmtDate(occurrence.date)),
+        h('td', null, h('span', { dir: 'ltr' }, occurrence.startTime)),
+        h('td', { class: 'strong' }, occurrence.title),
+        h('td', null, t(`kind.${occurrence.kind}`)),
+        h('td', { class: 'num' }, occurrence.minutes),
+        h('td', { class: 'num strong' }, money(teacher.hourlyRate === null ? null : Math.round((occurrence.minutes / 60) * teacher.hourlyRate * 100) / 100))
+      )))
+    )) : empty(t('teacherNoUpcoming')), { count: data.upcoming.length }) : null;
 
     const historyCard = card(t('teacherHistory'), data.history.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
       h('thead', null, h('tr', null, h('th', null, t('month')), h('th', { class: 'num' }, t('lessons')), h('th', { class: 'num' }, t('hours')), h('th', { class: 'num' }, t('amount')))),
@@ -207,7 +211,8 @@
       noRate,
       stats,
       unlogged,
-      window.UI.masonry([lessonsCard, upcomingCard, historyCard])
+      // One card per row: each is a table and needs the full width.
+      window.UI.masonry([lessonsCard, upcomingCard, historyCard], { columns: 1 })
     );
   }
 })();
