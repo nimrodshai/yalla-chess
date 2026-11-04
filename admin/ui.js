@@ -167,11 +167,16 @@
       const [optionValue, label] = Array.isArray(option) ? option : [option, option];
       node.append(h('option', { value: optionValue, selected: String(optionValue) === String(value ?? '') }, label));
     }
+    // A value no longer offered (an old record in EUR or Russian) stays
+    // selectable so saving the form does not silently change it.
+    if (value && !options.some((option) => String(Array.isArray(option) ? option[0] : option) === String(value))) {
+      node.append(h('option', { value, selected: true }, value));
+    }
     return node;
   }
 
   function enumSelect(name, values, prefix, value, { blank = '' } = {}) {
-    const options = values.map((entry) => [entry, t(`${prefix}.${entry}`)]);
+    const options = [...values, ...(value && !values.includes(value) ? [value] : [])].map((entry) => [entry, t(`${prefix}.${entry}`)]);
     if (blank !== '') options.unshift(['', blank]);
     return select(name, options, value);
   }

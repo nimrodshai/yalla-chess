@@ -349,7 +349,10 @@
           const group = window.APP.groups.find((entry) => entry.id === groupSelect.value);
           if (!priceTouched && group?.profile.price !== null && group?.profile.price !== undefined) {
             priceInput.value = group.profile.price;
-            form.elements.currency.value = group.profile.currency || 'ILS';
+            const currency = group.profile.currency || 'ILS';
+            // A group still priced in a currency no longer offered brings it along.
+            if (![...form.elements.currency.options].some((option) => option.value === currency)) form.elements.currency.append(h('option', { value: currency }, currency));
+            form.elements.currency.value = currency;
           }
         });
 
@@ -371,13 +374,12 @@
           field(t('timezone'), window.UI.timezoneSelect('timezone', s.timezone || '', { blank: '—' })),
           field(t('parentEmail'), input('parentEmail', s.parentEmail || '', { type: 'email', dir: 'ltr' })),
           field(t('parentPhone2'), input('parentPhone2', s.parentPhone2 || '', { dir: 'ltr', inputmode: 'tel' })),
-          field(t('birthDate'), h('input', { name: 'birthDate', type: 'date', value: s.birthDate || '' })),
           ...sourceFields(s),
-          field(t('userPhone'), input('userPhone', s.userPhone || '', { dir: 'ltr', inputmode: 'tel' }), { full: true, hint: t('wizPortalHint') }),
           field(t('privateZoomLink'), input('privateZoomLink', s.privateZoomLink || '', { dir: 'ltr' }), { full: true }),
-          field(t('paymentTerms'), input('paymentTerms', s.paymentTerms || '')),
-          field(t('reminderLeadHours'), h('input', { name: 'reminderLeadHours', type: 'number', min: 0, max: 72, value: s.reminderLeadHours ?? '' })),
           field(t('progressNotes'), textarea('notes', s.notes || '', { rows: 3 }), { full: true }),
+          // The portal phone is not edited here, but a student created from a
+          // portal account carries it so the two stay linked.
+          isNew && s.userPhone ? h('input', { type: 'hidden', name: 'userPhone', value: s.userPhone }) : null,
           !isNew ? field(t('topicsManual'), input('topicsLearned', (s.topicsLearned || []).join(', ')), { full: true }) : null
         );
 

@@ -635,6 +635,21 @@ describe('business API', () => {
     assert.equal(suggestGroupFor(lead({}), views, settings).reason, 'no_details');
   });
 
+  it('fits a child in both Hebrew and English to Hebrew and English groups alike', async () => {
+    const { suggestGroupFor, languagesFit } = await import('../lib/business.mjs');
+    assert.ok(languagesFit('he_en', 'he') && languagesFit('he_en', 'en') && languagesFit('en', 'he_en'));
+    assert.ok(!languagesFit('he', 'en') && !languagesFit('he_en', 'ru'));
+    const settings = { matchAgeYears: 2, matchLevelSteps: 1, matchRatingPoints: 150 };
+    const group = (id, language) => ({
+      id, name: id, nameEn: id, seatsFree: 2, seatsTotal: 5, students: [{ age: 9, level: 'beginner', chesscomRating: 550 }],
+      profile: { status: 'active', language, minAge: null, maxAge: null, level: '', ratingMin: null, ratingMax: null }
+    });
+    const child = (language) => ({ preference: 'group', language, childAge: 9, level: 'beginner', chesscomRating: 550 });
+    assert.equal(suggestGroupFor(child('he_en'), [group('english', 'en')], settings).group.id, 'english');
+    assert.equal(suggestGroupFor(child('he_en'), [group('hebrew', 'he')], settings).group.id, 'hebrew');
+    assert.equal(suggestGroupFor(child('he'), [group('english', 'en')], settings).reason, 'none_fits');
+  });
+
   it('shows a suggested group on every prospect and follows the matching settings', async () => {
     const leads = async () => (await (await server.fetch('/api/business/leads', { headers: { Cookie: teacher.cookie } })).json()).leads;
     // Earlier tests fill groups, so compare wide ranges with none at all.
