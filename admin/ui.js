@@ -324,56 +324,53 @@
     return h('div', { class: 'phone-input', dir: 'ltr' }, countrySelect, number, hidden);
   }
 
-  // Time zones for pickers: the ones students and parents usually live in
-  // first, then every zone the browser knows, ordered by UTC offset.
-  const COMMON_TIMEZONES = ['Asia/Jerusalem', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Toronto', 'America/Sao_Paulo', 'Australia/Sydney'];
+  // The time zones the client works with, in the client's order, with the
+  // client's own names for them.
+  const TIMEZONES = [
+    ['Asia/Jerusalem', 'ישראל', 'Israel'],
+    ['Europe/Berlin', 'גרמניה', 'Germany'],
+    ['America/St_Johns', 'קנדה – ניופאונדלנד', 'Canada – Newfoundland'],
+    ['America/Halifax', 'קנדה – אטלנטי', 'Canada – Atlantic'],
+    ['America/Toronto', 'קנדה – מזרחי', 'Canada – Eastern'],
+    ['America/Winnipeg', 'קנדה – מניטובה', 'Canada – Manitoba'],
+    ['America/Regina', 'קנדה – ססקצ\'ואן', 'Canada – Saskatchewan'],
+    ['America/Edmonton', 'קנדה – אלברטה', 'Canada – Alberta'],
+    ['America/Vancouver', 'קנדה – מערבי', 'Canada – Pacific'],
+    ['America/Whitehorse', 'קנדה – יוקון', 'Canada – Yukon'],
+    ['America/New_York', 'ארה״ב – מזרחי', 'USA – Eastern'],
+    ['America/Chicago', 'ארה״ב – מרכזי', 'USA – Central'],
+    ['America/Denver', 'ארה״ב – הררי', 'USA – Mountain'],
+    ['America/Phoenix', 'ארה״ב – אריזונה', 'USA – Arizona'],
+    ['America/Los_Angeles', 'ארה״ב – מערבי', 'USA – Pacific'],
+    ['America/Anchorage', 'ארה״ב – אלסקה', 'USA – Alaska'],
+    ['Pacific/Honolulu', 'ארה״ב – הוואי', 'USA – Hawaii'],
+    ['America/Adak', 'ארה״ב – האיים האלאוטיים', 'USA – Aleutian Islands'],
+    ['America/Puerto_Rico', 'ארה״ב – פוארטו ריקו', 'USA – Puerto Rico'],
+    ['Pacific/Pago_Pago', 'ארה״ב – סמואה האמריקאית', 'USA – American Samoa'],
+    ['Pacific/Guam', 'ארה״ב – גואם', 'USA – Guam'],
+    ['America/Argentina/Buenos_Aires', 'ארגנטינה – בואנוס איירס', 'Argentina – Buenos Aires'],
+    ['America/Lima', 'פרו – לימה וארקיפה', 'Peru – Lima and Arequipa']
+  ];
 
-  function zoneInfo(zone) {
-    const locale = window.I18N.locale;
-    const part = (style) => {
-      try {
-        return new Intl.DateTimeFormat(locale, { timeZone: zone, timeZoneName: style }).formatToParts(new Date()).find((entry) => entry.type === 'timeZoneName')?.value || '';
-      } catch {
-        return '';
-      }
-    };
-    const offset = part('shortOffset').replace(/^GMT$/, 'GMT+0');
-    const match = /([+-])(\d+)(?::(\d+))?/.exec(offset);
-    const minutes = match ? (match[1] === '-' ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3] || 0)) : 0;
-    const city = zone.split('/').pop().replace(/_/g, ' ');
-    const generic = part('longGeneric');
-    return { zone, minutes, offset, city, generic: generic && !/^GMT/.test(generic) ? generic : '' };
-  }
-
-  // "Israel Time (GMT+2)"; the city is added only where several zones share
-  // a name (Paris and Berlin are both Central European Time).
-  function zoneLabels(infos) {
-    const counts = new Map();
-    for (const info of infos) counts.set(info.generic, (counts.get(info.generic) || 0) + 1);
-    for (const info of infos) {
-      const name = !info.generic ? info.city : counts.get(info.generic) > 1 ? `${info.generic} · ${info.city}` : info.generic;
-      info.label = `${name} (${info.offset})`;
+  // "GMT-5" today, so daylight saving shows as it is right now.
+  function zoneOffset(zone) {
+    try {
+      const offset = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'shortOffset' }).formatToParts(new Date()).find((entry) => entry.type === 'timeZoneName')?.value || '';
+      return offset.replace(/^GMT$/, 'GMT+0');
+    } catch {
+      return '';
     }
-    return infos;
   }
 
-  // A dropdown of time zones. A stored zone missing from the list stays
-  // selectable so saving the form does not silently change it.
+  // A dropdown of the client's time zones. A stored zone missing from the
+  // list stays selectable so saving the form does not silently change it.
   function timezoneSelect(name, value = '', { blank = '' } = {}) {
-    let all = [];
-    try { all = Intl.supportedValuesOf('timeZone'); } catch { all = [...COMMON_TIMEZONES]; }
-    if (!all.includes('UTC')) all.push('UTC');
-    const infos = zoneLabels([...new Set([...COMMON_TIMEZONES, ...all])].map(zoneInfo));
-    const byZone = new Map(infos.map((info) => [info.zone, info]));
-    const option = (info) => h('option', { value: info.zone, selected: info.zone === value }, info.label);
+    const he = window.I18N.locale.startsWith('he');
+    const option = (zone, label) => h('option', { value: zone, selected: zone === value }, `${label} (${zoneOffset(zone)})`);
     const node = h('select', { name, dir: 'auto' });
     if (blank !== '') node.append(h('option', { value: '', selected: !value }, blank));
-    if (value && !all.includes(value) && !COMMON_TIMEZONES.includes(value)) node.append(h('option', { value, selected: true }, value));
-    node.append(
-      h('optgroup', { label: t('timezonesCommon') }, COMMON_TIMEZONES.map((zone) => byZone.get(zone)).map(option)),
-      h('optgroup', { label: t('timezonesAll') }, all.filter((zone) => !COMMON_TIMEZONES.includes(zone)).map((zone) => byZone.get(zone))
-        .sort((a, b) => a.minutes - b.minutes || a.label.localeCompare(b.label)).map(option))
-    );
+    for (const [zone, nameHe, nameEn] of TIMEZONES) node.append(option(zone, he ? nameHe : nameEn));
+    if (value && !TIMEZONES.some(([zone]) => zone === value)) node.append(option(value, value));
     return node;
   }
 

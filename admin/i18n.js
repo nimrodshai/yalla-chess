@@ -718,8 +718,6 @@
     recipient: 'נמען',
 
     // misc
-    timezonesCommon: 'נפוצים',
-    timezonesAll: 'כל אזורי הזמן',
     nextLessonIn: 'השיעור הבא: {when}',
     inTz: 'לפי {tz}',
     pickStudent: 'בחירת תלמידים',
@@ -1429,8 +1427,6 @@
     logAsSent: 'The message is logged as sent after WhatsApp opens.',
     recipient: 'Recipient',
 
-    timezonesCommon: 'Common',
-    timezonesAll: 'All time zones',
     nextLessonIn: 'Next lesson: {when}',
     inTz: 'in {tz}',
     pickStudent: 'Pick students',
