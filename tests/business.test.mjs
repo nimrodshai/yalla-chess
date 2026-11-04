@@ -273,6 +273,16 @@ describe('business API', () => {
     assert.equal(detail.messages[0].status, 'sent');
   });
 
+  it('reminds a family of the lesson at their own hour, with no time zone name', async () => {
+    const created = (await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Far', lastName: 'Away', parentName: 'NY Parent', groupId: 'rookies', price: 250, billingType: 'monthly', timezone: 'America/New_York', language: 'en' }))).json()).student;
+    const week = await (await server.fetch('/api/business/calendar?from=2026-12-06&to=2026-12-12', { headers: { Cookie: teacher.cookie } })).json();
+    const lesson = week.occurrences.find((occurrence) => occurrence.groupId === 'rookies');
+    const composed = await (await server.fetch('/api/business/messages/compose', json(teacher.cookie, { kind: 'lesson_reminder', studentId: created.id, occurrenceKey: lesson.key }))).json();
+    const newYorkHour = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(lesson.startAt));
+    assert.ok(composed.message.body.includes(`at ${newYorkHour}`), composed.message.body);
+    assert.ok(!/America|\(\)/.test(composed.message.body), composed.message.body);
+  });
+
   it('builds a monthly report with income, expenses and profit in ILS', async () => {
     await server.fetch('/api/business/expenses', json(teacher.cookie, { date: '2026-11-03', category: 'advertising', amount: 100, currency: 'USD' }));
     const report = await (await server.fetch('/api/business/reports?month=2026-11', { headers: { Cookie: teacher.cookie } })).json();
