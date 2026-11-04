@@ -221,6 +221,22 @@ describe('business API', () => {
     assert.equal(patched.student.status, 'active');
   });
 
+  it('keeps who referred a family, only while the source is a referral', async () => {
+    const created = await (await server.fetch('/api/business/leads', json(teacher.cookie, {
+      parentName: 'Referral Parent', parentPhone: '+972500000887', childName: 'Referral Child', source: 'referral', referredBy: 'Dana, Noa\'s mom'
+    }))).json();
+    assert.equal(created.lead.source, 'referral');
+    assert.equal(created.lead.referredBy, 'Dana, Noa\'s mom');
+
+    const body = await (await server.fetch(`/api/business/leads/${created.lead.id}/convert`, json(teacher.cookie, {}))).json();
+    assert.equal(body.student.source, 'referral', 'the source carries over to the student');
+    assert.equal(body.student.referredBy, 'Dana, Noa\'s mom');
+
+    const ad = await (await server.fetch(`/api/business/students/${body.student.id}`, json(teacher.cookie, { source: 'paid_ad' }, 'PATCH'))).json();
+    assert.equal(ad.student.source, 'paid_ad');
+    assert.equal(ad.student.referredBy, '', 'a paid ad has no referrer');
+  });
+
   it('applies cancellations and reschedules to the calendar', async () => {
     const week = await (await server.fetch('/api/business/calendar?from=2026-11-08&to=2026-11-14', { headers: { Cookie: teacher.cookie } })).json();
     const rookies = week.occurrences.find((occurrence) => occurrence.groupId === 'rookies' && occurrence.kind === 'group');

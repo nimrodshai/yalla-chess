@@ -19,7 +19,7 @@
     lessonKinds: ['group', 'private', 'trial', 'makeup'],
     attendance: ['present', 'absent', 'late'],
     leadStatuses: ['new', 'contacted', 'trial_scheduled', 'trial_done', 'waiting_group', 'converted', 'lost'],
-    leadSources: ['facebook', 'instagram', 'website', 'referral', 'other'],
+    leadSources: ['paid_ad', 'referral', 'facebook', 'instagram', 'website', 'other'],
     leadPreferences: ['group', 'private', 'either'],
     contentKinds: ['plan', 'exercise', 'game', 'homework', 'curriculum'],
     expenseCategories: ['advertising', 'teacher', 'operations', 'software', 'other'],

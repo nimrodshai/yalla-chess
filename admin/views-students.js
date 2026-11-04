@@ -116,7 +116,7 @@
         detail(t('teacher'), student.teacher),
         detail(t('joinedAt'), fmtDate(student.joinedAt, { year: 'numeric' })),
         detail(t('leftAt'), fmtDate(student.leftAt, { year: 'numeric' })),
-        admin ? detail(t('source'), student.source) : null,
+        admin ? detail(t('source'), sourceLabel(student)) : null,
         detail(t('schedule'), group ? scheduleText(student.groupSchedule) : ''),
         detail(t('privateSchedule'), scheduleText(student.privateSchedule)),
         detail(t('privateZoomLink'), student.privateZoomLink ? h('a', { href: student.privateZoomLink, target: '_blank', rel: 'noopener' }, 'Zoom') : ''),
@@ -184,20 +184,65 @@
     );
   }
 
+  // ----------------------------------------------------------- source
+  // Where the family heard of the school: a pick from the list, and who
+  // recommended it when that was a referral. Older students may hold free
+  // text from before the list; it is kept and shown as written.
+  function sourceLabel(record) {
+    if (!record.source) return '';
+    const name = window.VOCAB.leadSources.includes(record.source) ? t(`source.${record.source}`) : record.source;
+    return record.source === 'referral' && record.referredBy ? `${name} · ${record.referredBy}` : name;
+  }
+
+  function sourceFields(record) {
+    const value = record.source || '';
+    const options = [['', '—'], ...window.VOCAB.leadSources.map((entry) => [entry, t(`source.${entry}`)])];
+    if (value && !window.VOCAB.leadSources.includes(value)) options.push([value, value]);
+    const sourceSelect = select('source', options, value);
+    const referredField = field(t('referredBy'), input('referredBy', record.referredBy || '', { placeholder: t('referredByPlaceholder') }));
+    const sync = () => { referredField.hidden = sourceSelect.value !== 'referral'; };
+    sourceSelect.addEventListener('change', () => {
+      sync();
+      if (!referredField.hidden) referredField.querySelector('input').focus();
+    });
+    sync();
+    return [field(t('source'), sourceSelect), referredField];
+  }
+
+  // ----------------------------------------------------------- draft
+  // A new student being typed in is kept in this browser as it is typed, so
+  // a dialog closed by mistake opens again where it was left. Saving or
+  // Cancel drops it.
+  const DRAFT_KEY = 'yallaChessStudentDraft';
+  const readDraft = () => {
+    try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch (error) { return null; }
+  };
+  const writeDraft = (draft) => {
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (error) { /* ignore */ }
+  };
+  const dropDraft = () => {
+    try { localStorage.removeItem(DRAFT_KEY); } catch (error) { /* ignore */ }
+  };
+
   // ----------------------------------------------------------- form
   // A new student is added in five short steps. Only the first is required;
   // every later step can be skipped, and "finish" saves from anywhere. When
   // editing, the same steps are tabs and Save is always available.
   function studentForm({ student = null, defaults = {}, onSaved }) {
     const isNew = !student;
+    // Only a blank new student picks up a draft: one started from a lead or
+    // a portal account comes with its own details.
+    const draft = isNew && !Object.keys(defaults).length ? readDraft() : null;
     const today = window.UI.todayIso(window.SETTINGS.businessTimezone);
-    const s = student || { status: 'active', language: 'he', level: 'basic', lessonType: 'group', billingType: 'monthly', currency: 'ILS', remindersEnabled: true, timezone: window.SETTINGS.businessTimezone, joinedAt: today, teacher: window.APP.teachers.some((teacher) => teacher.name === window.SETTINGS.teacherName) ? window.SETTINGS.teacherName : '', ...defaults };
+    const s = student || { status: 'active', language: 'he', level: 'basic', lessonType: 'group', billingType: 'monthly', currency: 'ILS', remindersEnabled: true, timezone: window.SETTINGS.businessTimezone, joinedAt: today, teacher: window.APP.teachers.some((teacher) => teacher.name === window.SETTINGS.teacherName) ? window.SETTINGS.teacherName : '', ...defaults, ...(draft?.values || {}) };
 
     modal({
       title: isNew ? t('newStudent') : `${t('editStudent')}: ${[s.firstName, s.lastName].filter(Boolean).join(' ')}`,
       body: (dialog) => {
         const form = h('form', { class: 'wizard', novalidate: true });
-        const schedule = scheduleEditor(s.privateSchedule?.length || !isNew ? (s.privateSchedule || []) : [{ weekday: 0, startTime: '17:00', durationMinutes: 60 }]);
+        // A new student starts with one slot to fill in; a draft brings back
+        // exactly the slots it had, none if they were all removed.
+        const schedule = scheduleEditor(s.privateSchedule?.length || !isNew || draft ? (s.privateSchedule || []) : [{ weekday: 0, startTime: '17:00', durationMinutes: 60 }]);
 
         // ---- choice chips writing to a hidden input
         const choice = (name, options, value) => {
@@ -295,7 +340,7 @@
           field(t('parentEmail'), input('parentEmail', s.parentEmail || '', { type: 'email', dir: 'ltr' })),
           field(t('parentPhone2'), input('parentPhone2', s.parentPhone2 || '', { dir: 'ltr', inputmode: 'tel' })),
           field(t('birthDate'), h('input', { name: 'birthDate', type: 'date', value: s.birthDate || '' })),
-          field(t('source'), input('source', s.source || '')),
+          ...sourceFields(s),
           field(t('userPhone'), input('userPhone', s.userPhone || '', { dir: 'ltr', inputmode: 'tel' }), { full: true, hint: t('wizPortalHint') }),
           field(t('privateZoomLink'), input('privateZoomLink', s.privateZoomLink || '', { dir: 'ltr' }), { full: true }),
           field(t('paymentTerms'), input('paymentTerms', s.paymentTerms || '')),
@@ -312,8 +357,8 @@
           { key: 'more', label: t('wizMore'), title: t('wizMoreTitle'), intro: t('wizMoreIntro'), body: more }
         ];
 
-        let current = 0;
-        const visited = new Set([0]);
+        let current = draft ? Math.min(Number(draft.step) || 0, steps.length - 1) : 0;
+        const visited = new Set(Array.from({ length: current + 1 }, (_, index) => index));
         const stepper = h('ol', { class: 'stepper' });
         const panels = steps.map((step) => h('section', { class: 'wizard-panel', hidden: true },
           h('h3', { class: 'wizard-title' }, step.title),
@@ -356,6 +401,7 @@
             const response = student
               ? await api(`/students/${student.id}`, { method: 'PATCH', body: values })
               : await api('/students', { method: 'POST', body: values });
+            if (isNew) dropDraft();
             toast(t('saved'), 'success');
             dialog.close();
             if (onSaved) onSaved(response.student);
@@ -388,7 +434,7 @@
           const start = h('div', { class: 'row' },
             current > 0
               ? h('button', { class: 'btn', type: 'button', onclick: () => go(current - 1) }, `${window.I18N.lang === 'he' ? '→' : '←'} ${t('back')}`)
-              : h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => dialog.close() }, t('cancel'))
+              : h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { if (isNew) dropDraft(); dialog.close(); } }, t('cancel'))
           );
           const end = h('div', { class: 'row' });
           if (isNew) {
@@ -415,13 +461,39 @@
           else save();
         });
 
-        form.append(stepper, errorHost, ...panels, footer);
+        const keepDraft = () => {
+          // Cancel drops the draft and closes; nothing is kept after that.
+          if (!isNew || !form.isConnected) return;
+          const values = formValues(form);
+          // The private slots share field names, so they are read on their own.
+          for (const name of ['weekday', 'startTime', 'durationMinutes']) delete values[name];
+          values.privateSchedule = schedule.read();
+          writeDraft({ values, step: current });
+        };
+        form.addEventListener('input', keepDraft);
+        form.addEventListener('change', keepDraft);
+        // Steps, and adding or removing a private slot, change the form
+        // without an input event.
+        form.addEventListener('click', (event) => { if (event.target.closest('button')) setTimeout(keepDraft, 0); });
+
+        const draftNote = draft ? h('div', { class: 'row-between draft-note' },
+          h('span', null, t('draftRestored')),
+          h('button', { class: 'btn btn-xs btn-ghost', type: 'button', onclick: () => {
+            dropDraft();
+            dialog.close();
+            studentForm({ student, defaults, onSaved });
+          } }, t('draftStartOver'))
+        ) : null;
+
+        form.append(stepper, ...(draftNote ? [draftNote] : []), errorHost, ...panels, footer);
         render();
-        if (isNew) setTimeout(() => firstName.focus(), 50);
+        if (isNew) setTimeout(() => (panels[current].querySelector('input:not([type=hidden]), select, textarea') || firstName).focus(), 50);
         return form;
       }
     });
   }
 
   window.VIEWS.studentForm = studentForm;
+  window.VIEWS.sourceFields = sourceFields;
+  window.VIEWS.sourceLabel = sourceLabel;
 })();

@@ -104,6 +104,7 @@
       detail(t('whatsapp'), lead.parentPhone ? h('a', { href: `https://wa.me/${lead.parentPhone.replace(/\D/g, '')}`, target: '_blank', rel: 'noopener', dir: 'ltr' }, lead.parentPhone) : ''),
       detail(t('email'), lead.parentEmail),
       detail(t('date'), fmtDate(lead.createdAt.slice(0, 10), { year: 'numeric' })),
+      detail(t('source'), window.VIEWS.sourceLabel(lead)),
       lead.notes ? h('div', { class: 'detail', style: { gridColumn: '1 / -1' } }, h('dt', null, t('notes')), h('dd', { class: 'pre' }, lead.notes)) : null
     ));
 
@@ -146,6 +147,7 @@
           field(t('lichessRating'), h('input', { name: 'lichessRating', type: 'number', min: 0, max: 4000, value: l.lichessRating ?? '', inputmode: 'numeric' })),
           field(t('language'), enumSelect('language', window.VOCAB.languages, 'lang', l.language)),
           field(t('preference'), enumSelect('preference', window.VOCAB.leadPreferences, 'pref', l.preference)),
+          ...window.VIEWS.sourceFields(l),
           field(t('notes'), textarea('notes', l.notes || '', { rows: 3 }), { full: true }),
           h('div', { class: 'form-actions' },
             h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, t('cancel')),
