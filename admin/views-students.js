@@ -108,7 +108,7 @@
         detail(t('whatsapp'), student.parentPhone ? h('a', { href: `https://wa.me/${student.parentPhone.replace(/\D/g, '')}`, target: '_blank', rel: 'noopener', dir: 'ltr' }, student.parentPhone) : ''),
         detail(t('parentPhone2'), student.parentPhone2),
         detail(t('email'), student.parentEmail),
-        detail(t('country'), student.country),
+        detail(t('country'), [countryName(student.country), student.region].filter(Boolean).join(' · ')),
         detail(t('timezone'), student.timezone),
         detail(t('language'), t(`lang.${student.language}`)),
         detail(t('chesscomUsername'), student.chesscomUsername),
@@ -192,6 +192,38 @@
     if (!record.source) return '';
     const name = window.VOCAB.leadSources.includes(record.source) ? t(`source.${record.source}`) : record.source;
     return record.source === 'referral' && record.referredBy ? `${name} · ${record.referredBy}` : name;
+  }
+
+  // The countries most students come from, picked rather than typed. Older
+  // records typed the name in either language; those read as the same
+  // country, and any other name stays as it was.
+  const COUNTRIES = ['IL', 'CA', 'US'];
+  const COUNTRY_ALIASES = { IL: ['ישראל', 'israel'], CA: ['קנדה', 'canada'], US: ['ארצות הברית', 'ארה״ב', 'ארה"ב', 'usa', 'us', 'united states'] };
+  const countryCode = (value) => {
+    const name = String(value || '').trim();
+    if (COUNTRIES.includes(name)) return name;
+    return COUNTRIES.find((code) => COUNTRY_ALIASES[code].includes(name.toLowerCase())) || name;
+  };
+  const countryName = (value) => {
+    const code = countryCode(value);
+    return COUNTRIES.includes(code) ? t(`countryName.${code}`) : code;
+  };
+
+  // Canada and the USA are big enough that the country alone does not say
+  // much, so picking either opens a line for where in it.
+  function countryFields(record) {
+    const value = countryCode(record.country);
+    const options = [['', '—'], ...COUNTRIES.map((code) => [code, t(`countryName.${code}`)])];
+    const countrySelect = select('country', options, value);
+    const regionField = field(t('region'), input('region', record.region || '', { placeholder: t('regionPlaceholder') }));
+    const sync = () => { regionField.hidden = !['CA', 'US'].includes(countrySelect.value); };
+    countrySelect.addEventListener('change', () => {
+      sync();
+      if (regionField.hidden) regionField.querySelector('input').value = '';
+      else regionField.querySelector('input').focus();
+    });
+    sync();
+    return [field(t('country'), countrySelect), regionField];
   }
 
   function sourceFields(record) {
@@ -335,7 +367,7 @@
 
         // ---- step 5: everything else
         const more = h('div', { class: 'form' },
-          field(t('country'), input('country', s.country || '')),
+          ...countryFields(s),
           field(t('timezone'), window.UI.timezoneSelect('timezone', s.timezone || '', { blank: '—' })),
           field(t('parentEmail'), input('parentEmail', s.parentEmail || '', { type: 'email', dir: 'ltr' })),
           field(t('parentPhone2'), input('parentPhone2', s.parentPhone2 || '', { dir: 'ltr', inputmode: 'tel' })),
@@ -354,7 +386,7 @@
           { key: 'placement', label: t('wizPlacement'), title: t('wizPlacementTitle'), intro: t('wizPlacementIntro'), body: placement },
           { key: 'billing', label: t('wizBilling'), title: t('wizBillingTitle'), intro: t('wizBillingIntro'), body: billing },
           { key: 'chess', label: t('wizChess'), title: t('wizChessTitle'), intro: t('wizChessIntro'), body: chess },
-          { key: 'more', label: t('wizMore'), title: t('wizMoreTitle'), intro: t('wizMoreIntro'), body: more }
+          { key: 'more', label: t('wizMore'), title: t('wizMoreTitle'), body: more }
         ];
 
         let current = draft ? Math.min(Number(draft.step) || 0, steps.length - 1) : 0;
@@ -362,7 +394,7 @@
         const stepper = h('ol', { class: 'stepper' });
         const panels = steps.map((step) => h('section', { class: 'wizard-panel', hidden: true },
           h('h3', { class: 'wizard-title' }, step.title),
-          h('p', { class: 'wizard-intro' }, step.intro),
+          step.intro ? h('p', { class: 'wizard-intro' }, step.intro) : null,
           step.body
         ));
         const errorHost = h('div');
