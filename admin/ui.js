@@ -411,7 +411,7 @@
       const node = h('div', { class: 'schedule-row' },
         select('weekday', t('weekdays').map((name, index) => [index, name]), row.weekday),
         h('input', { name: 'startTime', type: 'time', value: row.startTime || '17:00' }),
-        h('input', { name: 'durationMinutes', type: 'number', min: 15, max: 240, step: 5, value: row.durationMinutes || 60 }),
+        h('input', { name: 'durationMinutes', type: 'number', min: 30, max: 180, step: 5, value: row.durationMinutes || 60 }),
         h('button', { class: 'btn btn-xs btn-ghost', type: 'button', onclick: () => node.remove() }, '✕')
       );
       container.append(node);
