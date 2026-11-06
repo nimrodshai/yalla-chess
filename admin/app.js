@@ -16,6 +16,7 @@
     billingTypes: ['monthly', 'package', 'per_lesson'],
     currencies: ['ILS', 'USD'],
     languages: ['he', 'en', 'he_en'],
+    parentLanguages: ['he', 'en'],
     lessonKinds: ['group', 'private', 'trial', 'makeup'],
     attendance: ['present', 'absent', 'late'],
     leadStatuses: ['new', 'contacted', 'trial_scheduled', 'trial_done', 'waiting_group', 'converted', 'lost'],
@@ -43,7 +44,39 @@
     for (const node of document.querySelectorAll('[data-i18n]')) node.textContent = t(!window.APP.isAdmin && node.dataset.i18nTeacher ? node.dataset.i18nTeacher : node.dataset.i18n);
     for (const node of document.querySelectorAll('[data-i18n-placeholder]')) node.placeholder = t(node.dataset.i18nPlaceholder);
     document.getElementById('langToggle').textContent = window.I18N.lang === 'he' ? 'EN' : 'עב';
+    syncThemeToggle();
   }
+
+  // ----------------------------------------------------------- theme
+  // Light or dark. index.html sets it before the first paint; a click here
+  // saves the choice, and until there is one the page follows the system.
+  const themeToggle = document.getElementById('themeToggle');
+  const currentTheme = () => (document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+  function syncThemeToggle() {
+    const dark = currentTheme() === 'dark';
+    themeToggle.setAttribute('aria-checked', String(dark));
+    themeToggle.setAttribute('aria-label', t('darkMode'));
+    themeToggle.title = dark ? t('switchToLight') : t('switchToDark');
+  }
+  function setTheme(theme) {
+    const root = document.documentElement;
+    root.classList.add('theme-fade');
+    root.setAttribute('data-theme', theme);
+    clearTimeout(setTheme.timer);
+    setTheme.timer = setTimeout(() => root.classList.remove('theme-fade'), 400);
+    syncThemeToggle();
+  }
+  themeToggle.addEventListener('click', () => {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem('yallaChessTheme', next); } catch (error) { /* ignore */ }
+    setTheme(next);
+  });
+  const systemDark = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  systemDark?.addEventListener?.('change', (event) => {
+    let saved = '';
+    try { saved = localStorage.getItem('yallaChessTheme') || ''; } catch (error) { /* ignore */ }
+    if (!saved) setTheme(event.matches ? 'dark' : 'light');
+  });
 
   document.getElementById('langToggle').addEventListener('click', () => {
     window.I18N.lang = window.I18N.lang === 'he' ? 'en' : 'he';

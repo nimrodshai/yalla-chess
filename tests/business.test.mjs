@@ -703,6 +703,57 @@ describe('business API', () => {
     await put({ matchAgeYears: 2, matchLevelSteps: 1, matchRatingPoints: 150 });
   });
 
+  it('writes to a family in the parent\'s language, not the child\'s', async () => {
+    const create = async (fields) => (await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Lang', parentFirstName: 'Dana', parentPhone: '050-333-4444', ...fields }))).json()).student;
+    const compose = async (studentId, lang) => (await (await server.fetch('/api/business/messages/compose', json(teacher.cookie, { kind: 'payment_reminder', studentId, lang }))).json()).message;
+
+    // Without a choice the parent's language follows the child's.
+    const englishChild = await create({ language: 'en' });
+    assert.equal(englishChild.parentLanguage, 'en');
+    const bilingualChild = await create({ language: 'he_en' });
+    assert.equal(bilingualChild.parentLanguage, 'he');
+
+    // A child in Hebrew and English whose parents read English.
+    const record = await create({ language: 'he_en', parentLanguage: 'en' });
+    assert.equal(record.parentLanguage, 'en');
+    assert.equal((await compose(record.id)).language, 'en');
+    assert.equal((await compose(record.id, 'he')).language, 'he', 'a language picked in the composer still wins');
+
+    // Editing another field keeps it; an unknown value falls back.
+    const edited = (await (await server.fetch(`/api/business/students/${record.id}`, json(teacher.cookie, { notes: 'x' }, 'PATCH'))).json()).student;
+    assert.equal(edited.parentLanguage, 'en');
+    const odd = await create({ language: 'he', parentLanguage: 'klingon' });
+    assert.equal(odd.parentLanguage, 'he');
+  });
+
+  it('tags games and finds them by tag, player or trait', async () => {
+    const pgn = '[White "Tal"]\n[Black "Smyslov"]\n[Event "Candidates"]\n\n1. e4 c6 *\n\n[White "Petrosian"]\n[Black "Spassky"]\n\n1. d4 Nf6 *';
+    const [tal, petrosian] = (await (await server.fetch('/api/business/content/import-pgn', json(teacher.cookie, { fileName: 'tags.pgn', pgn }))).json()).items;
+    const list = async (query) => (await (await server.fetch(`/api/business/content?kind=game&${query}`, { headers: { Cookie: teacher.cookie } })).json());
+
+    const tagged = await server.fetch(`/api/business/content/${tal.id}`, json(teacher.cookie, { tags: ['tags.pgn', 'Sacrifice', 'attack'] }, 'PATCH'));
+    assert.equal(tagged.status, 200);
+    assert.deepEqual((await tagged.json()).item.tags, ['tags.pgn', 'Sacrifice', 'attack']);
+
+    const bySacrifice = await list('tag=sacrifice');
+    assert.deepEqual(bySacrifice.content.map((item) => item.id), [tal.id], 'a tag matches whatever its case');
+    assert.ok(bySacrifice.tags.some((tag) => tag.name === 'Sacrifice' && tag.count === 1));
+    assert.ok(bySacrifice.tags.some((tag) => tag.name === 'tags.pgn' && tag.count === 2), 'the tag list counts every game, not only the filtered ones');
+    assert.deepEqual((await list('q=smyslov')).content.map((item) => item.id), [tal.id], 'found by a player');
+    assert.deepEqual((await list('q=candidates')).content.map((item) => item.id), [tal.id], 'found by the event');
+    assert.deepEqual((await list('q=spassky')).content.map((item) => item.id), [petrosian.id]);
+
+    const order = (await list('q=tags.pgn')).content.map((item) => item.id);
+    assert.equal(order.length, 2);
+    await server.fetch(`/api/business/content/${order[1]}`, json(teacher.cookie, { tags: ['tags.pgn', 'endgame'] }, 'PATCH'));
+    assert.deepEqual((await list('q=tags.pgn')).content.map((item) => item.id), order, 'tagging a game does not move it in the list');
+
+    // Removing a tag takes the game out of that filter.
+    await server.fetch(`/api/business/content/${tal.id}`, json(teacher.cookie, { tags: ['tags.pgn', 'attack'] }, 'PATCH'));
+    assert.equal((await list('tag=sacrifice')).content.length, 0);
+    assert.ok(!(await list('')).tags.some((tag) => tag.name === 'Sacrifice'));
+  });
+
   it('rejects malformed JSON and unknown routes cleanly', async () => {
     const malformed = await server.fetch('/api/business/students', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: teacher.cookie }, body: '{' });
     assert.equal(malformed.status, 400);

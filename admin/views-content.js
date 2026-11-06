@@ -13,18 +13,38 @@
   };
 
   async function contentList(tab, query, refresh) {
-    const state = { q: query.q || '' };
+    const state = { q: query.q || '', tag: query.tag || '' };
     const listNode = h('div');
     const countNode = h('span');
-    const load = async () => {
+    const tagBar = h('div', { class: 'tag-filter' });
+    // A redraw replaces every row, so one that follows a tag save waits while
+    // a tag box is open (being typed in, or kept after a failed save) and
+    // runs when the last box closes. A search or a filter the user picked
+    // redraws at once. Only the newest request may draw.
+    let sequence = 0;
+    let deferred = false;
+    const openDraft = () => listNode.querySelector('.tag-input');
+    const load = async ({ force = false } = {}) => {
+      const mine = ++sequence;
       const params = new URLSearchParams({ kind: tab === 'games' ? 'game' : 'exercise' });
       if (state.q) params.set('q', state.q);
+      if (tab === 'games' && state.tag) params.set('tag', state.tag);
       const data = await api(`/content?${params}`);
-      window.UI.clear(listNode).append(tab === 'games' ? gamesList(data.content, refresh) : puzzlesGrid(data.content));
+      if (mine !== sequence) return;
+      // A tag that was just removed from its last game stops filtering.
+      if (state.tag && !data.tags.some((entry) => entry.name.toLowerCase() === state.tag.toLowerCase())) { state.tag = ''; return load({ force }); }
+      if (!force && openDraft()) { deferred = true; return; }
+      deferred = false;
+      const filterBy = (name) => { state.tag = state.tag.toLowerCase() === name.toLowerCase() ? '' : name; refreshList(); };
+      const draftClosed = () => { if (deferred && !openDraft()) reload(); };
+      window.UI.clear(listNode).append(tab === 'games' ? gamesList(data.content, { allTags: data.tags, activeTag: state.tag, filterBy, reload, draftClosed }) : puzzlesGrid(data.content));
       countNode.textContent = tab === 'games' ? t('gamesCount', { n: data.content.length }) : '';
+      if (tab === 'games') renderTagBar(tagBar, data.tags, state.tag, filterBy);
     };
-    const reload = window.UI.guard(load);
-    const searchBox = h('input', { type: 'search', value: state.q, placeholder: t('search'), oninput: (event) => { state.q = event.target.value; clearTimeout(searchBox._timer); searchBox._timer = setTimeout(reload, 250); } });
+    const guardedLoad = window.UI.guard(load);
+    const reload = () => guardedLoad({ force: false });
+    const refreshList = () => guardedLoad({ force: true });
+    const searchBox = h('input', { type: 'search', value: state.q, placeholder: t('search'), oninput: (event) => { state.q = event.target.value; clearTimeout(searchBox._timer); searchBox._timer = setTimeout(refreshList, 250); } });
     await load();
 
     const tabs = h('div', { class: 'tabs' },
@@ -44,6 +64,7 @@
       tabs,
       tab === 'games' && admin ? h('div', { class: 'upload-box', style: { marginBottom: '14px' } }, h('div', { class: 'small muted', style: { flex: 1 } }, t('uploadHint')), uploadControl(refresh)) : null,
       h('div', { class: 'filters' }, searchBox, h('span', { class: 'muted small' }, countNode)),
+      tab === 'games' ? tagBar : null,
       h('div', { class: 'card' }, listNode)
     );
   }
@@ -76,16 +97,105 @@
     return h('span', null, fileInput, button);
   }
 
-  function gamesList(items) {
-    if (!items.length) return empty(t('noGames'));
-    return h('div', { class: 'list' }, items.map((item) => h('div', { class: 'list-item clickable game-row', onclick: () => { location.hash = `#/content/${item.id}`; } },
+  // The tags in use, as a row of filters above the list. One is picked at a
+  // time; picking it again shows every game.
+  function renderTagBar(node, tags, activeTag, filterBy) {
+    window.UI.clear(node);
+    if (!tags.length) { node.hidden = true; return; }
+    node.hidden = false;
+    node.append(h('span', { class: 'tag-filter-label' }, t('filterByTag')));
+    for (const tag of tags) {
+      const active = tag.name.toLowerCase() === activeTag.toLowerCase();
+      node.append(h('button', { class: `tag tag-filter-item ${active ? 'active' : ''}`, type: 'button', 'aria-pressed': String(active), onclick: () => filterBy(tag.name) }, tag.name, h('span', { class: 'tag-count' }, String(tag.count))));
+    }
+  }
+
+  function gamesList(items, { allTags, activeTag, filterBy, reload, draftClosed }) {
+    if (!items.length) return empty(activeTag ? t('noGamesWithTag', { tag: activeTag }) : t('noGames'));
+    const admin = window.APP.isAdmin;
+    // One shared list of suggestions for every "add tag" box on the page.
+    const suggestions = h('datalist', { id: 'game-tag-suggestions' }, allTags.map((tag) => h('option', { value: tag.name })));
+    // Edits to one game run one after another, each applied to the tags as
+    // the last save left them, so a quick add and remove cannot undo each
+    // other. Resolves to whether the save went through.
+    const pending = new Map();
+    const changed = new Set();
+    const saveTags = (item, change) => {
+      const run = (pending.get(item.id) || Promise.resolve()).then(async () => {
+        try {
+          const response = await api(`/content/${item.id}`, { method: 'PATCH', body: { tags: change(item.tags || []) } });
+          item.tags = response.item.tags;
+          changed.add(item.id);
+          return true;
+        } catch (error) {
+          toast(error.message, 'error');
+          return false;
+        }
+      });
+      pending.set(item.id, run);
+      // The list redraws once the last queued edit is done, and only if one
+      // went through: a failed save keeps what was typed on screen.
+      run.then(() => {
+        if (pending.get(item.id) !== run) return;
+        pending.delete(item.id);
+        if (changed.delete(item.id)) reload();
+      });
+      return run;
+    };
+    return h('div', { class: 'list' }, suggestions, items.map((item) => h('div', { class: 'list-item clickable game-row', onclick: () => { location.hash = `#/content/${item.id}`; } },
       h('span', { class: 'avatar' }, '♞'),
       h('div', { class: 'list-main' },
         h('div', { class: 'list-title' }, item.white || item.black ? `${item.white || '?'} – ${item.black || '?'}` : item.title, item.result ? h('span', { class: 'badge badge-gold', dir: 'ltr' }, item.result) : null),
-        h('div', { class: 'list-sub' }, [item.event, item.gameDate && !item.gameDate.includes('?') ? item.gameDate : (item.gameDate || '').slice(0, 4).replace(/\?+/, ''), item.topic, item.movesCount ? `${Math.ceil(item.movesCount / 2)} ${t('gameMoves')}` : '', item.sourceFile ? `${t('sourceFile')} ${item.sourceFile}` : ''].filter(Boolean).join(' · '))
+        h('div', { class: 'list-sub' }, [item.event, item.gameDate && !item.gameDate.includes('?') ? item.gameDate : (item.gameDate || '').slice(0, 4).replace(/\?+/, ''), item.topic, item.movesCount ? `${Math.ceil(item.movesCount / 2)} ${t('gameMoves')}` : '', item.sourceFile ? `${t('sourceFile')} ${item.sourceFile}` : ''].filter(Boolean).join(' · ')),
+        gameTags(item, { admin, activeTag, filterBy, saveTags, draftClosed })
       ),
       h('button', { class: 'btn btn-sm', type: 'button', onclick: (event) => { event.stopPropagation(); openViewer(item); } }, `♟ ${t('openBoard')}`)
     )));
+  }
+
+  // A game's tags under its line. A tag filters the list by it; the admin can
+  // take one off with its × or add one with "+ tag", which opens a small box
+  // that suggests the tags already in use.
+  function gameTags(item, { admin, activeTag, filterBy, saveTags, draftClosed }) {
+    const tags = item.tags || [];
+    const node = h('div', { class: 'game-tags', onclick: (event) => event.stopPropagation() });
+    const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+    for (const tag of tags) {
+      const active = tag.toLowerCase() === activeTag.toLowerCase();
+      node.append(h('span', { class: `tag ${active ? 'active' : ''}` },
+        h('button', { class: 'tag-name', type: 'button', title: t('filterByThisTag'), onclick: () => filterBy(tag) }, tag),
+        admin ? h('button', { class: 'tag-x', type: 'button', title: t('removeTag'), 'aria-label': `${t('removeTag')}: ${tag}`, onclick: async (event) => { const button = event.currentTarget; button.disabled = true; if (!(await saveTags(item, (current) => current.filter((entry) => entry !== tag)))) button.disabled = false; } }, '×') : null
+      ));
+    }
+    if (!admin) return tags.length ? node : null;
+
+    const addButton = h('button', { class: 'tag tag-add', type: 'button' }, `+ ${t('addTag')}`);
+    addButton.addEventListener('click', () => {
+      const box = h('input', { class: 'tag-input', type: 'text', list: 'game-tag-suggestions', placeholder: t('tagPlaceholder'), maxlength: 120, 'aria-label': t('addTag') });
+      let busy = false;
+      const finish = async (save) => {
+        if (busy) return;
+        // Commas add several at once: "Carlsen, sacrifice".
+        const added = save ? box.value.split(',').map((entry) => entry.trim()).filter(Boolean) : [];
+        const close = () => { box.replaceWith(addButton); draftClosed(); };
+        if (!added.length) { close(); return; }
+        busy = true;
+        box.disabled = true;
+        const saved = await saveTags(item, (current) => [...current, ...added.filter((entry, index) => !current.some((tag) => same(tag, entry)) && added.findIndex((other) => same(other, entry)) === index)]);
+        // A failed save leaves what was typed in the box to try again.
+        if (saved) { box.value = ''; close(); }
+        else if (box.isConnected) { busy = false; box.disabled = false; box.focus(); }
+      };
+      box.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') { event.preventDefault(); finish(true); }
+        else if (event.key === 'Escape') { event.preventDefault(); finish(false); }
+      });
+      box.addEventListener('blur', () => finish(true));
+      addButton.replaceWith(box);
+      box.focus();
+    });
+    node.append(addButton);
+    return node;
   }
 
   function puzzlesGrid(items) {

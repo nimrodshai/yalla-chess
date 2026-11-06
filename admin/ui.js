@@ -668,7 +668,7 @@
       title: t('composeTitle', { name }),
       body: (dialog) => {
         const kindSelect = enumSelect('kind', window.VOCAB.messageKinds, 'msg', state.kind);
-        const langSelect = select('lang', [['', '—'], ['he', t('hebrew')], ['en', t('english')]], state.lang);
+        const langSelect = select('lang', [['', t('langAuto')], ['he', t('hebrew')], ['en', t('english')]], state.lang);
         const notes = textarea('notes', state.values.notes || '', { rows: 2 });
         const preview = h('textarea', { class: 'msg-preview', rows: 7 });
         const recipientLine = h('div', { class: 'small muted' });

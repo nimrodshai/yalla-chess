@@ -111,6 +111,7 @@
         detail(t('country'), [countryName(student.country), student.region].filter(Boolean).join(' · ')),
         detail(t('timezone'), student.timezone),
         detail(t('language'), t(`lang.${student.language}`)),
+        detail(t('parentLanguage'), t(`lang.${student.parentLanguage || (student.language === 'en' ? 'en' : 'he')}`)),
         detail(t('chesscomUsername'), student.chesscomUsername),
         detail(t('lichessUsername'), student.lichessUsername),
         detail(t('teacher'), student.teacher),
@@ -293,11 +294,19 @@
 
         // ---- step 1: who
         const firstName = input('firstName', s.firstName || '', { required: true, autocomplete: 'off' });
+        // Messages go out in the parent's language. Until it is picked by
+        // hand it follows the child's: English for an English-only child.
+        const childLanguage = enumSelect('language', window.VOCAB.languages, 'lang', s.language);
+        const parentLanguage = enumSelect('parentLanguage', window.VOCAB.parentLanguages, 'lang', s.parentLanguage || (s.language === 'en' ? 'en' : 'he'));
+        let parentLanguageTouched = Boolean(s.parentLanguage);
+        parentLanguage.addEventListener('change', () => { parentLanguageTouched = true; });
+        childLanguage.addEventListener('change', () => { if (!parentLanguageTouched) parentLanguage.value = childLanguage.value === 'en' ? 'en' : 'he'; });
         const basics = h('div', { class: 'form' },
           field(t('firstName') + ' *', firstName),
           field(t('lastName'), input('lastName', s.lastName || '', { autocomplete: 'off' })),
           field(t('age'), h('input', { name: 'age', type: 'number', min: 3, max: 99, value: s.age ?? '', inputmode: 'numeric' })),
-          field(t('language'), enumSelect('language', window.VOCAB.languages, 'lang', s.language)),
+          field(t('language'), childLanguage),
+          field(t('parentLanguage'), parentLanguage, { hint: t('parentLanguageHint') }),
           field(t('parentFirstName'), input('parentFirstName', s.parentFirstName || '', { autocomplete: 'off' })),
           field(t('parentLastName'), input('parentLastName', s.parentLastName || '', { autocomplete: 'off' })),
           field(t('parentPhone'), input('parentPhone', s.parentPhone || '', { dir: 'ltr', placeholder: '050-1234567', inputmode: 'tel' }), { hint: t('wizPhoneHint') })
