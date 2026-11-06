@@ -79,7 +79,8 @@
       ),
       h('div', { class: 'row' },
         h('button', { class: 'btn', type: 'button', onclick: () => window.VIEWS.logLesson({ groupId: group.id, onSaved: refresh }) }, `+ ${t('logLesson')}`),
-        admin ? h('button', { class: 'btn btn-primary', type: 'button', onclick: () => profileForm(group, refresh) }, t('editProfile')) : null
+        admin ? h('button', { class: 'btn btn-danger', type: 'button', onclick: () => deleteGroup(group) }, t('deleteGroup')) : null,
+        admin ? h('button', { class: 'btn btn-primary', type: 'button', onclick: () => profileForm(group, refresh) }, t('editGroup')) : null
       )
     ));
 
@@ -141,12 +142,29 @@
     );
   }
 
+  // Students and the waitlist must be placed elsewhere first, so nobody is
+  // left in a group that no longer exists. Logged lessons stay in the log.
+  async function deleteGroup(group) {
+    if (group.studentCount || group.waitlist.length) {
+      toast(t('groupNotEmpty'), 'error');
+      return;
+    }
+    if (!(await confirmDialog(t('deleteGroupConfirm', { name: group.name }), { okLabel: t('deleteGroup') }))) return;
+    await api(`/groups/${group.id}`, { root: '/api', method: 'DELETE' });
+    toast(t('groupDeleted'), 'success');
+    location.hash = '#/groups';
+  }
+
   function profileForm(group, refresh) {
     const profile = group.profile;
     modal({
-      title: `${t('editProfile')}: ${group.name}`,
+      title: `${t('editGroup')}: ${group.name}`,
       body: (dialog) => {
+        const schedule = scheduleEditor(group.schedule);
         const form = h('form', { class: 'form' },
+          field(t('groupNameHe'), input('nameHe', group.title?.he || group.name, { required: true })),
+          field(t('groupNameEn'), input('nameEn', group.title?.en || '')),
+          field(t('groupSchedule'), schedule, { full: true }),
           field(t('zoomLink'), input('zoomLink', group.zoomLink || '', { dir: 'ltr' }), { full: true }),
           field(t('groupStatus'), enumSelect('status', window.VOCAB.groupStatuses, 'groupStatus', profile.status)),
           field(t('language'), enumSelect('language', window.VOCAB.languages, 'lang', profile.language)),
@@ -166,11 +184,19 @@
         );
         form.addEventListener('submit', async (event) => {
           event.preventDefault();
+          form.querySelector('.form-error')?.remove();
+          const rows = schedule.read();
+          if (!rows.length || rows.some((row) => !row.startTime)) {
+            form.prepend(errorBox(t('scheduleRequired')));
+            return;
+          }
           try {
-            // The Zoom link lives on the portal's group, the rest on the profile here.
-            // It is always sent: the link loaded with the page may be stale.
-            const { zoomLink, ...values } = formValues(form);
-            await api(`/groups/${group.id}/zoom-link`, { root: '/api', method: 'POST', body: { zoomLink } });
+            // Name, hours and Zoom link live on the portal's group, the rest
+            // on the profile here. The schedule rows' own inputs are read by
+            // the editor, not sent as profile fields.
+            const { nameHe, nameEn, zoomLink, weekday, startTime, durationMinutes, ...values } = formValues(form);
+            const body = { title: { he: nameHe, en: nameEn || nameHe }, zoomLink, schedule: { timezone: group.timezone, rows } };
+            await api(`/groups/${group.id}`, { root: '/api', method: 'PATCH', body });
             await api(`/groups/${group.id}/profile`, { method: 'PATCH', body: values });
             toast(t('saved'), 'success');
             dialog.close();

@@ -258,6 +258,32 @@ describe('business API', () => {
     assert.equal(bad.status, 400);
   });
 
+  it('renames, reschedules and deletes a group only once nobody is in it', async () => {
+    const groups = async () => (await (await server.fetch('/api/business/groups', { headers: { Cookie: teacher.cookie } })).json()).groups;
+    const created = await server.fetch('/api/groups', json(teacher.cookie, { title: { he: 'זמנית', en: 'Temporary' }, schedule: { timezone: 'Asia/Jerusalem', rows: [{ weekday: 0, startTime: '17:00', durationMinutes: 60 }] } }));
+    const { id } = (await created.json()).group;
+    await server.fetch(`/api/business/groups/${id}/profile`, json(teacher.cookie, { level: 'beginner' }, 'PATCH'));
+
+    const edited = await server.fetch(`/api/groups/${id}`, json(teacher.cookie, { title: { he: 'חדשה', en: 'Renamed' }, schedule: { timezone: 'Asia/Jerusalem', rows: [{ weekday: 2, startTime: '18:30', durationMinutes: 45 }] } }, 'PATCH'));
+    assert.equal(edited.status, 200);
+    const view = (await groups()).find((group) => group.id === id);
+    assert.equal(view.name, 'חדשה');
+    assert.equal(view.nameEn, 'Renamed');
+    assert.deepEqual([view.schedule[0].weekday, view.schedule[0].startTime, view.schedule[0].durationMinutes], [2, '18:30', 45]);
+
+    const member = (await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Only', lastName: 'Member', groupId: id }))).json()).student;
+    await server.fetch('/api/business/events', json(teacher.cookie, { kind: 'cancel', date: '2026-11-10', groupId: id }));
+    const refused = await server.fetch(`/api/groups/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+    assert.equal(refused.status, 409, 'a group with students is not deleted');
+
+    await server.fetch(`/api/business/students/${member.id}`, json(teacher.cookie, { groupId: '' }, 'PATCH'));
+    const deleted = await server.fetch(`/api/groups/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+    assert.equal(deleted.status, 200);
+    assert.ok(!(await groups()).some((group) => group.id === id));
+    const events = (await (await server.fetch('/api/business/calendar?from=2026-11-01&to=2026-11-30', { headers: { Cookie: teacher.cookie } })).json()).events;
+    assert.ok(!events.some((event) => event.groupId === id), 'its calendar changes go with it');
+  });
+
   it('composes a WhatsApp message from a template and logs it as sent', async () => {
     const students = (await (await server.fetch('/api/business/students?status=active', { headers: { Cookie: teacher.cookie } })).json()).students;
     const target = students.find((entry) => entry.parentPhone);

@@ -41,7 +41,7 @@ import {
 } from './lib/db.mjs';
 import { withWriteLock } from './lib/mutex.mjs';
 import { isBusinessStoreEmpty, openBusinessStore, teachers as teacherRecords } from './lib/business-db.mjs';
-import { billingByPhone, getSettings, handleBusinessRequest, HttpError, teacherForPhone, teacherGroupIds } from './lib/business.mjs';
+import { billingByPhone, forgetGroup, getSettings, groupHasStudents, handleBusinessRequest, HttpError, teacherForPhone, teacherGroupIds } from './lib/business.mjs';
 import { seedBusinessDemo } from './lib/business-seed.mjs';
 
 const ROOT = process.cwd();
@@ -2073,7 +2073,13 @@ async function handleGroupDelete(req, res, groupId) {
     return;
   }
 
+  if (groupHasStudents(groupId)) {
+    sendJson(res, 409, { ok: false, error: 'Move or remove the group\'s students first.' }, getCorsHeaders(req));
+    return;
+  }
+
   await saveGroups(nextGroups);
+  forgetGroup(groupId);
 
   sendJson(res, 200, {
     ok: true,
