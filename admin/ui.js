@@ -405,13 +405,15 @@
   }
 
   // Weekday + time + duration rows, used for private schedules.
-  function scheduleEditor(rows = []) {
+  // Lesson length limits follow what the server keeps: private lessons
+  // 15-240 minutes, group lessons 30-180.
+  function scheduleEditor(rows = [], { minMinutes = 15, maxMinutes = 240 } = {}) {
     const container = h('div', { class: 'schedule-rows' });
     const addRow = (row = { weekday: 0, startTime: '17:00', durationMinutes: 60 }) => {
       const node = h('div', { class: 'schedule-row' },
         select('weekday', t('weekdays').map((name, index) => [index, name]), row.weekday),
         h('input', { name: 'startTime', type: 'time', value: row.startTime || '17:00' }),
-        h('input', { name: 'durationMinutes', type: 'number', min: 30, max: 180, step: 5, value: row.durationMinutes || 60 }),
+        h('input', { name: 'durationMinutes', type: 'number', min: minMinutes, max: maxMinutes, step: 5, value: row.durationMinutes || 60 }),
         h('button', { class: 'btn btn-xs btn-ghost', type: 'button', onclick: () => node.remove() }, '✕')
       );
       container.append(node);

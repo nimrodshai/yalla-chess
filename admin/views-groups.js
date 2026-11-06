@@ -3,6 +3,8 @@
 (function () {
   'use strict';
   window.VIEWS = window.VIEWS || {};
+  // The portal keeps a group lesson between 30 and 180 minutes.
+  const GROUP_MINUTES = { minMinutes: 30, maxMinutes: 180 };
   const { h, clear, api, t, card, empty, fmtDate, statusBadge, link, modal, field, input, textarea, select, enumSelect, teacherSelect, formValues, errorBox, toast, scheduleText, scheduleEditor, weekdayPicker, initials, confirmDialog, ratingsText } = window.UI;
 
   // A teacher sees their own groups to teach, not to arrange: no new
@@ -160,7 +162,7 @@
     modal({
       title: `${t('editGroup')}: ${group.name}`,
       body: (dialog) => {
-        const schedule = scheduleEditor(group.schedule);
+        const schedule = scheduleEditor(group.schedule, GROUP_MINUTES);
         const form = h('form', { class: 'form' },
           field(t('groupNameHe'), input('nameHe', group.title?.he || group.name, { required: true })),
           field(t('groupNameEn'), input('nameEn', group.title?.en || '')),
@@ -218,7 +220,7 @@
     modal({
       title: t('newGroup'),
       body: (dialog) => {
-        const schedule = scheduleEditor([{ weekday: 0, startTime: '17:00', durationMinutes: 60 }]);
+        const schedule = scheduleEditor([{ weekday: 0, startTime: '17:00', durationMinutes: 60 }], GROUP_MINUTES);
         let createdId = '';
         const form = h('form', { class: 'form' },
           field(t('groupNameHe'), input('nameHe', '', { required: true })),
