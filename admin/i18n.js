@@ -311,6 +311,11 @@
     noReminders: 'אין תזכורות להיום',
     allSent: 'כל התזכורות נשלחו',
     logLesson: 'סיכום שיעור',
+    missingSummaries: 'שיעורים שחסר להם סיכום',
+    missingSummariesSub: 'שיעורים שכבר התקיימו ועדיין לא נכתב להם סיכום. שיעור שלא התקיים אפשר לסמן כמבוטל.',
+    awaitingSummary: 'חסר סיכום',
+    writeSummary: 'כתיבת סיכום',
+    showAllN: 'להציג את כל ה-{n}',
     viewAll: 'לכולם',
 
     // students
@@ -1062,6 +1067,11 @@
     noReminders: 'No reminders today',
     allSent: 'All reminders sent',
     logLesson: 'Log lesson',
+    missingSummaries: 'Lessons missing a summary',
+    missingSummariesSub: 'Lessons that already took place with no summary yet. A lesson that did not happen can be logged as cancelled.',
+    awaitingSummary: 'No summary yet',
+    writeSummary: 'Write summary',
+    showAllN: 'Show all {n}',
     viewAll: 'View all',
 
     studentsTitle: 'Students',

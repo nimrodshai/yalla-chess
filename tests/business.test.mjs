@@ -795,6 +795,35 @@ describe('business API', () => {
     assert.ok(!(await list('')).tags.some((tag) => tag.name === 'Sacrifice'));
   });
 
+  it('shows lessons that took place without a summary in the history and on the dashboard', async () => {
+    const get = async (path) => (await server.fetch(`/api/business${path}`, { headers: { Cookie: teacher.cookie } })).json();
+    const { settings } = await get('/settings');
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: settings.businessTimezone }).format(new Date());
+    const shift = (days) => new Date(Date.parse(`${today}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+    const weekday = new Date(`${shift(-3)}T00:00:00Z`).getUTCDay();
+    // Entered today, but taking a weekly private lesson since 12 days ago:
+    // the lessons 10 and 3 days ago took place and were never logged.
+    const create = (firstName, joinedAt) => server.fetch('/api/business/students', json(teacher.cookie, {
+      firstName, lastName: 'Backfill', parentPhone: '050-333-4444', lessonType: 'private', status: 'active', joinedAt,
+      privateSchedule: [{ weekday, startTime: '10:00', durationMinutes: 45 }]
+    })).then((response) => response.json());
+    const { student: record } = await create('Past', shift(-12));
+    const { student: fresh } = await create('Fresh', today);
+
+    const detail = await get(`/students/${record.id}`);
+    assert.deepEqual(detail.awaitingSummary.map((occurrence) => occurrence.date), [shift(-3), shift(-10)]);
+    assert.equal((await get(`/students/${fresh.id}`)).awaitingSummary.length, 0, 'nothing from before a student joined');
+
+    const mine = (overview) => overview.missingSummaries.filter((occurrence) => occurrence.studentIds.includes(record.id));
+    assert.equal(mine(await get('/overview')).length, 2);
+
+    // Writing the summary takes the lesson off the list.
+    const logged = await server.fetch('/api/business/lessons', json(teacher.cookie, { date: shift(-10), startTime: '10:00', kind: 'private', studentIds: [record.id], topic: 'Forks' }));
+    assert.equal(logged.status, 200);
+    assert.deepEqual(mine(await get('/overview')).map((occurrence) => occurrence.date), [shift(-3)]);
+    assert.equal((await get(`/students/${record.id}`)).awaitingSummary.length, 1);
+  });
+
   it('rejects malformed JSON and unknown routes cleanly', async () => {
     const malformed = await server.fetch('/api/business/students', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: teacher.cookie }, body: '{' });
     assert.equal(malformed.status, 400);

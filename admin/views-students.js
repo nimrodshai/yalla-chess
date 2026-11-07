@@ -142,13 +142,26 @@
       h('div', { style: { marginTop: '12px' } }, h('div', { class: 'small strong', style: { marginBottom: '6px' } }, t('gamesSeen')), data.games?.length ? h('div', { class: 'chips' }, data.games.map((game) => h('a', { class: 'chip chip-game', href: `#/content/${game.id}` }, '♞ ', game.title))) : h('div', { class: 'muted small' }, t('noGamesSeen')))
     ));
 
-    const lessons = card(t('lessonHistory'), data.lessons.length ? h('div', { class: 'list' }, data.lessons.map((lesson) => h('div', { class: 'list-item clickable', onclick: () => { location.hash = `#/lessons/${lesson.id}`; } },
+    // Lessons that took place but were never logged sit in the history by
+    // date, waiting for a summary.
+    const loggedRow = (lesson) => h('div', { class: 'list-item clickable', onclick: () => { location.hash = `#/lessons/${lesson.id}`; } },
       h('div', { class: 'list-main' },
         h('div', { class: 'list-title' }, fmtDate(lesson.date, { year: 'numeric' }), h('span', { class: 'strong' }, lesson.topic || '—'), lesson.myAttendance ? statusBadge(lesson.myAttendance, 'attendance') : null, lesson.status === 'cancelled' ? statusBadge('cancelled', 'lessonStatus') : null),
         h('div', { class: 'list-sub' }, [lesson.homework ? `${t('homework')}: ${lesson.homework}` : '', lesson.nextSteps ? `${t('nextSteps')}: ${lesson.nextSteps}` : ''].filter(Boolean).join(' · ')),
         window.UI.gameChips(lesson) ? h('div', { style: { marginTop: '4px' } }, window.UI.gameChips(lesson)) : null
       )
-    ))) : empty(t('noLessonsYet')), { count: data.lessons.length, sub: t('attendanceSummary', { attended: data.attendance.attended, absent: data.attendance.absent }), actions: [h('button', { class: 'btn btn-sm', type: 'button', onclick: () => window.VIEWS.logLesson({ studentId: student.id, onSaved: refresh }) }, `+ ${t('logLesson')}`)] });
+    );
+    const awaitingRow = (occurrence) => h('div', { class: 'list-item' },
+      h('div', { class: 'list-main' },
+        h('div', { class: 'list-title' }, fmtDate(occurrence.date, { year: 'numeric' }), h('span', { class: 'strong' }, occurrence.groupId ? occurrence.title : t(`kind.${occurrence.kind}`)), h('span', { class: 'badge badge-warn' }, t('awaitingSummary')))
+      ),
+      h('div', { class: 'list-side' },
+        h('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => window.VIEWS.logLesson({ occurrence: occurrence.key, slot: occurrence, durationMinutes: occurrence.durationMinutes, onSaved: refresh }) }, t('writeSummary')))
+    );
+    const awaiting = data.awaitingSummary || [];
+    const history = [...data.lessons.map((lesson) => ({ date: lesson.date, row: () => loggedRow(lesson) })), ...awaiting.map((occurrence) => ({ date: occurrence.date, row: () => awaitingRow(occurrence) }))]
+      .sort((a, b) => b.date.localeCompare(a.date));
+    const lessons = card(t('lessonHistory'), history.length ? h('div', { class: 'list' }, history.map((entry) => entry.row())) : empty(t('noLessonsYet')), { count: history.length, sub: t('attendanceSummary', { attended: data.attendance.attended, absent: data.attendance.absent }), actions: [h('button', { class: 'btn btn-sm', type: 'button', onclick: () => window.VIEWS.logLesson({ studentId: student.id, onSaved: refresh }) }, `+ ${t('logLesson')}`)] });
 
     const payments = admin ? card(t('paymentHistory'), data.payments.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
       h('thead', null, h('tr', null, h('th', null, t('date')), h('th', { class: 'num' }, t('amount')), h('th', null, t('method')), h('th', null, t('periodLabel')), h('th', null, t('receipt')), h('th', null, ''))),

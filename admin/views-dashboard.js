@@ -79,6 +79,32 @@
     }))
   ));
 
+  // ---- lessons that took place but have no summary yet, as a task list
+  const summaryRow = (occurrence, tz, refresh) => h('div', { class: 'list-item' },
+    h('div', { class: 'list-main' },
+      h('div', { class: 'list-title' },
+        occurrence.groupId ? link(`#/groups/${occurrence.groupId}`, occurrence.title)
+          : occurrence.studentIds.length === 1 ? link(`#/students/${occurrence.studentIds[0]}`, occurrence.title)
+          : occurrence.title,
+        occurrence.kind !== 'group' ? h('span', { class: 'badge' }, t(`kind.${occurrence.kind}`)) : null),
+      h('div', { class: 'list-sub' }, `${fmtDate(occurrence.date, { weekday: 'short' })} · ${fmtTime(occurrence.startAt, tz)}${occurrence.groupId ? ` · ${occurrence.students.length} ${t('students')}` : ''}`)
+    ),
+    h('div', { class: 'list-side' },
+      h('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => window.VIEWS.logLesson({ occurrence: occurrence.key, slot: occurrence, durationMinutes: occurrence.durationMinutes, onSaved: refresh }) }, t('writeSummary')))
+  );
+  // The newest few, the rest behind a button.
+  const missingSummariesCard = (data, refresh) => {
+    const all = data.missingSummaries || [];
+    if (!all.length) return null;
+    const shown = 5;
+    const list = h('div', { class: 'list' }, all.slice(0, shown).map((occurrence) => summaryRow(occurrence, data.timezone, refresh)));
+    const more = all.length > shown ? h('button', { class: 'btn btn-sm btn-ghost', type: 'button', style: { marginTop: '8px' }, onclick: () => {
+      list.append(...all.slice(shown).map((occurrence) => summaryRow(occurrence, data.timezone, refresh)));
+      more.remove();
+    } }, t('showAllN', { n: all.length })) : null;
+    return card(t('missingSummaries'), h('div', null, list, more), { count: all.length, sub: t('missingSummariesSub') });
+  };
+
   // ---- a teacher's groups as a table
   const groupsTable = (groups) => h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
     h('thead', null, h('tr', null,
@@ -125,7 +151,7 @@
       head,
       stats,
       // One card per row: each is a table and needs the full width.
-      window.UI.masonry([todayCard, weekCard, groupsCard], { columns: 1 })
+      window.UI.masonry([missingSummariesCard(data, refresh), todayCard, weekCard, groupsCard].filter(Boolean), { columns: 1 })
     );
   }
 
@@ -205,7 +231,7 @@
     return h('div', null,
       head,
       stats,
-      window.UI.masonry([todayCard, paymentsCard, groupsCard, leadsCard])
+      window.UI.masonry([missingSummariesCard(data, refresh), todayCard, paymentsCard, groupsCard, leadsCard].filter(Boolean))
     );
   };
 })();
