@@ -181,6 +181,47 @@ describe('business API', () => {
     assert.ok(afterUnlabeled.nextPaymentAt.startsWith('2027-01'), 'an unlabeled payment pushes the due date past its own month');
   });
 
+  it('keeps a per-lesson balance in money when lessons are priced by length', async () => {
+    const get = async (path) => (await server.fetch(path, { headers: { Cookie: teacher.cookie } })).json();
+    const created = await (await server.fetch('/api/business/students', json(teacher.cookie, {
+      firstName: 'Two', lastName: 'Lengths', lessonType: 'private', joinedAt: '2026-10-01', billingType: 'per_lesson', price: 70, currency: 'USD',
+      privateSchedule: [{ weekday: 0, startTime: '17:00', durationMinutes: 60 }, { weekday: 3, startTime: '17:00', durationMinutes: 40 }],
+      // A repeated length keeps the last price; a length with no price is dropped.
+      lessonPrices: [{ durationMinutes: 40, price: 45 }, { durationMinutes: 60, price: 70 }, { durationMinutes: 40, price: 50 }, { durationMinutes: 90, price: '' }]
+    }))).json();
+    const pupil = created.student;
+    assert.deepEqual(pupil.lessonPrices, [{ durationMinutes: 60, price: 70 }, { durationMinutes: 40, price: 50 }]);
+
+    // Sunday's lesson takes its slot's 60 minutes, the other has its own 40;
+    // a lesson the student missed costs nothing.
+    const lessonIds = [];
+    for (const body of [
+      { date: '2026-11-01', startTime: '17:00' },
+      { date: '2026-11-04', startTime: '17:00', durationMinutes: 40 },
+      { date: '2026-11-08', startTime: '17:00', attendance: { [pupil.id]: 'absent' } }
+    ]) {
+      const { lesson } = await (await server.fetch('/api/business/lessons', json(teacher.cookie, { kind: 'private', studentIds: [pupil.id], topic: 'Endgames', ...body }))).json();
+      lessonIds.push(lesson.id);
+    }
+    await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: pupil.id, amount: 100, currency: 'USD', paidAt: '2026-11-01' }));
+
+    const owing = (await get(`/api/business/students/${pupil.id}`)).payment;
+    assert.equal(owing.balance, -20, 'paid 100 for lessons costing 70 + 50');
+    assert.equal(owing.lessonsUsed, 2);
+    assert.equal(owing.state, 'overdue');
+    const reminder = await (await server.fetch('/api/business/messages/compose', json(teacher.cookie, { kind: 'payment_reminder', studentId: pupil.id }))).json();
+    assert.ok(reminder.message.body.includes('$20'), 'the reminder asks for what is owed');
+
+    await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: pupil.id, amount: 200, currency: 'USD', paidAt: '2026-11-05' }));
+    const ahead = (await get('/api/business/payments')).overview.find((entry) => entry.studentId === pupil.id);
+    assert.equal(ahead.balance, 180);
+    assert.equal(ahead.lessonsRemaining, 3, '180 covers three lessons at the week\'s average of 60');
+    assert.equal(ahead.state, 'ok');
+
+    for (const id of lessonIds) await server.fetch(`/api/business/lessons/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+    await server.fetch(`/api/business/students/${pupil.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+  });
+
   it('refuses a payment for an unknown student', async () => {
     const response = await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: 'nope', amount: 100 }));
     assert.equal(response.status, 404);

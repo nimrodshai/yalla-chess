@@ -96,7 +96,9 @@
         statusBadge(payment.state, 'pay'),
         h('span', null, student.billingType === 'monthly'
           ? `${t('nextPaymentAt')}: ${fmtDate(payment.nextPaymentAt)} · ${fmtMoney(student.price, student.currency)} / ${t('billing.monthly')}`
-          : `${t('lessonsLeft', { n: payment.lessonsRemaining ?? 0 })} · ${fmtMoney(student.price, student.currency)} × ${student.packageSize || 1}`),
+          : student.billingType === 'per_lesson' && student.lessonPrices?.length
+            ? `${window.UI.lessonsBalanceText(payment, student.currency)} · ${window.UI.lessonPricesText(student.lessonPrices, student.currency)}`
+            : `${t('lessonsLeft', { n: payment.lessonsRemaining ?? 0 })} · ${fmtMoney(student.price, student.currency)} × ${student.packageSize || 1}`),
         payment.lastPaymentAt ? h('span', { class: 'muted small' }, `${t('lastPayment')}: ${fmtDate(payment.lastPaymentAt)} (${fmtMoney(payment.lastPaymentAmount, student.currency)})`) : null
       )
       : null;
@@ -339,12 +341,38 @@
         priceInput.addEventListener('input', () => { priceTouched = true; });
         const billingDayField = field(t('billingDay'), h('input', { name: 'billingDay', type: 'number', min: 1, max: 28, value: s.billingDay ?? '', placeholder: '1' }));
         const packageField = field(t('packageSize'), h('input', { name: 'packageSize', type: 'number', min: 1, value: s.packageSize ?? '', placeholder: '8' }));
+        // Per lesson, lessons of different lengths can cost different
+        // amounts: one price per length in the private schedule, plus any
+        // length already priced. The inputs have no name, so they are read
+        // on their own; an empty one falls back to the price above.
+        const lengthPrices = new Map((s.lessonPrices || []).map((row) => [row.durationMinutes, row.price]));
+        const lessonPriceRows = h('div', { class: 'schedule-rows' });
+        const lessonPricesField = field(t('lessonPrices'), lessonPriceRows, { full: true, hint: t('lessonPricesHint') });
+        const pricedLengths = () => {
+          const lengths = new Set(form.elements.lessonType.value === 'group' ? [] : schedule.read().map((row) => row.durationMinutes));
+          for (const [length, price] of lengthPrices) if (price !== null) lengths.add(length);
+          return [...lengths].sort((a, b) => b - a);
+        };
+        const readLessonPrices = () => form.elements.billingType.value === 'per_lesson'
+          ? pricedLengths().filter((length) => lengthPrices.get(length) !== null && lengthPrices.get(length) !== undefined).map((length) => ({ durationMinutes: length, price: lengthPrices.get(length) }))
+          : [];
+        const syncLessonPrices = () => {
+          const lengths = pricedLengths();
+          lessonPricesField.hidden = form.elements.billingType.value !== 'per_lesson' || lengths.length < 2;
+          window.UI.clear(lessonPriceRows);
+          for (const length of lengths) {
+            const priceField = h('input', { type: 'number', step: '0.01', min: 0, inputmode: 'decimal', value: lengthPrices.get(length) ?? '', placeholder: priceInput.value, 'aria-label': `${length} ${t('minutes')}` });
+            priceField.addEventListener('input', () => lengthPrices.set(length, priceField.value === '' ? null : Number(priceField.value)));
+            lessonPriceRows.append(h('div', { class: 'schedule-row price-row' }, h('span', null, `${length} ${t('minutes')}`), priceField));
+          }
+        };
         const billing = h('div', { class: 'form' },
           field(t('billingType'), choice('billingType', window.VOCAB.billingTypes.map((value) => [value, t(`billing.${value}`)]), s.billingType), { full: true }),
           field(t('price'), priceInput),
           field(t('currency'), select('currency', window.VOCAB.currencies, s.currency || 'ILS')),
           billingDayField,
           packageField,
+          lessonPricesField,
           field(t('nextPaymentAt'), h('input', { name: 'nextPaymentAt', type: 'date', value: s.nextPaymentAt || '' }), { hint: t('wizNextPaymentHint') }),
           h('div', { class: 'field' }, checkbox('remindersEnabled', s.remindersEnabled, t('remindersEnabled')))
         );
@@ -352,6 +380,7 @@
           const type = form.elements.billingType.value;
           billingDayField.hidden = type !== 'monthly';
           packageField.hidden = type !== 'package';
+          syncLessonPrices();
         };
         // A group's own price is the sensible default for a new student.
         groupSelect.addEventListener('change', () => {
@@ -439,6 +468,7 @@
           // lesson type leaves both exactly as they were.
           values.privateSchedule = lessonType === 'group' && typeChanged ? [] : (lessonType === 'group' ? (s.privateSchedule || []) : schedule.read());
           if (lessonType === 'private' && typeChanged) values.groupId = '';
+          values.lessonPrices = readLessonPrices();
           for (const button of footer.querySelectorAll('button')) button.disabled = true;
           try {
             const response = student
@@ -511,6 +541,7 @@
           // The private slots share field names, so they are read on their own.
           for (const name of ['weekday', 'startTime', 'durationMinutes']) delete values[name];
           values.privateSchedule = schedule.read();
+          values.lessonPrices = readLessonPrices();
           writeDraft({ values, step: current });
         };
         form.addEventListener('input', keepDraft);

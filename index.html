@@ -8463,6 +8463,9 @@
         billingNoStudent: 'No student file in the management app yet, so no payment tracking for this account.',
         billingMonthlyPrice: '{amount} / month',
         billingPackagePrice: '{amount} × {n} lessons',
+        billingOwes: 'Per lesson: owes {amount}',
+        billingCredit: 'Per lesson: {amount} in credit',
+        billingLessonPrice: '{n} min {amount}',
         billingOpenStudent: 'Open student file',
         billingCreateStudent: 'Create student file',
         userGroupsLabel: 'Groups',
@@ -8627,6 +8630,9 @@
         billingNoStudent: 'עדיין אין תיק תלמיד במערכת הניהול, ולכן אין מעקב תשלומים לחשבון הזה.',
         billingMonthlyPrice: '{amount} לחודש',
         billingPackagePrice: '{amount} × {n} שיעורים',
+        billingOwes: 'לפי שיעור: חוב של {amount}',
+        billingCredit: 'לפי שיעור: יתרה של {amount}',
+        billingLessonPrice: '{n} דק׳ {amount}',
         billingOpenStudent: 'לתיק התלמיד',
         billingCreateStudent: 'יצירת תיק תלמיד',
         userGroupsLabel: 'קבוצות',
@@ -9722,6 +9728,11 @@
         else if (billing.state === 'due_soon' && days === 0) { text = t.billingDueToday.replace('{date}', date); tone = 'info'; }
         else if (billing.state === 'due_soon') { text = t.billingDueSoon.replace('{date}', date).replace('{days}', String(days)); tone = 'info'; }
         else { text = t.billingPaidUntil.replace('{date}', date); }
+      } else if (billing.balance !== null && billing.balance !== undefined) {
+        // Lessons priced by length: the balance is in money.
+        const amount = formatPortalMoney(Math.abs(billing.balance), billing.currency);
+        if (billing.balance < 0) { text = t.billingOwes.replace('{amount}', amount); tone = 'error'; }
+        else { text = t.billingCredit.replace('{amount}', amount); tone = billing.state === 'ok' ? 'success' : billing.state === 'overdue' ? 'error' : 'info'; }
       } else {
         const left = Number(billing.lessonsRemaining || 0);
         if (left <= 0) { text = t.billingLessonsOut; tone = 'error'; }
@@ -9733,7 +9744,9 @@
 
       const details = [];
       const price = formatPortalMoney(billing.price, billing.currency);
-      if (price) {
+      if (billing.billingType === 'per_lesson' && billing.lessonPrices?.length) {
+        details.push(billing.lessonPrices.map((row) => t.billingLessonPrice.replace('{n}', String(row.durationMinutes)).replace('{amount}', formatPortalMoney(row.price, billing.currency))).join(' · '));
+      } else if (price) {
         details.push(billing.billingType === 'monthly'
           ? t.billingMonthlyPrice.replace('{amount}', price)
           : t.billingPackagePrice.replace('{amount}', price).replace('{n}', String(billing.packageSize || 1)));

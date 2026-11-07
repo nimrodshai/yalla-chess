@@ -347,6 +347,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .schedule-rows { display: flex; flex-direction: column; gap: 6px; }
 .schedule-row { display: grid; grid-template-columns: 1fr 110px 90px 36px; gap: 6px; align-items: center; }
 .schedule-row select, .schedule-row input { height: 36px; border: 1px solid var(--line-strong); border-radius: 9px; padding: 0 8px; }
+.schedule-row.price-row { grid-template-columns: 90px 140px; }
 .attendance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
 .attendance-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
 .attendance-item .seg button { height: 28px; padding: 0 8px; font-size: 12px; }
@@ -599,6 +600,7 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
   .modal-backdrop { padding: 12px 8px; }
   .modal { padding: 16px; border-radius: 14px; }
   .schedule-row { grid-template-columns: 1fr 1fr; }
+  .schedule-row.price-row { grid-template-columns: 90px 1fr; }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .stat-value { font-size: 22px; }
   .main--board { height: auto; overflow: visible; display: block; }

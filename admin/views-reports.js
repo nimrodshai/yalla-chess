@@ -73,7 +73,7 @@
     ));
 
     const outstandingCard = card(t('outstanding'), report.outstanding.length ? h('div', { class: 'list' }, report.outstanding.map((entry) => h('div', { class: 'list-item' },
-      h('div', { class: 'list-main' }, link(`#/students/${entry.studentId}`, h('span', { class: 'strong' }, entry.name)), h('div', { class: 'list-sub' }, entry.billingType === 'monthly' ? fmtDate(entry.nextPaymentAt) : t('lessonsLeft', { n: entry.lessonsRemaining ?? 0 }))),
+      h('div', { class: 'list-main' }, link(`#/students/${entry.studentId}`, h('span', { class: 'strong' }, entry.name)), h('div', { class: 'list-sub' }, entry.billingType === 'monthly' ? fmtDate(entry.nextPaymentAt) : window.UI.lessonsBalanceText(entry))),
       h('span', { class: 'strong' }, fmtMoney(entry.price, entry.currency)),
       statusBadge(entry.state, 'pay')
     ))) : empty(t('none')), { count: report.outstanding.length, actions: [h('a', { class: 'btn btn-sm', href: '#/payments' }, t('navPayments'))] });
