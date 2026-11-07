@@ -218,6 +218,15 @@ describe('business API', () => {
     assert.equal(ahead.lessonsRemaining, 3, '180 covers three lessons at the week\'s average of 60');
     assert.equal(ahead.state, 'ok');
 
+    // Raising the prices leaves the lessons already given at what they cost.
+    await server.fetch(`/api/business/students/${pupil.id}`, json(teacher.cookie, { lessonPrices: [{ durationMinutes: 60, price: 80 }, { durationMinutes: 40, price: 60 }] }, 'PATCH'));
+    assert.equal((await get(`/api/business/students/${pupil.id}`)).payment.balance, 180);
+
+    // A payment in shekels counts at the rate in settings.
+    const { usdToIls } = (await get('/api/business/settings')).settings;
+    await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: pupil.id, amount: usdToIls * 10, currency: 'ILS', paidAt: '2026-11-06' }));
+    assert.equal((await get(`/api/business/students/${pupil.id}`)).payment.balance, 190);
+
     for (const id of lessonIds) await server.fetch(`/api/business/lessons/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
     await server.fetch(`/api/business/students/${pupil.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
   });
