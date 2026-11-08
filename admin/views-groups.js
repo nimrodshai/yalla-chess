@@ -44,7 +44,7 @@
     const profile = group.profile;
     const dash = () => h('span', { class: 'muted' }, '—');
     return h('tr', { class: 'clickable', onclick: () => { location.hash = `#/groups/${group.id}`; } },
-      h('td', null, h('a', { class: 'strong', href: `#/groups/${group.id}` }, group.name)),
+      h('td', null, h('a', { class: 'strong', href: `#/groups/${group.id}` }, group.name), profile.gender && profile.gender !== 'mixed' ? [' ', h('span', { class: 'badge' }, t(`groupGender.${profile.gender}`))] : null),
       h('td', null, scheduleText(group.schedule) || dash()),
       h('td', null, profile.level ? t(`level.${profile.level}`) : dash()),
       h('td', null, profile.teacher || dash()),
@@ -88,6 +88,7 @@
     const detail = (label, value) => value ? h('div', { class: 'detail' }, h('dt', null, label), h('dd', null, value)) : null;
     const profileCard = card(t('groupProfile'), h('dl', { class: 'detail-grid' },
       detail(t('level'), profile.level ? t(`level.${profile.level}`) : ''),
+      detail(t('groupGender'), profile.gender && profile.gender !== 'mixed' ? t(`groupGender.${profile.gender}`) : ''),
       detail(t('ageRange'), profile.minAge || profile.maxAge ? `${profile.minAge ?? '?'}–${profile.maxAge ?? '?'}` : ''),
       detail(t('ratingRange'), profile.ratingMin !== null || profile.ratingMax !== null ? `${profile.ratingMin ?? 0}–${profile.ratingMax ?? '∞'}` : ''),
       detail(t('language'), t(`lang.${profile.language}`)),
@@ -170,6 +171,7 @@
           field(t('groupStatus'), enumSelect('status', window.VOCAB.groupStatuses, 'groupStatus', profile.status)),
           field(t('language'), enumSelect('language', window.VOCAB.languages, 'lang', profile.language)),
           field(t('level'), enumSelect('level', window.VOCAB.levels, 'level', profile.level, { blank: '—' })),
+          field(t('groupGender'), enumSelect('gender', window.VOCAB.groupGenders, 'groupGender', profile.gender || 'mixed')),
           field(t('minAge'), h('input', { name: 'minAge', type: 'number', min: 3, max: 99, value: profile.minAge ?? '' })),
           field(t('maxAge'), h('input', { name: 'maxAge', type: 'number', min: 3, max: 99, value: profile.maxAge ?? '' })),
           field(t('ratingMin'), h('input', { name: 'ratingMin', type: 'number', min: 0, max: 4000, value: profile.ratingMin ?? '' })),
@@ -197,8 +199,9 @@
             // the editor, not sent as profile fields.
             const { nameHe, nameEn, zoomLink, weekday, startTime, durationMinutes, ...values } = formValues(form);
             const body = { title: { he: nameHe, en: nameEn || nameHe }, zoomLink, schedule: { timezone: group.timezone, rows } };
-            await api(`/groups/${group.id}`, { root: '/api', method: 'PATCH', body });
-            await api(`/groups/${group.id}/profile`, { method: 'PATCH', body: values });
+            // One request, so a refused edit (a boy in a girls-only group, a
+            // bad schedule) saves nothing.
+            await api(`/groups/${group.id}/profile`, { method: 'PATCH', body: { ...values, group: body } });
             toast(t('saved'), 'success');
             dialog.close();
             refresh();
@@ -229,6 +232,7 @@
           field(t('groupStatus'), enumSelect('status', window.VOCAB.groupStatuses, 'groupStatus', 'forming')),
           field(t('language'), enumSelect('language', window.VOCAB.languages, 'lang', 'he')),
           field(t('level'), enumSelect('level', window.VOCAB.levels, 'level', '', { blank: '—' })),
+          field(t('groupGender'), enumSelect('gender', window.VOCAB.groupGenders, 'groupGender', 'mixed')),
           field(t('minAge'), h('input', { name: 'minAge', type: 'number', min: 3, max: 99 })),
           field(t('maxAge'), h('input', { name: 'maxAge', type: 'number', min: 3, max: 99 })),
           field(t('teacher'), teacherSelect('teacher', window.APP.teachers.length === 1 ? window.APP.teachers[0].name : '')),
@@ -418,6 +422,7 @@
     const days = weekdayPicker([]);
     const form = h('form', { class: 'form' },
       field(t('age'), h('input', { name: 'age', type: 'number', min: 3, max: 99, value: query.age || '' })),
+      field(t('sex'), enumSelect('sex', window.VOCAB.sexes, 'sex', query.sex || '', { blank: '—' })),
       field(t('rating'), h('input', { name: 'rating', type: 'number', min: 0, max: 4000, value: query.rating || '' })),
       field(t('level'), enumSelect('level', window.VOCAB.levels, 'level', query.level || '', { blank: '—' })),
       field(t('language'), enumSelect('language', window.VOCAB.languages, 'lang', query.language || 'he')),
@@ -467,6 +472,7 @@
     return h('div', { class: 'list' }, buckets.map((bucket) => h('div', { class: 'list-item', style: { alignItems: 'flex-start' } },
       h('div', { class: 'list-main' },
         h('div', { class: 'list-title' }, `${t(`lang.${bucket.language}`)} · ${t('age')} ${bucket.ageBand} · ${bucket.levelBand === 'any' ? t('all') : t(`level.${bucket.levelBand}`)}`, h('span', { class: `badge ${bucket.ready ? 'badge-sage' : 'badge-warn'}` }, bucket.ready ? t('readyToOpen') : t('almostReady'))),
+        bucket.girls ? h('div', { class: 'list-sub' }, t('girlsInBucket', { n: bucket.girls })) : null,
         h('div', { class: 'list-sub' }, bucket.members.map((member) => member.type === 'student' ? link(`#/students/${member.id}`, member.name) : link(`#/leads/${member.id}`, member.name)).flatMap((node, index) => index ? [', ', node] : [node]))
       ),
       h('span', { class: 'match-score' }, bucket.members.length)

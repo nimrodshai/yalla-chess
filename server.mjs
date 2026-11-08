@@ -2300,7 +2300,15 @@ async function handleBusiness(req, res, url) {
       return bodyCache;
     },
     groups: () => loadGroups(),
-    saveGroups: (groups) => saveGroups(groups),
+    // Synchronous, so a business route can save groups inside a transaction.
+    saveGroups: (groups) => replaceGroups(normalizeGroupsPayload({ groups })),
+    // The portal's own group edit (name, schedule, Zoom link), applied
+    // without saving; null when it changes nothing.
+    applyGroupPatch: (group, patch) => {
+      const next = applyGroupPatch(group, patch);
+      if (next) next.updatedBy = session.username;
+      return next;
+    },
     syncStudentPortal: (student, previous) => syncStudentPortal(student, previous, session),
     syncTeacherAccount
   };

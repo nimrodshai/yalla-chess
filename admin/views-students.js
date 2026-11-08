@@ -111,6 +111,7 @@
         detail(t('email'), student.parentEmail),
         detail(t('country'), [countryName(student.country), student.region].filter(Boolean).join(' · ')),
         detail(t('timezone'), student.timezone),
+        detail(t('sex'), student.sex ? t(`sex.${student.sex}`) : ''),
         detail(t('language'), t(`lang.${student.language}`)),
         detail(t('parentLanguage'), t(`lang.${student.parentLanguage || (student.language === 'en' ? 'en' : 'he')}`)),
         detail(t('chesscomUsername'), student.chesscomUsername),
@@ -356,6 +357,7 @@
           field(t('firstName') + ' *', firstName),
           field(t('lastName'), input('lastName', s.lastName || '', { autocomplete: 'off' })),
           field(t('age'), h('input', { name: 'age', type: 'number', min: 3, max: 99, value: s.age ?? '', inputmode: 'numeric' })),
+          field(t('sex'), enumSelect('sex', window.VOCAB.sexes, 'sex', s.sex || '', { blank: '—' })),
           field(t('language'), childLanguage),
           field(t('parentLanguage'), parentLanguage, { hint: t('parentLanguageHint') }),
           field(t('parentFirstName'), input('parentFirstName', s.parentFirstName || '', { autocomplete: 'off' })),
@@ -366,7 +368,7 @@
         // ---- step 2: where
         // Closed groups are hidden from the choice, except the one the student
         // is already in: dropping it from the list would silently clear it.
-        const groupOptions = [['', t('noGroup')], ...window.APP.groups.filter((group) => group.profile.status !== 'closed' || group.id === s.groupId).map((group) => [group.id, `${group.name} · ${window.UI.scheduleText(group.schedule)} · ${group.seatsFree ? t('seatsFreeOf', { free: group.seatsFree, total: group.seatsTotal }) : t('full')}`])];
+        const groupOptions = [['', t('noGroup')], ...window.APP.groups.filter((group) => group.profile.status !== 'closed' || group.id === s.groupId).map((group) => [group.id, `${group.name}${group.profile.gender && group.profile.gender !== 'mixed' ? ` (${t(`groupGender.${group.profile.gender}`)})` : ''} · ${window.UI.scheduleText(group.schedule)} · ${group.seatsFree ? t('seatsFreeOf', { free: group.seatsFree, total: group.seatsTotal }) : t('full')}`])];
         const groupSelect = select('groupId', groupOptions, s.groupId || '');
         const groupField = field(t('group'), groupSelect, { full: true });
         const scheduleField = field(t('privateSchedule'), schedule, { full: true });

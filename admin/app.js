@@ -18,6 +18,8 @@
     currencies: ['ILS', 'USD'],
     languages: ['he', 'en', 'he_en'],
     parentLanguages: ['he', 'en'],
+    sexes: ['girl', 'boy'],
+    groupGenders: ['mixed', 'girls', 'boys'],
     lessonKinds: ['group', 'private', 'trial', 'makeup'],
     attendance: ['present', 'absent', 'late'],
     leadStatuses: ['new', 'contacted', 'trial_scheduled', 'trial_done', 'waiting_group', 'converted', 'lost'],

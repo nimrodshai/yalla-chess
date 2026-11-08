@@ -840,6 +840,66 @@ describe('business API', () => {
     assert.equal(suggestGroupFor(child('he'), [group('english', 'en')], settings).reason, 'none_fits');
   });
 
+  it('keeps girls\' and boys\' groups to their own children', async () => {
+    const { suggestGroupFor, sexFits, normalizeLead, normalizeGroupProfile } = await import('../lib/business.mjs');
+    assert.equal(sexFits('girl', 'girls'), true);
+    assert.equal(sexFits('boy', 'girls'), false);
+    assert.equal(sexFits('', 'girls'), null, 'a child of unrecorded sex is not placed in a single-sex group');
+    assert.equal(sexFits('', 'mixed'), true);
+    assert.equal(sexFits('boy', undefined), true, 'a group from before the field is mixed');
+    assert.equal(normalizeGroupProfile({}, null, 'g').gender, 'mixed');
+    assert.equal(normalizeGroupProfile({ gender: 'nope' }, null, 'g').gender, 'mixed');
+    assert.equal(normalizeLead({ childName: 'X', childSex: 'girl' }).childSex, 'girl');
+    assert.equal(normalizeLead({ childName: 'X', childSex: 'other' }).childSex, '');
+
+    const settings = { matchAgeYears: 2, matchLevelSteps: 1, matchRatingPoints: 150 };
+    const group = (id, gender) => ({
+      id, name: id, nameEn: id, seatsFree: 2, seatsTotal: 5, students: [{ age: 9, level: 'beginner', chesscomRating: 550 }],
+      profile: { status: 'active', language: 'he', gender, minAge: null, maxAge: null, level: '', ratingMin: null, ratingMax: null }
+    });
+    const child = (childSex) => ({ preference: 'group', language: 'he', childAge: 9, childSex, level: 'beginner', chesscomRating: 550 });
+    assert.equal(suggestGroupFor(child('girl'), [group('girls', 'girls')], settings).group.id, 'girls');
+    assert.equal(suggestGroupFor(child('boy'), [group('girls', 'girls')], settings).reason, 'none_fits');
+    assert.equal(suggestGroupFor(child(''), [group('girls', 'girls')], settings).reason, 'none_fits');
+    assert.equal(suggestGroupFor(child('boy'), [group('girls', 'girls'), group('mixed', 'mixed')], settings).group.id, 'mixed');
+  });
+
+  it('records a student\'s sex and a group\'s, and flags a mismatch when matching', async () => {
+    const created = await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Maya', sex: 'girl', age: 9 }))).json();
+    assert.equal(created.student.sex, 'girl');
+    const groups = await (await server.fetch('/api/business/groups', { headers: { Cookie: teacher.cookie } })).json();
+    const target = groups.groups[0];
+    const saved = await server.fetch(`/api/business/groups/${target.id}/profile`, json(teacher.cookie, { gender: 'girls' }, 'PATCH'));
+    assert.equal(saved.status, 200);
+    const match = async (body) => (await (await server.fetch('/api/business/groups/match', json(teacher.cookie, body))).json()).matches.find((entry) => entry.groupId === target.id);
+    assert.equal((await match({ sex: 'boy' })).problems.includes('sex'), true);
+    assert.equal((await match({})).problems.includes('sex_unknown'), true);
+    assert.ok((await match({ sex: 'girl' })).reasons.includes('sex'));
+
+    // Placing by hand follows the same rule; a boy in the group keeps it mixed.
+    const place = (body) => server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Kid', groupId: target.id, ...body }));
+    assert.equal((await place({ sex: 'boy' })).status, 409);
+    assert.equal((await place({})).status, 409, 'a child of unrecorded sex is not placed in a girls\' group');
+    assert.equal((await place({ sex: 'girl' })).status, 200);
+    const maya = created.student;
+    assert.equal((await server.fetch(`/api/business/students/${maya.id}`, json(teacher.cookie, { sex: 'boy', groupId: target.id }, 'PATCH'))).status, 409);
+    await server.fetch(`/api/business/groups/${target.id}/profile`, json(teacher.cookie, { gender: 'mixed' }, 'PATCH'));
+    const boy = await (await place({ sex: 'boy' })).json();
+    assert.equal((await server.fetch(`/api/business/groups/${target.id}/profile`, json(teacher.cookie, { gender: 'girls' }, 'PATCH'))).status, 409);
+    // The group's name and schedule are saved with the profile or not at all.
+    const edit = (body) => server.fetch(`/api/business/groups/${target.id}/profile`, json(teacher.cookie, body, 'PATCH'));
+    const current = async () => (await (await server.fetch('/api/business/groups', { headers: { Cookie: teacher.cookie } })).json()).groups.find((entry) => entry.id === target.id);
+    const name = (await current()).name;
+    assert.equal((await edit({ gender: 'girls', group: { title: { he: 'Renamed', en: 'Renamed' } } })).status, 409);
+    assert.equal((await current()).name, name, 'a refused profile leaves the name alone');
+    assert.equal((await edit({ description: 'Both saved', group: { title: { he: 'Renamed', en: 'Renamed' } } })).status, 200);
+    const both = await current();
+    assert.equal(both.profile.description, 'Both saved');
+    assert.ok([both.name, both.nameEn].includes('Renamed'));
+    await edit({ group: { title: { he: name, en: name } } });
+    await server.fetch(`/api/business/students/${boy.student.id}`, json(teacher.cookie, { groupId: '' }, 'PATCH'));
+  });
+
   it('shows a suggested group on every prospect and follows the matching settings', async () => {
     const leads = async () => (await (await server.fetch('/api/business/leads', { headers: { Cookie: teacher.cookie } })).json()).leads;
     // Earlier tests fill groups, so compare wide ranges with none at all.

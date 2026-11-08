@@ -142,6 +142,7 @@
           field(t('parentEmail'), input('parentEmail', l.parentEmail || '', { type: 'email', dir: 'ltr' })),
           field(t('childName'), input('childName', l.childName || '')),
           field(t('childAge'), h('input', { name: 'childAge', type: 'number', min: 3, max: 99, value: l.childAge ?? '' })),
+          field(t('sex'), enumSelect('childSex', window.VOCAB.sexes, 'sex', l.childSex || '', { blank: '—' })),
           field(t('level'), enumSelect('level', window.VOCAB.levels, 'level', l.level || '', { blank: '—' })),
           field(t('rating'), h('input', { name: 'chesscomRating', type: 'number', min: 0, max: 4000, value: l.chesscomRating ?? '', inputmode: 'numeric' })),
           field(t('lichessRating'), h('input', { name: 'lichessRating', type: 'number', min: 0, max: 4000, value: l.lichessRating ?? '', inputmode: 'numeric' })),
