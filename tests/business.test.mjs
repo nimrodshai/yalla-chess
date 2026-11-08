@@ -306,9 +306,10 @@ describe('business API', () => {
     const { studentAccount } = await import('../lib/business.mjs');
     const student = { id: 's1', currency: 'USD', joinedAt: '2026-01-01', prices: [{ id: 'p1', kind: 'any', model: 'monthly', amount: 200 }] };
     const lesson = { id: 'l1', date: '2026-01-10', status: 'held', studentIds: ['s1'], attendance: {}, groupId: '', charges: { s1: { amount: 70, currency: 'USD', priceId: 'p1' } } };
+    // It stays charged on its own day, as every lesson was then, package or not.
     const account = studentAccount(student, [], [lesson], { usdToIls: 3.7 }, '2026-01-20');
-    assert.ok(!account.entries.some((entry) => entry.kind === 'lessons'), 'still this month');
-    assert.equal(account.pending.amount, 70);
+    assert.deepEqual(account.entries.filter((entry) => entry.lessonId).map(({ date, kind, amount }) => ({ date, kind, amount })), [{ date: '2026-01-10', kind: 'lesson', amount: -70 }]);
+    assert.equal(account.pending, null);
   });
 
   it('keeps what a lesson cost one student when another is given a different price', async () => {
