@@ -576,6 +576,7 @@
     syncHead();
     wrapper.read = () => Array.from(container.children).map((node) => node.read());
     wrapper.add = (item) => { addRow(item); changed(); };
+    wrapper.clear = () => { container.replaceChildren(); };
     wrapper.setCurrency = (code) => {
       symbol = currencySymbol(code);
       for (const node of wrapper.querySelectorAll('.money-symbol')) node.textContent = symbol;

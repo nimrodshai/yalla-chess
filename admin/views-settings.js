@@ -104,6 +104,20 @@
     );
     autosave(matchingForm, matchingStatus, (element) => ({ [element.name]: element.value }));
 
+    // What a new student's prices start at, in each currency.
+    const pricesStatus = h('span', { class: 'autosave-status', 'aria-live': 'polite' });
+    const sign = { ILS: '₪', USD: '$' };
+    const pricesForm = h('form', { class: 'form' },
+      ['ILS', 'USD'].flatMap((currency) => ['group', 'private'].map((kind) => field(
+        `${t(`defaultPrice.${kind}`)} (${sign[currency]})`,
+        h('input', { name: `defaultPrices.${currency}.${kind}`, type: 'number', min: 0, step: '0.01', inputmode: 'decimal', value: settings.defaultPrices?.[currency]?.[kind] ?? '' })
+      )))
+    );
+    autosave(pricesForm, pricesStatus, (element) => {
+      const [, currency, kind] = element.name.split('.');
+      return { defaultPrices: { [currency]: { [kind]: element.value } } };
+    });
+
     const templatesForm = h('form', { class: 'stack' },
       window.VOCAB.messageKinds.map((kind) => h('div', { class: 'card', style: { padding: '14px 16px' } },
         h('div', { class: 'card-title', style: { marginBottom: '8px' } }, t(`msg.${kind}`)),
@@ -123,6 +137,7 @@
       h('div', { class: 'stack' },
         card(t('general'), generalForm, { actions: [status] }),
         card(t('matchingTitle'), matchingForm, { sub: t('matchingSub'), actions: [matchingStatus] }),
+        card(t('defaultPricesTitle'), pricesForm, { sub: t('defaultPricesSub'), actions: [pricesStatus] }),
         card(t('templates'), templatesForm, { sub: t('templatesSub'), actions: [templatesStatus] }),
         card(t('portalAccounts'), h('p', { class: 'small' }, t('portalAccountsNote'))),
         card(t('integrations'), h('p', { class: 'small' }, t('integrationsNote')))

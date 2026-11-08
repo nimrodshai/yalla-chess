@@ -393,35 +393,52 @@
         // billed per lesson, monthly or as a package. A new student starts
         // from what fits their lessons when the step opens: their group's
         // price a month, the default private price for each private length.
+        // Until the teacher edits them, the suggested prices follow the
+        // currency: switching it suggests that currency's defaults instead.
         let pricesTouched = !isNew || Boolean(s.prices?.length);
+        let suggested = false;
+        let suggesting = false;
         // One currency for all of a student's prices, picked first; every
         // amount shows it.
         const currencySelect = select('currency', window.VOCAB.currencies, s.currency || 'ILS');
-        const prices = window.UI.priceEditor(s.prices || [], { currency: currencySelect.value, onChange: () => { pricesTouched = true; } });
-        currencySelect.addEventListener('change', () => prices.setCurrency(currencySelect.value));
+        const prices = window.UI.priceEditor(s.prices || [], { currency: currencySelect.value, onChange: () => { if (!suggesting) { pricesTouched = true; suggested = false; } } });
+        currencySelect.addEventListener('change', () => {
+          prices.setCurrency(currencySelect.value);
+          if (suggested) { prices.clear(); suggestPrices({ again: true }); }
+        });
         const billing = h('div', { class: 'form' },
           field(t('pricesCurrency'), currencySelect, { hint: t('pricesCurrencyHint') }),
           field(t('prices'), prices, { full: true, hint: t('pricesHint') }),
           h('div', { class: 'field' }, checkbox('remindersEnabled', s.remindersEnabled, t('remindersEnabled')))
         );
-        const suggestPrices = () => {
-          if (pricesTouched) return;
+        // A group's own price, in its currency, wins over the default; the
+        // first time, a group with a price brings its currency along.
+        const suggestPrices = ({ again = false } = {}) => {
+          if (pricesTouched && !again) return;
           pricesTouched = true;
+          suggesting = true;
           const type = form.elements.lessonType.value;
           const group = window.APP.groups.find((entry) => entry.id === groupSelect.value);
-          if (type !== 'private' && group) {
-            prices.add({ kind: 'group', model: 'monthly', amount: group.profile.price ?? window.SETTINGS.defaultGroupPrice ?? null });
-            const currency = group.profile.currency || 'ILS';
+          const groupPrice = group?.profile.price ?? null;
+          const groupCurrency = group?.profile.currency || 'ILS';
+          if (!again && type !== 'private' && groupPrice !== null) {
             // A group still priced in a currency no longer offered brings it along.
-            if (![...form.elements.currency.options].some((option) => option.value === currency)) form.elements.currency.append(h('option', { value: currency }, currency));
-            form.elements.currency.value = currency;
-            prices.setCurrency(currency);
+            if (![...currencySelect.options].some((option) => option.value === groupCurrency)) currencySelect.append(h('option', { value: groupCurrency }, groupCurrency));
+            currencySelect.value = groupCurrency;
+            prices.setCurrency(groupCurrency);
+          }
+          const currency = currencySelect.value;
+          const defaults = window.SETTINGS.defaultPrices?.[currency] || {};
+          if (type !== 'private' && group) {
+            prices.add({ kind: 'group', model: 'monthly', amount: groupPrice !== null && groupCurrency === currency ? groupPrice : defaults.group ?? null });
           }
           if (type !== 'group') {
             for (const length of new Set(schedule.read().map((row) => row.durationMinutes))) {
-              prices.add({ kind: 'private', model: 'per_lesson', durationMinutes: length, amount: window.SETTINGS.defaultPrivatePrice ?? null });
+              prices.add({ kind: 'private', model: 'per_lesson', durationMinutes: length, amount: defaults.private ?? null });
             }
           }
+          suggesting = false;
+          suggested = true;
         };
         // Every price needs an amount, and a package its number of lessons.
         const pricesProblem = () => {

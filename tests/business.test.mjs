@@ -345,6 +345,14 @@ describe('business API', () => {
     for (const student of [alice, bob]) await server.fetch(`/api/business/students/${student.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
   });
 
+  it('keeps default prices per currency, changed one at a time', async () => {
+    const read = async () => (await (await server.fetch('/api/business/settings', { headers: { Cookie: teacher.cookie } })).json()).settings.defaultPrices;
+    assert.deepEqual(await read(), { ILS: { group: 200, private: 140 }, USD: { group: 120, private: 65 } });
+    await server.fetch('/api/business/settings', json(teacher.cookie, { defaultPrices: { USD: { private: 70 } } }, 'PUT'));
+    assert.deepEqual(await read(), { ILS: { group: 200, private: 140 }, USD: { group: 120, private: 70 } });
+    await server.fetch('/api/business/settings', json(teacher.cookie, { defaultPrices: { USD: { private: 65 } } }, 'PUT'));
+  });
+
   it('refuses a payment for an unknown student', async () => {
     const response = await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: 'nope', amount: 100 }));
     assert.equal(response.status, 404);
@@ -1107,7 +1115,7 @@ describe('teacher accounts', () => {
     assert.equal(create.status, 403);
 
     const settings = (await get(teacher.cookie, '/settings')).body;
-    assert.equal(settings.settings.defaultGroupPrice, undefined);
+    assert.equal(settings.settings.defaultPrices, undefined);
     assert.ok(!settings.vocabulary.messageKinds.includes('payment_reminder'));
 
     const teachers = (await get(teacher.cookie, '/teachers')).body.teachers;
