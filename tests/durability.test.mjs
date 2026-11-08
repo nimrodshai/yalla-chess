@@ -146,6 +146,11 @@ describe('price lists', () => {
       assert.equal(late.payment.nextPaymentAt, shift(-40));
       assert.equal(late.payment.state, 'overdue');
 
+      // Moved to another currency, the carried-over amount converts with it.
+      const { usdToIls } = (await (await restarted.fetch('/api/business/settings', { headers: { Cookie: cookie } })).json()).settings;
+      await restarted.fetch(`/api/business/students/${overdue.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ currency: 'USD' }) });
+      assert.equal((await get(overdue.id)).payment.balance, Math.round((-500 / usdToIls) * 100) / 100);
+
       // Paid until 70 days from now: the billing days before then are covered.
       const early = await get(ahead.id);
       assert.ok(early.payment.balance >= 250, `paid ahead, got ${early.payment.balance}`);

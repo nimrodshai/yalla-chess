@@ -242,6 +242,29 @@ describe('business API', () => {
     await server.fetch(`/api/business/students/${pupil.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
   });
 
+  it('keeps what a lesson cost one student when another is given a different price', async () => {
+    const get = async (path) => (await server.fetch(path, { headers: { Cookie: teacher.cookie } })).json();
+    const make = async (firstName) => (await (await server.fetch('/api/business/students', json(teacher.cookie, {
+      firstName, lastName: 'Pair', lessonType: 'private', joinedAt: '2026-01-01', currency: 'USD',
+      prices: [{ kind: 'private', model: 'per_lesson', amount: 70 }, { kind: 'private', model: 'per_lesson', durationMinutes: 30, amount: 40 }]
+    }))).json()).student;
+    const alice = await make('Alice');
+    const bob = await make('Bob');
+    const { lesson } = await (await server.fetch('/api/business/lessons', json(teacher.cookie, { date: '2026-02-02', durationMinutes: 60, kind: 'private', studentIds: [alice.id, bob.id], topic: 'Pins' }))).json();
+
+    // Alice's raise leaves the lesson she had at 70.
+    await server.fetch(`/api/business/students/${alice.id}`, json(teacher.cookie, { prices: [{ ...alice.prices[0], amount: 100 }, alice.prices[1]] }, 'PATCH'));
+    assert.equal((await get(`/api/business/students/${alice.id}`)).payment.balance, -70);
+
+    // Bob given the 30-minute price is charged afresh; Alice is not.
+    await server.fetch(`/api/business/lessons/${lesson.id}`, json(teacher.cookie, { priceChoices: { [bob.id]: bob.prices[1].id } }, 'PATCH'));
+    assert.equal((await get(`/api/business/students/${bob.id}`)).payment.balance, -40);
+    assert.equal((await get(`/api/business/students/${alice.id}`)).payment.balance, -70);
+
+    await server.fetch(`/api/business/lessons/${lesson.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+    for (const student of [alice, bob]) await server.fetch(`/api/business/students/${student.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+  });
+
   it('refuses a payment for an unknown student', async () => {
     const response = await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: 'nope', amount: 100 }));
     assert.equal(response.status, 404);
