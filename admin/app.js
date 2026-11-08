@@ -79,6 +79,19 @@
     if (!saved) setTheme(event.matches ? 'dark' : 'light');
   });
 
+  document.getElementById('signOut').addEventListener('click', async () => {
+    // Leave only once the session is gone: the site sends a signed-in
+    // teacher straight back here, so a failed sign-out would look like nothing.
+    try {
+      const response = await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+      if (!response.ok) throw new Error(t('errorGeneric'));
+    } catch (error) {
+      toast(t('errorGeneric'), 'error');
+      return;
+    }
+    location.replace('/');
+  });
+
   document.getElementById('langToggle').addEventListener('click', () => {
     window.I18N.lang = window.I18N.lang === 'he' ? 'en' : 'he';
     try { localStorage.setItem('yallaChessLanguage', window.I18N.lang); } catch (error) { /* ignore */ }

@@ -9399,6 +9399,12 @@
     }
 
     function updateAuthState() {
+      // Staff work in the management app; the portal is for students.
+      const role = String(currentAuthUser?.role || '');
+      if (role === 'admin' || role === 'teacher') {
+        window.location.replace('/admin/');
+        return;
+      }
       const btn = document.getElementById('nav-login');
       const authOverlay = document.getElementById('authOverlay');
       const t = getAuthText();
@@ -10601,51 +10607,14 @@
       }
 
       container.innerHTML = '';
-      const canManage = isPortalManager();
-      // A teacher has no portal tabs, only the way to the management app.
-      const teacherOnly = !canManage && isPortalTeacher();
-      container.hidden = !canManage && !teacherOnly;
-      if (!canManage && !teacherOnly) {
+      // Managers and teachers get one way in: the management app.
+      const showManage = isPortalManager() || isPortalTeacher();
+      container.hidden = !showManage;
+      if (!showManage) {
         return;
       }
 
       const t = getPortalText();
-      const segments = teacherOnly ? [] : [
-        {
-          view: 'groups',
-          label: t.workspaceGroupsTab || t.managerKicker || 'Groups',
-          icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path><path d="M17 12a2.8 2.8 0 1 0 0-5.6 2.8 2.8 0 0 0 0 5.6z"></path><path d="M3.5 19c.6-3 3-5 5.5-5s4.9 2 5.5 5"></path><path d="M13.4 18c.4-2 2-3.4 3.9-3.4 2.1 0 3.9 1.6 4.2 3.8"></path></svg>'
-        },
-        {
-          view: 'users',
-          label: t.workspaceUsersTab || t.managerUsersKicker || 'Users',
-          icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4z"></path><path d="M4.5 20a7.5 7.5 0 0 1 15 0"></path></svg>'
-        }
-      ];
-
-      segments.forEach(function(segment) {
-        const button = document.createElement('button');
-        button.className = 'portal-workspace-pill';
-        button.type = 'button';
-        button.dataset.view = segment.view;
-        button.setAttribute('role', 'tab');
-        button.setAttribute('aria-selected', String(memberPortalView === segment.view));
-        if (memberPortalView === segment.view) {
-          button.classList.add('is-active');
-        }
-        const icon = document.createElement('span');
-        icon.className = 'portal-workspace-pill-icon';
-        icon.innerHTML = segment.icon;
-        const label = document.createElement('span');
-        label.className = 'portal-workspace-pill-label';
-        label.textContent = segment.label;
-        button.appendChild(icon);
-        button.appendChild(label);
-        button.addEventListener('click', function() {
-          setMemberPortalView(segment.view);
-        });
-        container.appendChild(button);
-      });
 
       // The business-management app (students, payments, prospects, reports)
       // lives at /admin and shares this session.
@@ -13207,51 +13176,30 @@
       container.innerHTML = '';
       const canManage = isPortalManager();
       const groups = sortPortalGroups(getVisiblePortalGroups());
-      const visibleGroups = groups;
 
-      // Render (or hide) the Groups/Users switch for every role, so a student
+      // Render (or hide) the management link for every role, so a student
       // signing in after a teacher on the same page never inherits it.
       renderMemberPortalWorkspaceSwitch();
 
-      if (!canManage) {
-        memberPortalView = 'groups';
-        const studentGroup = isPortalTeacher() ? groups : [getActivePortalGroup()].filter(Boolean);
-        if (!memberPortalLoading && !studentGroup.length) {
-          const t = getPortalText();
-          const empty = document.createElement('div');
-          empty.className = 'portal-empty';
-          empty.textContent = t.emptyGroups;
-          container.appendChild(empty);
-          return;
-        }
-
-        studentGroup.forEach(function(group) {
-          const row = buildMemberPortalGroupRow(group);
-          if (row) {
-            container.appendChild(row);
-          }
-        });
-        return;
-      }
-
-      syncPortalGroupSelection();
-      syncPortalUserSelection();
-
-      if (!memberPortalLoading && !visibleGroups.length && memberPortalView !== 'users') {
+      // The old Groups/Users editors are gone; managers see the groups the
+      // way teachers do and do the rest in the management app.
+      memberPortalView = 'groups';
+      const shownGroups = canManage || isPortalTeacher() ? groups : [getActivePortalGroup()].filter(Boolean);
+      if (!memberPortalLoading && !shownGroups.length) {
         const t = getPortalText();
         const empty = document.createElement('div');
         empty.className = 'portal-empty';
-        empty.textContent = t.managerEmptyGroups || t.emptyGroups;
+        empty.textContent = t.emptyGroups;
         container.appendChild(empty);
         return;
       }
 
-      if (memberPortalView === 'users') {
-        renderPortalManagerUsersView(container, getPortalStudentUsers());
-        return;
-      }
-
-      renderPortalManagerGroupsView(container, visibleGroups);
+      shownGroups.forEach(function(group) {
+        const row = buildMemberPortalGroupRow(group);
+        if (row) {
+          container.appendChild(row);
+        }
+      });
     }
 
     function renderMemberPortal() {
@@ -13280,11 +13228,7 @@
       }
       if (settingsButtonLabel) settingsButtonLabel.textContent = settingsTitle;
 
-      if (!isPortalManager()) {
-        memberPortalView = 'groups';
-      } else if (memberPortalView !== 'groups' && memberPortalView !== 'users') {
-        memberPortalView = 'groups';
-      }
+      memberPortalView = 'groups';
 
       renderMemberPortalGroups();
       renderMemberPortalClock();

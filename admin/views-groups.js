@@ -22,7 +22,6 @@
     return h('div', null,
       window.UI.pageHead(window.APP.isAdmin ? t('groupsTitle') : t('myGroupsTitle'), t('groupsSub', { n: groups.length, students: totalStudents, free: totalFree }), window.APP.isAdmin ? [
         h('a', { class: 'btn', href: '#/groups/match' }, `🔍 ${t('findGroup')}`),
-        h('a', { class: 'btn', href: '/', target: '_blank', rel: 'noopener' }, t('openPortal')),
         h('button', { class: 'btn btn-primary', type: 'button', onclick: () => newGroupForm(refresh) }, `+ ${t('newGroup')}`)
       ] : []),
       h('div', { class: 'card' }, groupTable(groups))
