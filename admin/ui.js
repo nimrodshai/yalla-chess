@@ -538,7 +538,7 @@
       const minutes = h('input', { type: 'number', min: 15, max: 240, step: 5, inputmode: 'numeric', value: item.durationMinutes ?? '', placeholder: t('priceAnyLength'), 'aria-label': t('duration') });
       const amount = h('input', { type: 'number', min: 0, step: '0.01', inputmode: 'decimal', value: item.amount ?? '', placeholder: t('amount'), 'aria-label': t('amount') });
       const single = h('input', { type: 'number', min: 0, step: '0.01', inputmode: 'decimal', value: item.lessonAmount ?? '', 'aria-label': t('singleLessonPrice') });
-      const singleLine = h('label', { class: 'price-extra' }, h('span', { class: 'strong' }, `↳ ${t('singleLessonPrice')}`), money(single), h('span', { class: 'muted' }, t('singleLessonHint')));
+      const singleLine = h('label', { class: 'price-extra' }, h('span', { class: 'strong' }, `${window.I18N.lang === 'he' ? '↲' : '↳'} ${t('singleLessonPrice')}`), money(single), h('span', { class: 'muted' }, t('singleLessonHint')));
       const size = h('input', { type: 'number', min: 1, max: 200, inputmode: 'numeric', value: item.packageSize ?? '', 'aria-label': t('packageLessons') });
       const modelNote = h('span', { class: 'strong' });
       const otherLine = h('label', { class: 'price-extra' }, modelNote, h('span', { class: 'price-size' }, size, h('span', null, t('packageLessons'))));

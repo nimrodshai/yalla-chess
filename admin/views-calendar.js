@@ -152,7 +152,7 @@
               title: `${fmtTime(occurrence.startAt, tz)} · ${occurrence.durationMinutes}′ · ${occurrence.title}`,
               onclick: (event) => { event.stopPropagation(); occurrenceDialog(occurrence, tz, refresh); }
             },
-              h('div', { class: 'cal-slot-time' }, `${continued ? '↳ ' : ''}${fmtTime(occurrence.startAt, tz)} · ${occurrence.durationMinutes}′`),
+              h('div', { class: 'cal-slot-time' }, `${continued ? (window.I18N.lang === 'he' ? '↲ ' : '↳ ') : ''}${fmtTime(occurrence.startAt, tz)} · ${occurrence.durationMinutes}′`),
               h('div', { class: 'cal-slot-title' }, occurrence.title),
               slotHeight >= 60 ? h('div', { class: 'cal-slot-sub' }, occurrence.kind === 'group' ? `${occurrence.students.length} ${t('students')}` : t(`kind.${occurrence.kind}`)) : null
             );
