@@ -236,9 +236,19 @@ describe('business API', () => {
     await server.fetch(`/api/business/students/${pupil.id}`, json(teacher.cookie, { prices: raised }, 'PATCH'));
     assert.equal((await get(`/api/business/students/${pupil.id}`)).payment.balance, 0);
 
+    // A price turned monthly charges from today, this month only, not the
+    // months before.
+    const before = (await get(`/api/business/students/${pupil.id}`)).payment.balance;
+    await server.fetch(`/api/business/students/${pupil.id}`, json(teacher.cookie, { prices: [{ ...sixty, amount: 80, kind: 'group', model: 'monthly' }, { ...forty, amount: 60 }, { ...monthly, amount: 250 }] }, 'PATCH'));
+    const turned = await get(`/api/business/students/${pupil.id}`);
+    assert.equal(turned.payment.balance, before - 80);
+    assert.deepEqual(turned.account.filter((entry) => entry.priceId === sixty.id && entry.kind === 'month').map((entry) => entry.date), [today]);
+    await server.fetch(`/api/business/students/${pupil.id}`, json(teacher.cookie, { prices: raised }, 'PATCH'));
+
     // A price picked by hand wins over the one the lesson's length matches.
+    const beforePick = (await get(`/api/business/students/${pupil.id}`)).payment.balance;
     await log({ date: day(20), startTime: '17:00', durationMinutes: 60, kind: 'private', studentIds: [pupil.id], priceChoices: { [pupil.id]: forty.id } });
-    assert.equal((await get(`/api/business/students/${pupil.id}`)).payment.balance, -60);
+    assert.equal((await get(`/api/business/students/${pupil.id}`)).payment.balance, beforePick - 60);
 
     for (const id of lessonIds) await server.fetch(`/api/business/lessons/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
     await server.fetch(`/api/business/students/${pupil.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
