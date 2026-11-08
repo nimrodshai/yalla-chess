@@ -175,8 +175,7 @@ describe('authorization', () => {
     const { cookie } = await signIn(server, '+972500000004');
 
     const dashboard = await (await server.fetch('/api/dashboard', { headers: { Cookie: cookie } })).json();
-    assert.equal(dashboard.canManageUsers, false);
-    assert.deepEqual(dashboard.users, [], 'a student must not receive the user list');
+    assert.equal(dashboard.users, undefined, 'a student must not receive the user list');
     for (const group of dashboard.groups) {
       assert.deepEqual(group.members, [], 'a student must not receive member identifiers');
     }

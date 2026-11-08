@@ -46,12 +46,12 @@ describe('concurrent writes', () => {
     assert.equal(ids.size, dashboard.groups.length, 'ids must stay unique');
   });
 
-  it('keeps every user when creations and group edits interleave', async () => {
+  it('keeps every student when creations and group edits interleave', async () => {
     const results = await Promise.all([
-      ...Array.from({ length: 6 }, (_, index) => server.fetch('/api/users', {
+      ...Array.from({ length: 6 }, (_, index) => server.fetch('/api/business/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: cookie },
-        body: JSON.stringify({ role: 'student', phone: `+97251000${String(index).padStart(4, '0')}` })
+        body: JSON.stringify({ firstName: `Mixed student ${index}`, userPhone: `+97251000${String(index).padStart(4, '0')}` })
       })),
       ...Array.from({ length: 6 }, (_, index) => server.fetch('/api/groups', {
         method: 'POST',
@@ -64,8 +64,9 @@ describe('concurrent writes', () => {
       assert.equal(response.status, 200);
     }
 
+    const students = (await (await server.fetch('/api/business/students', { headers: { Cookie: cookie } })).json()).students;
+    assert.equal(students.filter((student) => /^Mixed student /.test(student.firstName)).length, 6);
     const dashboard = await (await server.fetch('/api/dashboard', { headers: { Cookie: cookie } })).json();
-    assert.equal(dashboard.users.filter((user) => /^\+97251000/.test(user.phone)).length, 6);
     assert.equal(dashboard.groups.filter((group) => /Mixed /.test(JSON.stringify(group.title))).length, 6);
   });
 });

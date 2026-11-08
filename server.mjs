@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { randomBytes, randomInt } from 'node:crypto';
 
@@ -12,7 +12,6 @@ import {
   getClientIp,
   getCorsHeaders,
   getSecurityHeaders,
-  isCrossOriginRequest,
   isForbiddenCrossSiteWrite,
   pruneRateLimits,
   refundRateLimit
@@ -24,7 +23,6 @@ import {
   deleteSession,
   deleteSessionsForUser,
   getMeta,
-  renameSessionUser,
   getSession,
   getUserRole,
   insertSession,
@@ -41,7 +39,7 @@ import {
 } from './lib/db.mjs';
 import { withWriteLock } from './lib/mutex.mjs';
 import { isBusinessStoreEmpty, openBusinessStore, teachers as teacherRecords } from './lib/business-db.mjs';
-import { billingByPhone, forgetGroup, getSettings, groupHasStudents, handleBusinessRequest, HttpError, migrateStudentPrices, teacherForPhone, teacherGroupIds } from './lib/business.mjs';
+import { forgetGroup, getSettings, groupHasStudents, handleBusinessRequest, HttpError, migrateStudentPrices, teacherForPhone, teacherGroupIds } from './lib/business.mjs';
 import { seedBusinessDemo } from './lib/business-seed.mjs';
 
 const ROOT = process.cwd();
@@ -747,26 +745,8 @@ function canManageGroups(user) {
   return user?.role === 'admin';
 }
 
-function canManageUsers(user) {
-  return canManageGroups(user);
-}
-
 function isStaff(user) {
   return user?.role === 'admin' || user?.role === 'teacher';
-}
-
-function getLocalizedValue(value, lang = 'en') {
-  if (typeof value === 'string') {
-    return value;
-  }
-
-  if (value && typeof value === 'object') {
-    return lang === 'he'
-      ? (value.he || value.en || '')
-      : (value.en || value.he || '');
-  }
-
-  return '';
 }
 
 function parseLessonClock(startTime) {
@@ -1055,10 +1035,6 @@ function normalizeUserRecord(user, fallback = {}) {
   };
 }
 
-function getUserPrimaryIdentifier(user) {
-  return getUserPhone(user) || normalizeUserIdentifier(user?.username) || normalizeUserIdentifier(user?.contactEmail);
-}
-
 function getUserIdentifierSet(user) {
   return Array.from(new Set([
     normalizeUserIdentifier(user?.username),
@@ -1089,7 +1065,6 @@ function serializeUser(user, phone = '') {
     paidUntil: normalizePaidUntil(user?.paidUntil),
     notes: normalizeUserNotes(user?.notes),
     canManageGroups: canManageGroups(user),
-    canManageUsers: canManageUsers(user),
     canUseManagement: isStaff(user)
   };
 }
@@ -1661,9 +1636,6 @@ async function handleDashboard(req, res) {
   }
 
   const groups = await loadGroups();
-  const canEditGroups = canManageGroups(session);
-  const canEditUsers = canManageUsers(session);
-  const users = canEditUsers ? await loadUsers() : [];
   // A teacher sees the groups they teach; a student the ones they are in.
   const taught = session.role === 'teacher' ? teacherGroupIds(teacherForPhone(session.phone)) : new Set();
   const visibleSource = canManageGroups(session)
@@ -1678,286 +1650,12 @@ async function handleDashboard(req, res) {
     .map((group) => serializeDashboardGroup(group, session))
     .sort((a, b) => new Date(a.nextLessonAt).getTime() - new Date(b.nextLessonAt).getTime());
 
-  // Teachers also see each account's payment state from the management
-  // app, so the portal never shows a bare "paid" with no month attached.
-  const billing = canEditUsers ? billingByPhone() : {};
-
   sendJson(res, 200, {
     ok: true,
     serverTime: new Date().toISOString(),
     user: serializeUser(session, session.phone || ''),
-    canManageGroups: canEditGroups,
-    canManageUsers: canEditUsers,
     activeGroupId: visibleGroups[0]?.id || '',
-    groups: visibleGroups,
-    users: canEditUsers ? users.map((user) => ({ ...serializeUser(user, getUserPhone(user)), billing: billing[getUserPhone(user)] || [] })) : []
-  }, getCorsHeaders(req));
-}
-
-function getUserPayloadIdentifiers(payload, fallbackUser = {}) {
-  const nextUser = normalizeUserRecord(payload, fallbackUser);
-  if (!nextUser.username && nextUser.phone) {
-    nextUser.username = nextUser.phone;
-  }
-
-  if (!nextUser.phone && isPhoneNumber(nextUser.username)) {
-    nextUser.phone = normalizePhone(nextUser.username);
-  }
-
-  if (!nextUser.phone || !isPhoneNumber(nextUser.phone)) {
-    throw new Error('Please enter a valid phone number.');
-  }
-
-  if (!isUserIdentifier(nextUser.username)) {
-    throw new Error('Please enter a valid phone number or email address.');
-  }
-
-  return nextUser;
-}
-
-function countAdmins(users) {
-  return users.filter((user) => user.role === 'admin').length;
-}
-
-function findUserConflict(users, candidate, currentIndex = -1) {
-  const candidateIdentifiers = getUserIdentifierSet(candidate);
-  if (!candidateIdentifiers.length) {
-    return -1;
-  }
-
-  return users.findIndex((entry, index) => {
-    if (index === currentIndex) {
-      return false;
-    }
-
-    const entryIdentifiers = getUserIdentifierSet(entry);
-    return entryIdentifiers.some((entryIdentifier) => candidateIdentifiers.some((candidateIdentifier) => sameUserIdentifier(entryIdentifier, candidateIdentifier)));
-  });
-}
-
-function mutateGroupsForUserChange(groups, previousIdentifiers, nextIdentifier, updatedBy = '') {
-  const identifiers = Array.from(new Set((Array.isArray(previousIdentifiers) ? previousIdentifiers : [])
-    .map((value) => normalizeUserIdentifier(value))
-    .filter(Boolean)));
-
-  if (!identifiers.length) {
-    return {
-      groups,
-      changed: false
-    };
-  }
-
-  let changed = false;
-  const nextGroups = groups.map((group) => {
-    const currentMembers = normalizeGroupMembers(group.members);
-    const nextMembers = normalizeGroupMembers(currentMembers.map((member) => {
-      return identifiers.some((identifier) => sameUserIdentifier(member, identifier))
-        ? (nextIdentifier || '')
-        : member;
-    }));
-
-    const groupChanged = currentMembers.length !== nextMembers.length || currentMembers.some((member, index) => !sameUserIdentifier(member, nextMembers[index]));
-    if (!groupChanged) {
-      return group;
-    }
-
-    changed = true;
-    return {
-      ...group,
-      members: nextMembers,
-      updatedAt: new Date().toISOString(),
-      updatedBy: updatedBy || group.updatedBy || ''
-    };
-  });
-
-  return {
-    groups: nextGroups,
-    changed
-  };
-}
-
-async function handleUserCreate(req, res) {
-  const session = getSessionFromRequest(req);
-  if (!session) {
-    sendJson(res, 401, { ok: false, error: 'Not authenticated.' }, getCorsHeaders(req));
-    return;
-  }
-
-  if (!canManageUsers(session)) {
-    sendJson(res, 403, { ok: false, error: 'Not authorized.' }, getCorsHeaders(req));
-    return;
-  }
-
-  let payload;
-  try {
-    payload = JSON.parse(await readRequestBody(req));
-  } catch (error) {
-    sendJson(res, error.statusCode || 400, { ok: false, error: 'Invalid JSON payload.' }, getCorsHeaders(req));
-    return;
-  }
-
-  const users = await loadUsers();
-  let nextUser;
-
-  try {
-    nextUser = getUserPayloadIdentifiers(payload || {}, {
-      role: 'student',
-      paymentStatus: 'paid'
-    });
-  } catch (error) {
-    sendJson(res, 400, { ok: false, error: error.message || 'Unable to create user.' }, getCorsHeaders(req));
-    return;
-  }
-
-  const conflictIndex = findUserConflict(users, nextUser);
-  if (conflictIndex !== -1) {
-    sendJson(res, 409, { ok: false, error: 'Another user already uses that phone number or email address.' }, getCorsHeaders(req));
-    return;
-  }
-
-  users.push(nextUser);
-  await saveUsers(users);
-
-  sendJson(res, 200, {
-    ok: true,
-    user: serializeUser(nextUser, nextUser.phone),
-    serverTime: new Date().toISOString()
-  }, getCorsHeaders(req));
-}
-
-async function handleUserUpdate(req, res, userId) {
-  const session = getSessionFromRequest(req);
-  if (!session) {
-    sendJson(res, 401, { ok: false, error: 'Not authenticated.' }, getCorsHeaders(req));
-    return;
-  }
-
-  if (!canManageUsers(session)) {
-    sendJson(res, 403, { ok: false, error: 'Not authorized.' }, getCorsHeaders(req));
-    return;
-  }
-
-  let payload;
-  try {
-    payload = JSON.parse(await readRequestBody(req));
-  } catch (error) {
-    sendJson(res, error.statusCode || 400, { ok: false, error: 'Invalid JSON payload.' }, getCorsHeaders(req));
-    return;
-  }
-
-  const users = await loadUsers();
-  const index = findUserIndexByIdentifier(users, decodeURIComponent(userId));
-  if (index === -1) {
-    sendJson(res, 404, { ok: false, error: 'User not found.' }, getCorsHeaders(req));
-    return;
-  }
-
-  const currentUser = users[index];
-  let nextUser;
-  try {
-    nextUser = getUserPayloadIdentifiers({
-      ...currentUser,
-      ...payload
-    }, currentUser);
-  } catch (error) {
-    sendJson(res, 400, { ok: false, error: error.message || 'Unable to update user.' }, getCorsHeaders(req));
-    return;
-  }
-
-  if (sameUserIdentifier(currentUser.username, currentUser.phone) || !currentUser.username) {
-    nextUser.username = nextUser.phone;
-  }
-
-  const hasChanges = JSON.stringify(normalizeUserRecord(currentUser)) !== JSON.stringify(normalizeUserRecord(nextUser));
-  if (!hasChanges) {
-    sendJson(res, 400, { ok: false, error: 'No changes provided.' }, getCorsHeaders(req));
-    return;
-  }
-
-  const conflictIndex = findUserConflict(users, nextUser, index);
-  if (conflictIndex !== -1) {
-    sendJson(res, 409, { ok: false, error: 'Another user already uses that phone number or email address.' }, getCorsHeaders(req));
-    return;
-  }
-
-  if (countAdmins(users) === 1 && currentUser.role === 'admin' && nextUser.role !== 'admin') {
-    sendJson(res, 409, { ok: false, error: 'The school needs an admin. Make someone else admin first.' }, getCorsHeaders(req));
-    return;
-  }
-
-  const previousIdentifiers = getUserIdentifierSet(currentUser);
-  const nextPrimaryIdentifier = getUserPrimaryIdentifier(nextUser);
-  users[index] = nextUser;
-
-  const groups = await loadGroups();
-  const groupMutation = mutateGroupsForUserChange(groups, previousIdentifiers, nextPrimaryIdentifier, session.username);
-  if (groupMutation.changed) {
-    await saveGroups(groupMutation.groups);
-  }
-
-  await saveUsers(users);
-  if (currentUser.username !== nextUser.username) renameSessionUser(currentUser.username, nextUser.username);
-
-  if (previousIdentifiers.some((identifier) => sameUserIdentifier(identifier, session.username) || sameUserIdentifier(identifier, session.phone))) {
-    updateSession(session.id, {
-      username: nextUser.username,
-      role: nextUser.role,
-      phone: nextUser.phone,
-      contactEmail: nextUser.contactEmail,
-      firstName: nextUser.firstName,
-      lastName: nextUser.lastName,
-      canManageGroups: canManageGroups(nextUser)
-    });
-  }
-
-  sendJson(res, 200, {
-    ok: true,
-    user: serializeUser(nextUser, nextUser.phone),
-    serverTime: new Date().toISOString()
-  }, getCorsHeaders(req));
-}
-
-async function handleUserDelete(req, res, userId) {
-  const session = getSessionFromRequest(req);
-  if (!session) {
-    sendJson(res, 401, { ok: false, error: 'Not authenticated.' }, getCorsHeaders(req));
-    return;
-  }
-
-  if (!canManageUsers(session)) {
-    sendJson(res, 403, { ok: false, error: 'Not authorized.' }, getCorsHeaders(req));
-    return;
-  }
-
-  const users = await loadUsers();
-  const index = findUserIndexByIdentifier(users, decodeURIComponent(userId));
-  if (index === -1) {
-    sendJson(res, 404, { ok: false, error: 'User not found.' }, getCorsHeaders(req));
-    return;
-  }
-
-  const removedUser = users[index];
-  if (removedUser.role === 'admin' && countAdmins(users) === 1) {
-    sendJson(res, 409, { ok: false, error: 'The school needs an admin. Make someone else admin first.' }, getCorsHeaders(req));
-    return;
-  }
-  users.splice(index, 1);
-
-  const groups = await loadGroups();
-  const groupMutation = mutateGroupsForUserChange(groups, getUserIdentifierSet(removedUser), '', session.username);
-  if (groupMutation.changed) {
-    await saveGroups(groupMutation.groups);
-  }
-
-  await saveUsers(users);
-
-  if (getUserIdentifierSet(removedUser).some((identifier) => sameUserIdentifier(identifier, session.username) || sameUserIdentifier(identifier, session.phone))) {
-    deleteSession(session.id);
-  }
-
-  sendJson(res, 200, {
-    ok: true,
-    serverTime: new Date().toISOString()
+    groups: visibleGroups
   }, getCorsHeaders(req));
 }
 
@@ -2083,64 +1781,6 @@ async function handleGroupDelete(req, res, groupId) {
 
   sendJson(res, 200, {
     ok: true,
-    serverTime: new Date().toISOString()
-  }, getCorsHeaders(req));
-}
-
-async function handleGroupZoomLinkUpdate(req, res, groupId) {
-  const session = getSessionFromRequest(req);
-  if (!session) {
-    sendJson(res, 401, { ok: false, error: 'Not authenticated.' }, getCorsHeaders(req));
-    return;
-  }
-
-  if (!canManageGroups(session)) {
-    sendJson(res, 403, { ok: false, error: 'Not authorized.' }, getCorsHeaders(req));
-    return;
-  }
-
-  let payload;
-  try {
-    payload = JSON.parse(await readRequestBody(req));
-  } catch (error) {
-    sendJson(res, error.statusCode || 400, { ok: false, error: 'Invalid JSON payload.' }, getCorsHeaders(req));
-    return;
-  }
-
-  const zoomLink = typeof payload.zoomLink === 'string'
-    ? payload.zoomLink.trim()
-    : typeof payload.link === 'string'
-      ? payload.link.trim()
-      : '';
-
-  const groups = await loadGroups();
-  const index = groups.findIndex((group) => group.id === groupId);
-  if (index === -1) {
-    sendJson(res, 404, { ok: false, error: 'Group not found.' }, getCorsHeaders(req));
-    return;
-  }
-
-  let nextGroup;
-  try {
-    nextGroup = applyGroupPatch(groups[index], { zoomLink });
-  } catch (error) {
-    sendJson(res, 400, { ok: false, error: error.message || 'Unable to update group.' }, getCorsHeaders(req));
-    return;
-  }
-
-  if (!nextGroup) {
-    sendJson(res, 400, { ok: false, error: 'No changes provided.' }, getCorsHeaders(req));
-    return;
-  }
-
-  nextGroup.updatedBy = session.username;
-  groups[index] = nextGroup;
-
-  await saveGroups(groups);
-
-  sendJson(res, 200, {
-    ok: true,
-    group: serializeDashboardGroup(groups[index], session),
     serverTime: new Date().toISOString()
   }, getCorsHeaders(req));
 }
@@ -2565,11 +2205,6 @@ async function handleRequest(req, res) {
     return;
   }
 
-  if (url.pathname === '/api/users' && req.method === 'POST') {
-    await withWriteLock(() => handleUserCreate(req, res));
-    return;
-  }
-
   const groupUpdateMatch = url.pathname.match(/^\/api\/groups\/([^/]+)$/);
   if (groupUpdateMatch && req.method === 'PATCH') {
     await withWriteLock(() => handleGroupUpdate(req, res, groupUpdateMatch[1]));
@@ -2578,23 +2213,6 @@ async function handleRequest(req, res) {
 
   if (groupUpdateMatch && req.method === 'DELETE') {
     await withWriteLock(() => handleGroupDelete(req, res, groupUpdateMatch[1]));
-    return;
-  }
-
-  const zoomLinkMatch = url.pathname.match(/^\/api\/groups\/([^/]+)\/zoom-link$/);
-  if (zoomLinkMatch && req.method === 'POST') {
-    await withWriteLock(() => handleGroupZoomLinkUpdate(req, res, zoomLinkMatch[1]));
-    return;
-  }
-
-  const userUpdateMatch = url.pathname.match(/^\/api\/users\/([^/]+)$/);
-  if (userUpdateMatch && req.method === 'PATCH') {
-    await withWriteLock(() => handleUserUpdate(req, res, userUpdateMatch[1]));
-    return;
-  }
-
-  if (userUpdateMatch && req.method === 'DELETE') {
-    await withWriteLock(() => handleUserDelete(req, res, userUpdateMatch[1]));
     return;
   }
 

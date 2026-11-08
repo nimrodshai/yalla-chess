@@ -63,7 +63,9 @@ describe('business API', () => {
     const dashboard = await (await server.fetch('/api/dashboard', { headers: { Cookie: teacher.cookie } })).json();
     const rookies = dashboard.groups.find((group) => group.id === 'rookies');
     assert.ok(rookies.members.includes(phone), 'portal group membership follows the student record');
-    assert.ok(dashboard.users.some((user) => user.phone === phone && user.role === 'student'), 'a portal account was created');
+    const account = await signIn(server, phone);
+    const me = await (await server.fetch('/api/me', { headers: { Cookie: account.cookie } })).json();
+    assert.equal(me.user.role, 'student', 'a portal account was created');
 
     // Moving the student to another group moves the portal membership too.
     const moved = await server.fetch(`/api/business/students/${record.id}`, json(teacher.cookie, { groupId: 'tactics' }, 'PATCH'));
@@ -76,50 +78,10 @@ describe('business API', () => {
     assert.equal(detail.payment.state, 'due_soon', 'a new monthly student is due on their join date');
   });
 
-  it('shows every student file behind a portal phone with its own payment state', async () => {
+  it('gives a sign-in phone to one student only', async () => {
     const phone = '+972500000666';
-    const sibling = (await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Sib', lastName: 'One', parentName: 'Shared Parent', parentPhone: phone, groupId: 'rookies', price: 250, billingType: 'monthly' }))).json()).student;
-    await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: sibling.id, amount: 250, currency: 'ILS', periodLabel: '2026-11' }));
-    const second = (await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Sib', lastName: 'Two', parentName: 'Shared Parent', parentPhone: phone, groupId: 'rookies', price: 250, billingType: 'monthly' }))).json()).student;
-    await server.fetch('/api/users', json(teacher.cookie, { role: 'student', phone }));
-
-    // A parent with two children sees both files, each under its own name
-    // and with its own state, exactly as the management app shows them.
-    let dashboard = await (await server.fetch('/api/dashboard', { headers: { Cookie: teacher.cookie } })).json();
-    let account = dashboard.users.find((user) => user.phone === phone);
-    assert.equal(account.billing.length, 2);
-    const paid = account.billing.find((file) => file.studentId === sibling.id);
-    const unpaid = account.billing.find((file) => file.studentId === second.id);
-    assert.equal(paid.studentName, 'Sib One');
-    assert.equal(paid.state, 'ok');
-    assert.equal(paid.lastPaymentAmount, 250);
-    assert.equal(unpaid.state, 'due_soon');
-
-    // A single file on the parent phone is that account's file: no extra link step.
-    const lonePhone = '+972500000667';
-    const lone = (await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Lone', lastName: 'Child', parentPhone: lonePhone, price: 250, billingType: 'monthly' }))).json()).student;
-    await server.fetch('/api/users', json(teacher.cookie, { role: 'student', phone: lonePhone }));
-    dashboard = await (await server.fetch('/api/dashboard', { headers: { Cookie: teacher.cookie } })).json();
-    const loneAccount = dashboard.users.find((user) => user.phone === lonePhone);
-    assert.equal(loneAccount.billing.length, 1);
-    assert.equal(loneAccount.billing[0].studentId, lone.id);
-    assert.equal(loneAccount.billing[0].state, 'due_soon');
-
-    // A phone with no file at all gets an empty list, which the portal
-    // turns into a "create student file" shortcut.
-    const nobody = '+972500000668';
-    await server.fetch('/api/users', json(teacher.cookie, { role: 'student', phone: nobody }));
-    dashboard = await (await server.fetch('/api/dashboard', { headers: { Cookie: teacher.cookie } })).json();
-    assert.deepEqual(dashboard.users.find((user) => user.phone === nobody).billing, []);
-
-    // A sign-in phone on a file links it too, once, even when it is also the parent phone.
-    await server.fetch(`/api/business/students/${sibling.id}`, json(teacher.cookie, { userPhone: phone }, 'PATCH'));
-    dashboard = await (await server.fetch('/api/dashboard', { headers: { Cookie: teacher.cookie } })).json();
-    account = dashboard.users.find((user) => user.phone === phone);
-    assert.equal(account.billing.length, 2);
-    assert.equal(account.billing.filter((file) => file.studentId === sibling.id).length, 1);
-
-    // The same sign-in phone cannot be given to a second student.
+    const first = await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Sib', lastName: 'One', userPhone: phone }));
+    assert.equal(first.status, 200);
     const dupe = await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Dupe', userPhone: phone }));
     assert.equal(dupe.status, 409);
   });
@@ -1060,7 +1022,6 @@ describe('teacher accounts', () => {
     const me = await (await server.fetch('/api/me', { headers: { Cookie: teacher.cookie } })).json();
     assert.equal(me.user.role, 'teacher');
     assert.equal(me.user.canUseManagement, true);
-    assert.equal(me.user.canManageUsers, false);
     assert.equal(me.user.firstName, 'Rina');
 
     const adminMe = await (await server.fetch('/api/me', { headers: { Cookie: admin.cookie } })).json();
@@ -1103,8 +1064,7 @@ describe('teacher accounts', () => {
 
     const portal = await (await server.fetch('/api/dashboard', { headers: { Cookie: teacher.cookie } })).json();
     assert.deepEqual(portal.groups.map((group) => group.id), ['tactics']);
-    assert.deepEqual(portal.users, []);
-    assert.equal(portal.canManageGroups, false);
+    assert.equal(portal.users, undefined);
   });
 
   it('keeps payments, prospects, reports and changes to the school with the admin', async () => {
@@ -1182,7 +1142,7 @@ describe('teacher accounts', () => {
 
   it('composes a teacher\'s message only from a lesson they give', async () => {
     const zoom = 'https://zoom.us/j/rookies-only';
-    assert.equal((await server.fetch('/api/groups/rookies/zoom-link', json(admin.cookie, { zoomLink: zoom }))).status, 200);
+    assert.equal((await server.fetch('/api/groups/rookies', json(admin.cookie, { zoomLink: zoom }, 'PATCH'))).status, 200);
     const calendar = (await get(admin.cookie, '/calendar?from=2026-11-08&to=2026-11-14')).body;
     const rookies = calendar.occurrences.find((occurrence) => occurrence.groupId === 'rookies');
     const own = (await get(teacher.cookie, '/students')).body.students[0];
