@@ -503,7 +503,8 @@
     return [
       t(`priceKind.${item.kind}`),
       item.durationMinutes ? `${item.durationMinutes} ${t('minutes')}` : '',
-      item.model === 'monthly' ? t('priceMonthly', { amount }) : item.model === 'package' ? t('pricePackage', { amount, n: item.packageSize }) : t('pricePerLesson', { amount })
+      item.model === 'monthly' ? t('priceMonthly', { amount }) : item.model === 'package' ? t('pricePackage', { amount, n: item.packageSize }) : t('pricePerLesson', { amount }),
+      item.model === 'monthly' && item.lessonAmount !== null && item.lessonAmount !== undefined ? t('priceSingleLesson', { amount: fmtMoney(item.lessonAmount, currency) }) : ''
     ].filter(Boolean).join(' · ');
   }
 
@@ -527,12 +528,18 @@
       const minutes = h('input', { type: 'number', min: 15, max: 240, step: 5, inputmode: 'numeric', value: item.durationMinutes ?? '', placeholder: t('priceAnyLength'), 'aria-label': t('duration') });
       const size = h('input', { type: 'number', min: 1, max: 200, inputmode: 'numeric', value: item.packageSize ?? '', placeholder: t('packageLessons'), 'aria-label': t('packageLessons') });
       const amount = h('input', { type: 'number', min: 0, step: '0.01', inputmode: 'decimal', value: item.amount ?? '', placeholder: t('amount'), 'aria-label': t('amount') });
+      // A monthly price's single lesson, for a month the student starts
+      // after the 1st or leaves before its end.
+      const single = h('input', { type: 'number', min: 0, step: '0.01', inputmode: 'decimal', value: item.lessonAmount ?? '', 'aria-label': t('singleLessonPrice') });
+      const singleLine = h('label', { class: 'price-single' }, h('span', null, t('singleLessonPrice')), single, h('span', { class: 'muted' }, t('singleLessonHint')));
       const node = h('div', { class: 'price-row' }, kind, model, minutes, size, amount,
-        h('button', { class: 'btn btn-xs btn-ghost', type: 'button', 'aria-label': t('delete'), onclick: () => { node.remove(); changed(); } }, '✕'));
+        h('button', { class: 'btn btn-xs btn-ghost', type: 'button', 'aria-label': t('delete'), onclick: () => { node.remove(); changed(); } }, '✕'),
+        singleLine);
       // A field that does not apply keeps its column, so amounts line up.
       const sync = () => {
         minutes.classList.toggle('off', model.value === 'monthly');
         size.classList.toggle('off', model.value !== 'package');
+        singleLine.hidden = model.value !== 'monthly';
       };
       model.addEventListener('change', sync);
       node.addEventListener('change', changed);
@@ -543,7 +550,8 @@
         model: model.value,
         durationMinutes: model.value === 'monthly' || minutes.value === '' ? null : Number(minutes.value),
         packageSize: model.value === 'package' && size.value !== '' ? Number(size.value) : null,
-        amount: amount.value === '' ? null : Number(amount.value)
+        amount: amount.value === '' ? null : Number(amount.value),
+        lessonAmount: model.value === 'monthly' && single.value !== '' ? Number(single.value) : null
       });
       container.append(node);
     };

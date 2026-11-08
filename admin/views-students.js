@@ -93,7 +93,8 @@
     const payment = data.payment;
     // A new payment starts at what the student owes, or the next month.
     const payer = { ...student, balance: payment?.balance, nextChargeAmount: payment?.nextChargeAmount };
-    const paymentLine = admin && student.status !== 'inactive'
+    // A student who has left shows where they stand only while they owe.
+    const paymentLine = admin && (student.status !== 'inactive' || data.payment.balance < 0)
       ? h('div', { class: `alert ${payment.state === 'overdue' ? 'alert-danger' : payment.state === 'due_soon' ? 'alert-warn' : 'alert-sage'}` },
         statusBadge(payment.state, 'pay'),
         h('span', null, window.UI.standingText(payment, student.currency)),
@@ -122,7 +123,6 @@
         detail(t('privateSchedule'), scheduleText(student.privateSchedule)),
         detail(t('privateZoomLink'), student.privateZoomLink ? h('a', { href: student.privateZoomLink, target: '_blank', rel: 'noopener' }, 'Zoom') : ''),
         admin ? detail(t('prices'), h('div', null, (student.prices || []).length ? student.prices.map((item) => h('div', null, window.UI.priceText(item, student.currency))) : t('noPrices'))) : null,
-        admin && (student.prices || []).some((item) => item.model === 'monthly') ? detail(t('billingDay'), String(student.billingDay || Number((student.joinedAt || '').slice(8, 10)) || 1)) : null,
         admin ? detail(t('paymentTerms'), student.paymentTerms) : null,
         detail(t('reminders'), student.remindersEnabled ? `${t('yes')}${student.reminderLeadHours !== null ? ` · ${student.reminderLeadHours}h` : ''}` : t('no')),
         detail(t('userPhone'), student.userPhone)
@@ -181,13 +181,27 @@
       const price = item ? window.UI.priceText(item, student.currency) : '';
       if (entry.kind === 'opening') return t(entry.amount < 0 ? 'ledger.openingOwed' : 'ledger.openingCredit', { date: fmtDate(entry.date, { year: 'numeric' }) });
       if (entry.kind === 'payment') return `${t('ledger.payment')}${entry.method ? ` · ${t(`method.${entry.method}`)}` : ''}`;
-      if (entry.kind === 'month') return [t('ledger.month', { month: window.UI.fmtMonth(entry.date.slice(0, 7)) }), price].filter(Boolean).join(' · ');
+      if (entry.kind === 'month') {
+        return [
+          t('ledger.month', { month: window.UI.fmtMonth(entry.month) }),
+          item ? t(`priceKind.${item.kind}`) : '',
+          entry.partial ? t('ledger.partialMonth', { n: entry.count, amount: fmtMoney(entry.lessonAmount, student.currency) }) : ''
+        ].filter(Boolean).join(' · ');
+      }
+      if (entry.kind === 'lessons') return t('ledger.lessons', { month: window.UI.fmtMonth(entry.month), n: entry.count });
       return [`${t(`priceKind.${entry.lessonKind}`)}${entry.topic ? `: ${entry.topic}` : ''}`, price].filter(Boolean).join(' · ');
     };
     const accountEntries = (data.account || []).slice().reverse();
-    const account = admin ? card(t('account'), accountEntries.length ? h('div', { class: 'table-wrap account-table' }, h('table', { class: 'table' },
+    // This month's per-lesson lessons, charged at its end: shown, not counted.
+    const pending = data.accountPending;
+    const account = admin ? card(t('account'), accountEntries.length || pending ? h('div', { class: 'table-wrap account-table' }, h('table', { class: 'table' },
       h('thead', null, h('tr', null, h('th', null, t('date')), h('th', null, t('description')), h('th', { class: 'num' }, t('amount')), h('th', { class: 'num' }, t('balance')))),
-      h('tbody', null, accountEntries.map((entry) => h('tr', null,
+      h('tbody', null, pending ? h('tr', { class: 'muted' },
+        h('td', null, fmtDate(pending.date, { year: 'numeric' })),
+        h('td', null, t('ledger.pending', { month: window.UI.fmtMonth(pending.month), n: pending.count })),
+        h('td', { class: 'num' }, `(${fmtMoney(pending.amount, student.currency)})`),
+        h('td', null, '')
+      ) : null, accountEntries.map((entry) => h('tr', null,
         h('td', null, entry.kind === 'opening' ? '' : fmtDate(entry.date, { year: 'numeric' })),
         h('td', null, accountLabel(entry), entry.unpriced ? h('span', { class: 'badge badge-warn', style: { marginInlineStart: '6px' } }, t('ledger.unpriced')) : null),
         h('td', { class: `num ${entry.amount > 0 ? 'strong' : ''}` }, entry.unpriced ? '—' : `${entry.amount > 0 ? '+' : entry.amount < 0 ? '−' : ''}${fmtMoney(Math.abs(entry.amount), student.currency)}`),
@@ -360,6 +374,8 @@
           groupField,
           scheduleField,
           field(t('joinedAt'), h('input', { name: 'joinedAt', type: 'date', value: s.joinedAt || '' })),
+          // Leaving ends their lessons and charges from that day.
+          !isNew ? field(t('leftAt'), h('input', { name: 'leftAt', type: 'date', value: s.leftAt || '', max: today }), { hint: t('leftAtHint') }) : null,
           field(t('teacher'), window.UI.teacherSelect('teacher', s.teacher || ''))
         );
         const syncPlacement = () => {
@@ -374,17 +390,12 @@
         // from what fits their lessons when the step opens: their group's
         // price a month, the default private price for each private length.
         let pricesTouched = !isNew || Boolean(s.prices?.length);
-        const prices = window.UI.priceEditor(s.prices || [], { onChange: () => { pricesTouched = true; syncBilling(); } });
-        const billingDayField = field(t('billingDay'), h('input', { name: 'billingDay', type: 'number', min: 1, max: 28, value: s.billingDay ?? '', placeholder: '1' }), { hint: t('billingDayHint') });
+        const prices = window.UI.priceEditor(s.prices || [], { onChange: () => { pricesTouched = true; } });
         const billing = h('div', { class: 'form' },
           field(t('prices'), prices, { full: true, hint: t('pricesHint') }),
           field(t('currency'), select('currency', window.VOCAB.currencies, s.currency || 'ILS')),
-          billingDayField,
           h('div', { class: 'field' }, checkbox('remindersEnabled', s.remindersEnabled, t('remindersEnabled')))
         );
-        const syncBilling = () => {
-          billingDayField.hidden = !prices.read().some((item) => item.model === 'monthly');
-        };
         const suggestPrices = () => {
           if (pricesTouched) return;
           pricesTouched = true;
@@ -523,7 +534,6 @@
           panels.forEach((panel, index) => { panel.hidden = index !== current; });
           syncPlacement();
           if (isNew && steps[current].key === 'billing') suggestPrices();
-          syncBilling();
 
           const last = current === steps.length - 1;
           const step = steps[current];

@@ -352,6 +352,9 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .price-row select, .price-row input { height: 36px; border: 1px solid var(--line-strong); border-radius: 9px; padding: 0 8px; min-width: 0; }
 .price-row .off { visibility: hidden; }
 .price-head { font-size: 12px; color: var(--text-light); margin-bottom: -2px; }
+.price-single { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.price-single[hidden] { display: none; }
+.price-single input { width: 110px; flex: none; }
 .price-head[hidden] { display: none; }
 .attendance-item .price-pick { height: 28px; font-size: 12px; max-width: 160px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 0 6px; }
 .attendance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
@@ -614,6 +617,7 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
   .price-row > :nth-child(4) { grid-row: 2; grid-column: 3 / span 2; }
   .price-row > :nth-child(5) { grid-row: 2; grid-column: 5 / span 2; }
   .price-row > :nth-child(6) { grid-row: 1; grid-column: 6; }
+  .price-single { grid-row: 3; flex-wrap: wrap; }
   .price-head { display: none; }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .stat-value { font-size: 22px; }

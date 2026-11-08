@@ -181,6 +181,7 @@ describe('business API', () => {
     const first = monthStart(2);
     const day = (n) => `${first.slice(0, 8)}${String(n).padStart(2, '0')}`;
     const sunday = day(2 + ((7 - new Date(`${day(2)}T12:00:00Z`).getUTCDay()) % 7));
+    const lastDay = (date) => new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0)).toISOString().slice(0, 10);
 
     const created = await (await server.fetch('/api/business/students', json(teacher.cookie, {
       firstName: 'Mixed', lastName: 'Prices', lessonType: 'both', groupId: 'rookies', joinedAt: first, billingDay: 1, currency: 'USD',
@@ -211,14 +212,15 @@ describe('business API', () => {
     await log({ date: day(13), startTime: '17:00', durationMinutes: 60, kind: 'private', studentIds: [pupil.id], attendance: { [pupil.id]: 'absent' } });
     await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: pupil.id, amount: 400, currency: 'USD', paidAt: day(14) }));
 
-    // Three months at 200 and lessons at 70 and 50: 720 less 400. The
-    // payment pays the oldest charges, so last month's is the first unpaid.
+    // Three months at 200 on their 1st, and the month's lessons at 70 and 50
+    // at its end: 720 less 400. The payment pays the oldest charges, so
+    // last month's is the first unpaid.
     const detail = await get(`/api/business/students/${pupil.id}`);
     assert.equal(detail.payment.balance, -320);
     assert.equal(detail.payment.nextPaymentAt, monthStart(1));
     assert.equal(detail.payment.state, 'overdue');
     assert.deepEqual(detail.account.filter((entry) => entry.kind === 'month').map((entry) => entry.date), [monthStart(2), monthStart(1), monthStart(0)]);
-    assert.deepEqual(detail.account.filter((entry) => entry.kind === 'lesson').map((entry) => entry.amount), [-70, -50]);
+    assert.deepEqual(detail.account.filter((entry) => entry.kind === 'lessons').map(({ date, count, amount }) => ({ date, count, amount })), [{ date: lastDay(first), count: 2, amount: -120 }]);
     const reminder = await (await server.fetch('/api/business/messages/compose', json(teacher.cookie, { kind: 'payment_reminder', studentId: pupil.id }))).json();
     assert.ok(reminder.message.body.includes('$320'), 'the reminder asks for what is owed');
 
@@ -237,6 +239,62 @@ describe('business API', () => {
     // A price picked by hand wins over the one the lesson's length matches.
     await log({ date: day(20), startTime: '17:00', durationMinutes: 60, kind: 'private', studentIds: [pupil.id], priceChoices: { [pupil.id]: forty.id } });
     assert.equal((await get(`/api/business/students/${pupil.id}`)).payment.balance, -60);
+
+    for (const id of lessonIds) await server.fetch(`/api/business/lessons/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+    await server.fetch(`/api/business/students/${pupil.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+  });
+
+  it('charges part of a month by the lesson, and this month\'s lessons at its end', async () => {
+    const get = async (path) => (await server.fetch(path, { headers: { Cookie: teacher.cookie } })).json();
+    const { businessTimezone } = (await get('/api/business/settings')).settings;
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: businessTimezone }).format(new Date());
+    const monthStart = (back) => {
+      const date = new Date(`${today.slice(0, 7)}-01T12:00:00Z`);
+      date.setUTCMonth(date.getUTCMonth() - back);
+      return date.toISOString().slice(0, 10);
+    };
+    const on = (back, dayOfMonth) => `${monthStart(back).slice(0, 8)}${String(dayOfMonth).padStart(2, '0')}`;
+    const lessonIds = [];
+    const log = async (body) => {
+      const { lesson } = await (await server.fetch('/api/business/lessons', json(teacher.cookie, { topic: 'Forks', ...body }))).json();
+      lessonIds.push(lesson.id);
+    };
+
+    // Joined on the 15th two months ago: that month is two lessons at 60,
+    // the next one the full 200 on its 1st.
+    const pupil = (await (await server.fetch('/api/business/students', json(teacher.cookie, {
+      firstName: 'Mid', lastName: 'Month', lessonType: 'both', groupId: 'rookies', joinedAt: on(2, 15), currency: 'USD',
+      prices: [{ kind: 'group', model: 'monthly', amount: 200, lessonAmount: 60 }, { kind: 'private', model: 'per_lesson', amount: 80 }]
+    }))).json()).student;
+    await log({ date: on(2, 16), groupId: 'rookies', studentIds: [pupil.id] });
+    await log({ date: on(2, 23), groupId: 'rookies', studentIds: [pupil.id] });
+    await log({ date: on(1, 5), groupId: 'rookies', studentIds: [pupil.id] });
+    let months = (await get(`/api/business/students/${pupil.id}`)).account.filter((entry) => entry.kind === 'month');
+    assert.deepEqual(months.slice(0, 2).map(({ date, amount, count }) => ({ date, amount, count })), [
+      { date: on(2, 15), amount: -120, count: 2 },
+      { date: monthStart(1), amount: -200, count: undefined }
+    ]);
+
+    // A private lesson this month waits for the month's end.
+    if (today < `${today.slice(0, 8)}28`) {
+      await log({ date: today, durationMinutes: 60, kind: 'private', studentIds: [pupil.id] });
+      const status = (await get(`/api/business/students/${pupil.id}`)).payment;
+      assert.equal(status.pending.amount, 80);
+      assert.ok(!(await get(`/api/business/students/${pupil.id}`)).account.some((entry) => entry.kind === 'lessons'), 'not charged yet');
+      await server.fetch(`/api/business/lessons/${lessonIds.pop()}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+    }
+
+    // Left on the 10th of last month after one lesson: that month is one
+    // lesson at 60, and nothing after it.
+    const left = await server.fetch(`/api/business/students/${pupil.id}`, json(teacher.cookie, { leftAt: on(1, 10) }, 'PATCH'));
+    assert.equal((await left.json()).student.status, 'inactive');
+    months = (await get(`/api/business/students/${pupil.id}`)).account.filter((entry) => entry.kind === 'month');
+    assert.deepEqual(months.map(({ date, amount }) => ({ date, amount })), [{ date: on(2, 15), amount: -120 }, { date: monthStart(1), amount: -60 }]);
+    const owing = (await get('/api/business/payments')).overview.find((entry) => entry.studentId === pupil.id);
+    assert.equal(owing.balance, -180, 'a student who left and still owes stays on the payments list');
+
+    const future = await server.fetch(`/api/business/students/${pupil.id}`, json(teacher.cookie, { leftAt: '2999-01-01' }, 'PATCH'));
+    assert.equal(future.status, 400);
 
     for (const id of lessonIds) await server.fetch(`/api/business/lessons/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
     await server.fetch(`/api/business/students/${pupil.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
