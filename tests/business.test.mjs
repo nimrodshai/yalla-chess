@@ -269,6 +269,7 @@ describe('business API', () => {
     await log({ date: on(2, 16), groupId: 'rookies', studentIds: [pupil.id] });
     await log({ date: on(2, 23), groupId: 'rookies', studentIds: [pupil.id] });
     await log({ date: on(1, 5), groupId: 'rookies', studentIds: [pupil.id] });
+    await log({ date: on(1, 20), groupId: 'rookies', studentIds: [pupil.id] });
     let months = (await get(`/api/business/students/${pupil.id}`)).account.filter((entry) => entry.kind === 'month');
     assert.deepEqual(months.slice(0, 2).map(({ date, amount, count }) => ({ date, amount, count })), [
       { date: on(2, 15), amount: -120, count: 2 },
@@ -280,12 +281,13 @@ describe('business API', () => {
       await log({ date: today, durationMinutes: 60, kind: 'private', studentIds: [pupil.id] });
       const status = (await get(`/api/business/students/${pupil.id}`)).payment;
       assert.equal(status.pending.amount, 80);
+      assert.equal(status.nextChargeAmount, 80, 'the next charge is the month-end lessons, not next month\'s fee with them');
       assert.ok(!(await get(`/api/business/students/${pupil.id}`)).account.some((entry) => entry.kind === 'lessons'), 'not charged yet');
       await server.fetch(`/api/business/lessons/${lessonIds.pop()}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
     }
 
-    // Left on the 10th of last month after one lesson: that month is one
-    // lesson at 60, and nothing after it.
+    // Left on the 10th of last month: that month is the one lesson before
+    // it at 60; the one on the 20th, and anything later, is not charged.
     const left = await server.fetch(`/api/business/students/${pupil.id}`, json(teacher.cookie, { leftAt: on(1, 10) }, 'PATCH'));
     assert.equal((await left.json()).student.status, 'inactive');
     months = (await get(`/api/business/students/${pupil.id}`)).account.filter((entry) => entry.kind === 'month');
@@ -298,6 +300,15 @@ describe('business API', () => {
 
     for (const id of lessonIds) await server.fetch(`/api/business/lessons/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
     await server.fetch(`/api/business/students/${pupil.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+  });
+
+  it('keeps a lesson charged before charges recorded their billing, whatever its price becomes', async () => {
+    const { studentAccount } = await import('../lib/business.mjs');
+    const student = { id: 's1', currency: 'USD', joinedAt: '2026-01-01', prices: [{ id: 'p1', kind: 'any', model: 'monthly', amount: 200 }] };
+    const lesson = { id: 'l1', date: '2026-01-10', status: 'held', studentIds: ['s1'], attendance: {}, groupId: '', charges: { s1: { amount: 70, currency: 'USD', priceId: 'p1' } } };
+    const account = studentAccount(student, [], [lesson], { usdToIls: 3.7 }, '2026-01-20');
+    assert.ok(!account.entries.some((entry) => entry.kind === 'lessons'), 'still this month');
+    assert.equal(account.pending.amount, 70);
   });
 
   it('keeps what a lesson cost one student when another is given a different price', async () => {
