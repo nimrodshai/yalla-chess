@@ -351,7 +351,7 @@ describe('business API', () => {
     await server.fetch('/api/business/settings', json(teacher.cookie, { defaultPrices: { USD: { private: 70 } } }, 'PUT'));
     assert.deepEqual(await read(), { ILS: { group: 200, private: 140 }, USD: { group: 120, private: 70 } });
     // Below zero or empty keeps the price it had.
-    await server.fetch('/api/business/settings', json(teacher.cookie, { defaultPrices: { USD: { group: -5 }, ILS: { private: '' } } }, 'PUT'));
+    await server.fetch('/api/business/settings', json(teacher.cookie, { defaultPrices: { USD: { group: -5, private: -0.001 }, ILS: { private: '', group: 'abc' } } }, 'PUT'));
     assert.deepEqual(await read(), { ILS: { group: 200, private: 140 }, USD: { group: 120, private: 70 } });
     await server.fetch('/api/business/settings', json(teacher.cookie, { defaultPrices: { USD: { private: 65 } } }, 'PUT'));
   });
