@@ -258,6 +258,8 @@
     const code = countryCode(value);
     return COUNTRIES.includes(code) ? t(`countryName.${code}`) : code;
   };
+  // The dashboard counts students by country with the same reading.
+  window.VIEWS.countryName = countryName;
 
   // Canada and the USA are big enough that the country alone does not say
   // much, so picking either opens a line for where in it.

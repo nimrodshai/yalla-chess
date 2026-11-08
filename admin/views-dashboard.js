@@ -157,8 +157,10 @@
 
   window.VIEWS.dashboard = async ({ refresh }) => {
     if (!window.APP.isAdmin) return teacherDashboard(refresh);
-    const [data, leadsResponse] = await Promise.all([api('/overview'), api('/leads')]);
+    const [data, leadsResponse, studentsResponse] = await Promise.all([api('/overview'), api('/leads'), api('/students')]);
     const leads = leadsResponse.leads;
+    // The same students as the active count above: active and on trial.
+    const students = studentsResponse.students.filter((student) => ['active', 'trial'].includes(student.status));
     const groups = window.APP.groups.filter((group) => group.profile.status !== 'closed');
     const name = window.SETTINGS.teacherName || window.APP.user.firstName || '';
     const s = data.stats;
@@ -170,13 +172,31 @@
       h('a', { class: 'btn btn-primary', href: '#/students?new=1' }, `+ ${t('newStudent')}`)
     ]);
 
-    const stats = h('div', { class: 'stats' },
+    // ---- active students by country, the largest first; no country last
+    const byCountry = {};
+    for (const student of students) {
+      const name = window.VIEWS.countryName(student.country) || t('countryUnknown');
+      byCountry[name] = (byCountry[name] || 0) + 1;
+    }
+    const countries = Object.entries(byCountry).sort(([a, x], [b, y]) => (a === t('countryUnknown')) - (b === t('countryUnknown')) || y - x || a.localeCompare(b));
+    const most = Math.max(1, ...countries.map(([, n]) => n));
+    const countriesStat = countries.length ? h('div', { class: 'stat stat-wide' },
+      h('div', { class: 'stat-label' }, t('studentsByCountry')),
+      h('div', { class: 'hbars' }, countries.map(([name, n]) => h('div', { class: 'hbar-row' },
+        h('div', { class: 'hbar-label' }, name),
+        h('div', { class: 'hbar-track' }, h('div', { class: 'hbar', style: { width: `${(n / most) * 100}%` } })),
+        h('div', { class: 'hbar-value' }, n)
+      )))
+    ) : null;
+
+    const stats = h('div', { class: 'stats stats-widgets' },
       stat(t('statActive'), s.activeStudents, { sub: t('statPrivateGroup', { private: s.privateStudents, group: s.groupStudents }) }),
       stat(t('statGroups'), groups.length),
       stat(t('statFreeSeats'), freeSeats, { tone: freeSeats ? 'gold' : '' }),
       stat(t('statLeads'), leads.length),
       stat(t('statToCollect'), toCollect, { tone: data.paymentsOverdue.length ? 'danger' : toCollect ? 'warn' : 'sage' }),
-      stat(t('statMonthIncome'), fmtMoney(s.monthIncome, 'ILS'), { tone: 'sage' })
+      stat(t('statMonthIncome'), fmtMoney(s.monthIncome, 'ILS'), { tone: 'sage' }),
+      countriesStat
     );
 
     // ---- today's lessons, in order
