@@ -51,8 +51,10 @@
             element.classList.remove('invalid');
             // Show what the server kept (an empty number falls back to its
             // default), unless the field has been edited since this save.
+            // A dotted name (defaultPrices.ILS.group) reads the nested value.
             const current = (versions.get(element) || 0) === version;
-            if (current && element.name in saved && document.activeElement !== element) element.value = saved[element.name];
+            const kept = element.name.split('.').reduce((value, key) => (value && typeof value === 'object' ? value[key] : undefined), saved);
+            if (current && kept !== undefined && typeof kept !== 'object' && document.activeElement !== element) element.value = kept;
           } catch (error) {
             if ((versions.get(element) || 0) === version) {
               failures.set(element, error.message);
