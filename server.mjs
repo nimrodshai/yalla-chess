@@ -41,7 +41,7 @@ import {
 } from './lib/db.mjs';
 import { withWriteLock } from './lib/mutex.mjs';
 import { isBusinessStoreEmpty, openBusinessStore, teachers as teacherRecords } from './lib/business-db.mjs';
-import { billingByPhone, forgetGroup, getSettings, groupHasStudents, handleBusinessRequest, HttpError, teacherForPhone, teacherGroupIds } from './lib/business.mjs';
+import { billingByPhone, forgetGroup, getSettings, groupHasStudents, handleBusinessRequest, HttpError, migrateStudentPrices, teacherForPhone, teacherGroupIds } from './lib/business.mjs';
 import { seedBusinessDemo } from './lib/business-seed.mjs';
 
 const ROOT = process.cwd();
@@ -2774,6 +2774,8 @@ async function syncTeacherAccounts() {
 
 openDatabase();
 openBusinessStore();
+const pricesMigrated = migrateStudentPrices();
+if (pricesMigrated) logInfo('business.prices_migrated', { students: pricesMigrated });
 // Before seeding, so a fresh database's demo teacher accounts stay teachers.
 await splitStaffRoles();
 await seedDatabase();

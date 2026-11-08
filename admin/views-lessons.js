@@ -170,6 +170,9 @@
       title: lesson ? t('editLesson') : t('newLesson'),
       body: (dialog) => {
         const attendanceState = { ...(l.attendance || {}) };
+        // A student with more than one price can be given a price other
+        // than the one the lesson matches.
+        const priceChoices = { ...(l.priceChoices || {}) };
 
         // Games come from the official list; one that was deleted since
         // stays on the lesson under its remembered name until removed here.
@@ -234,7 +237,16 @@
           for (const student of list) {
             const current = attendanceState[student.id] || 'present';
             const seg = h('div', { class: 'seg' }, window.VOCAB.attendance.map((status) => h('button', { type: 'button', class: current === status ? 'active' : '', onclick: (event) => { attendanceState[student.id] = status; for (const sibling of seg.children) sibling.classList.remove('active'); event.currentTarget.classList.add('active'); } }, t(`attendance.${status}`))));
-            attendanceGrid.append(h('div', { class: 'attendance-item' }, h('span', { class: 'small strong' }, student.name), seg));
+            const own = window.APP.isAdmin ? (student.prices || []) : [];
+            let picker = null;
+            if (own.length > 1) {
+              picker = h('select', { class: 'price-pick', 'aria-label': t('lessonPrice') },
+                h('option', { value: '' }, t('priceAutomatic')),
+                own.map((item) => h('option', { value: item.id }, window.UI.priceText(item, student.currency))));
+              picker.value = own.some((item) => item.id === priceChoices[student.id]) ? priceChoices[student.id] : '';
+              picker.addEventListener('change', () => { priceChoices[student.id] = picker.value; });
+            }
+            attendanceGrid.append(h('div', { class: 'attendance-item' }, h('span', { class: 'small strong' }, student.name), picker, seg));
           }
         };
         const groupField = field(t('forGroup'), groupSelect);
@@ -297,6 +309,7 @@
           }
           values.gameRefs = pickedGames.map((game) => ({ id: game.id, title: game.title }));
           values.attendance = Object.fromEntries(Object.entries(attendanceState).filter(([id]) => selectedStudents.has(id)));
+          if (window.APP.isAdmin) values.priceChoices = Object.fromEntries(Object.entries(priceChoices).filter(([id, priceId]) => priceId && selectedStudents.has(id)));
           // The server picks a new lesson's teacher from the teachers list
           // (the group's, else the default); an edit keeps the lesson's own.
           try {

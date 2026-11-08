@@ -8452,20 +8452,21 @@
         accountRoleTeacher: 'Teacher account',
         accountRoleStudent: 'Student account',
         billingSectionTitle: 'Student file (management app)',
-        billingPaidUntil: 'Paid up. Next payment due {date}',
-        billingDueSoon: 'Payment due {date} (in {days} days)',
-        billingDueToday: 'Payment due today ({date})',
-        billingOverdue: 'Overdue: payment was due {date} ({days} days ago)',
-        billingLessonsLeft: 'Lesson package: {n} lessons left',
-        billingLessonsOut: 'Lesson package used up: a new package is due',
+        billingOverdue: 'Owes {amount}, since {date} ({days} days ago)',
+        billingDueToday: 'Owes {amount}, due today',
+        billingCredit: '{amount} in credit',
+        billingSettled: 'Nothing owed',
+        billingNextCharge: 'next charge {date} ({amount})',
         billingInactive: 'Student is {status} in the management app',
         billingLastPayment: 'Last payment {date} ({amount})',
         billingNoStudent: 'No student file in the management app yet, so no payment tracking for this account.',
+        billingKindGroup: 'Group',
+        billingKindPrivate: 'Private',
+        billingKindAny: 'Any lesson',
+        billingPerLesson: '{amount} a lesson',
         billingMonthlyPrice: '{amount} / month',
-        billingPackagePrice: '{amount} × {n} lessons',
-        billingOwes: 'Per lesson: owes {amount}',
-        billingCredit: 'Per lesson: {amount} in credit',
-        billingLessonPrice: '{n} min {amount}',
+        billingPackagePrice: '{amount} for {n} lessons',
+        billingMinutes: '{n} min',
         billingOpenStudent: 'Open student file',
         billingCreateStudent: 'Create student file',
         userGroupsLabel: 'Groups',
@@ -8619,20 +8620,21 @@
         accountRoleTeacher: 'חשבון מורה',
         accountRoleStudent: 'חשבון תלמיד',
         billingSectionTitle: 'תיק תלמיד (מערכת הניהול)',
-        billingPaidUntil: 'שולם. התשלום הבא ב-{date}',
-        billingDueSoon: 'תשלום מגיע ב-{date} (בעוד {days} ימים)',
-        billingDueToday: 'תשלום מגיע היום ({date})',
-        billingOverdue: 'באיחור: התשלום היה אמור להגיע ב-{date} (לפני {days} ימים)',
-        billingLessonsLeft: 'חבילת שיעורים: נותרו {n} שיעורים',
-        billingLessonsOut: 'חבילת השיעורים נגמרה: צריך לרכוש חבילה חדשה',
+        billingOverdue: 'חוב של {amount} מ-{date} (לפני {days} ימים)',
+        billingDueToday: 'חוב של {amount}, לתשלום היום',
+        billingCredit: 'זכות של {amount}',
+        billingSettled: 'אין חוב',
+        billingNextCharge: 'חיוב הבא {date} ({amount})',
         billingInactive: 'התלמיד {status} במערכת הניהול',
         billingLastPayment: 'תשלום אחרון {date} ({amount})',
         billingNoStudent: 'עדיין אין תיק תלמיד במערכת הניהול, ולכן אין מעקב תשלומים לחשבון הזה.',
+        billingKindGroup: 'קבוצתי',
+        billingKindPrivate: 'פרטי',
+        billingKindAny: 'כל שיעור',
+        billingPerLesson: '{amount} לשיעור',
         billingMonthlyPrice: '{amount} לחודש',
-        billingPackagePrice: '{amount} × {n} שיעורים',
-        billingOwes: 'לפי שיעור: חוב של {amount}',
-        billingCredit: 'לפי שיעור: יתרה של {amount}',
-        billingLessonPrice: '{n} דק׳ {amount}',
+        billingPackagePrice: '{amount} ל-{n} שיעורים',
+        billingMinutes: '{n} דק׳',
         billingOpenStudent: 'לתיק התלמיד',
         billingCreateStudent: 'יצירת תיק תלמיד',
         userGroupsLabel: 'קבוצות',
@@ -9723,36 +9725,39 @@
       if (billing.state === 'inactive') {
         text = t.billingInactive.replace('{status}', getPortalBusinessStatusLabel(billing.status));
         tone = 'info';
-      } else if (billing.billingType === 'monthly') {
-        if (billing.state === 'overdue') { text = t.billingOverdue.replace('{date}', date).replace('{days}', String(days)); tone = 'error'; }
-        else if (billing.state === 'due_soon' && days === 0) { text = t.billingDueToday.replace('{date}', date); tone = 'info'; }
-        else if (billing.state === 'due_soon') { text = t.billingDueSoon.replace('{date}', date).replace('{days}', String(days)); tone = 'info'; }
-        else { text = t.billingPaidUntil.replace('{date}', date); }
-      } else if (billing.balance !== null && billing.balance !== undefined) {
-        // Lessons priced by length: the balance is in money.
-        const amount = formatPortalMoney(Math.abs(billing.balance), billing.currency);
-        if (billing.balance < 0) { text = t.billingOwes.replace('{amount}', amount); tone = 'error'; }
-        else { text = t.billingCredit.replace('{amount}', amount); tone = billing.state === 'ok' ? 'success' : billing.state === 'overdue' ? 'error' : 'info'; }
       } else {
-        const left = Number(billing.lessonsRemaining || 0);
-        if (left <= 0) { text = t.billingLessonsOut; tone = 'error'; }
-        else { text = t.billingLessonsLeft.replace('{n}', String(left)); tone = left <= 2 ? 'info' : 'success'; }
+        // One balance per student: what they owe, else their credit and the
+        // next monthly charge.
+        const money = (amount) => formatPortalMoney(amount, billing.currency);
+        if (billing.balance < 0) {
+          text = days && billing.state === 'overdue'
+            ? t.billingOverdue.replace('{amount}', money(-billing.balance)).replace('{date}', date).replace('{days}', String(days))
+            : t.billingDueToday.replace('{amount}', money(-billing.balance));
+          tone = billing.state === 'overdue' ? 'error' : 'info';
+        } else {
+          text = billing.balance > 0 ? t.billingCredit.replace('{amount}', money(billing.balance)) : t.billingSettled;
+          if (billing.nextPaymentAt && billing.nextChargeAmount !== null) text += ` · ${t.billingNextCharge.replace('{date}', date).replace('{amount}', money(billing.nextChargeAmount))}`;
+          tone = billing.state === 'ok' ? 'success' : 'info';
+        }
       }
       line.dataset.tone = tone;
       line.textContent = text;
       file.appendChild(line);
 
       const details = [];
-      const price = formatPortalMoney(billing.price, billing.currency);
-      if (billing.billingType === 'per_lesson' && billing.lessonPrices?.length) {
-        details.push(billing.lessonPrices.map((row) => t.billingLessonPrice.replace('{n}', String(row.durationMinutes)).replace('{amount}', formatPortalMoney(row.price, billing.currency))).join(' · '));
-      } else if (price) {
-        details.push(billing.billingType === 'monthly'
-          ? t.billingMonthlyPrice.replace('{amount}', price)
-          : t.billingPackagePrice.replace('{amount}', price).replace('{n}', String(billing.packageSize || 1)));
+      const kinds = { group: t.billingKindGroup, private: t.billingKindPrivate, any: t.billingKindAny };
+      for (const item of billing.prices || []) {
+        const amount = formatPortalMoney(item.amount, billing.currency);
+        details.push([
+          kinds[item.kind],
+          item.durationMinutes ? t.billingMinutes.replace('{n}', String(item.durationMinutes)) : '',
+          item.model === 'monthly' ? t.billingMonthlyPrice.replace('{amount}', amount)
+            : item.model === 'package' ? t.billingPackagePrice.replace('{amount}', amount).replace('{n}', String(item.packageSize))
+            : t.billingPerLesson.replace('{amount}', amount)
+        ].filter(Boolean).join(' '));
       }
       if (billing.lastPaymentAt) {
-        details.push(t.billingLastPayment.replace('{date}', formatPortalDateOnly(billing.lastPaymentAt)).replace('{amount}', formatPortalMoney(billing.lastPaymentAmount, billing.currency)));
+        details.push(t.billingLastPayment.replace('{date}', formatPortalDateOnly(billing.lastPaymentAt)).replace('{amount}', formatPortalMoney(billing.lastPaymentAmount, billing.lastPaymentCurrency || billing.currency)));
       }
       if (details.length) {
         const meta = document.createElement('div');

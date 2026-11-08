@@ -40,10 +40,9 @@
     if (tab === 'overview') {
       const row = (entry) => h('tr', null,
         h('td', null, link(`#/students/${entry.studentId}`, h('span', { class: 'strong' }, entry.name)), h('div', { class: 'muted tiny' }, entry.parentName)),
-        h('td', null, t(`billing.${entry.billingType}`)),
-        h('td', { class: 'num' }, entry.billingType === 'per_lesson' && entry.lessonPrices?.length ? window.UI.lessonPricesText(entry.lessonPrices, entry.currency) : fmtMoney(entry.price, entry.currency)),
-        h('td', null, entry.lastPaymentAt ? `${fmtDate(entry.lastPaymentAt, { year: 'numeric' })} · ${fmtMoney(entry.lastPaymentAmount, entry.currency)}` : '—'),
-        h('td', null, entry.billingType === 'monthly' ? fmtDate(entry.nextPaymentAt, { year: 'numeric' }) : window.UI.lessonsBalanceText(entry)),
+        h('td', { class: 'small' }, entry.prices.length ? entry.prices.map((item) => h('div', null, window.UI.priceText(item, entry.currency))) : h('span', { class: 'muted' }, t('noPrices'))),
+        h('td', null, entry.lastPaymentAt ? `${fmtDate(entry.lastPaymentAt, { year: 'numeric' })} · ${fmtMoney(entry.lastPaymentAmount, entry.lastPaymentCurrency || entry.currency)}` : '—'),
+        h('td', null, window.UI.standingText(entry)),
         h('td', null, statusBadge(entry.state, 'pay')),
         h('td', null, h('div', { class: 'row', style: { gap: '4px', justifyContent: 'flex-end' } },
           entry.state !== 'ok' ? h('button', { class: 'btn btn-xs btn-wa', type: 'button', onclick: () => composeMessage({ kind: 'payment_reminder', studentId: entry.studentId, name: entry.parentName || entry.name, onSent: refresh }) }, t('remind')) : null,
@@ -51,7 +50,7 @@
         ))
       );
       const table = (rows) => h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
-        h('thead', null, h('tr', null, h('th', null, t('student')), h('th', null, t('billingType')), h('th', { class: 'num' }, t('price')), h('th', null, t('lastPayment')), h('th', null, t('nextPaymentAt')), h('th', null, t('status')), h('th', null, ''))),
+        h('thead', null, h('tr', null, h('th', null, t('student')), h('th', null, t('prices')), h('th', null, t('lastPayment')), h('th', null, t('balance')), h('th', null, t('status')), h('th', null, ''))),
         h('tbody', null, rows.map(row))
       ));
       body = h('div', { class: 'stack' },

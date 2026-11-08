@@ -347,7 +347,13 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .schedule-rows { display: flex; flex-direction: column; gap: 6px; }
 .schedule-row { display: grid; grid-template-columns: 1fr 110px 90px 36px; gap: 6px; align-items: center; }
 .schedule-row select, .schedule-row input { height: 36px; border: 1px solid var(--line-strong); border-radius: 9px; padding: 0 8px; }
-.schedule-row.price-row { grid-template-columns: 90px 140px; }
+.price-rows { display: flex; flex-direction: column; gap: 6px; }
+.price-row { display: grid; grid-template-columns: 1fr 1fr 96px 84px 110px 36px; gap: 6px; align-items: center; }
+.price-row select, .price-row input { height: 36px; border: 1px solid var(--line-strong); border-radius: 9px; padding: 0 8px; min-width: 0; }
+.price-row .off { visibility: hidden; }
+.price-head { font-size: 12px; color: var(--text-light); margin-bottom: -2px; }
+.price-head[hidden] { display: none; }
+.attendance-item .price-pick { height: 28px; font-size: 12px; max-width: 160px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 0 6px; }
 .attendance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
 .attendance-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
 .attendance-item .seg button { height: 28px; padding: 0 8px; font-size: 12px; }
@@ -600,7 +606,15 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
   .modal-backdrop { padding: 12px 8px; }
   .modal { padding: 16px; border-radius: 14px; }
   .schedule-row { grid-template-columns: 1fr 1fr; }
-  .schedule-row.price-row { grid-template-columns: 90px 1fr; }
+  /* Two lines: kind, billing and remove; then length, lessons, amount. */
+  .price-row { grid-template-columns: repeat(6, minmax(0, 1fr)); padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .price-row > :nth-child(1) { grid-column: span 3; }
+  .price-row > :nth-child(2) { grid-column: span 2; }
+  .price-row > :nth-child(3) { grid-row: 2; grid-column: 1 / span 2; }
+  .price-row > :nth-child(4) { grid-row: 2; grid-column: 3 / span 2; }
+  .price-row > :nth-child(5) { grid-row: 2; grid-column: 5 / span 2; }
+  .price-row > :nth-child(6) { grid-row: 1; grid-column: 6; }
+  .price-head { display: none; }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .stat-value { font-size: 22px; }
   .main--board { height: auto; overflow: visible; display: block; }

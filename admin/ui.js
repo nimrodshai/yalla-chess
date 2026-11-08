@@ -475,18 +475,88 @@
     return `\u200e${symbol}${Number(amount).toLocaleString('en-US', { maximumFractionDigits: 2 })}\u200e`;
   }
 
-  // Where a student who does not pay monthly stands: in money when their
-  // lessons are priced by length, else in lessons left.
-  function lessonsBalanceText(entry, currency = entry.currency) {
-    if (entry.balance === null || entry.balance === undefined) return t('lessonsLeft', { n: entry.lessonsRemaining ?? 0 });
+  // Where a student's account stands: what they owe, their credit, or
+  // settled.
+  function balanceText(entry, currency = entry.currency) {
+    if (entry.balance === null || entry.balance === undefined || entry.balance === 0) return t('balanceSettled');
     return entry.balance < 0
       ? t('balanceOwes', { amount: fmtMoney(-entry.balance, currency) })
       : t('balanceCredit', { amount: fmtMoney(entry.balance, currency) });
   }
 
-  // "60 min ₪70 · 40 min ₪50" for prices by lesson length.
-  function lessonPricesText(prices = [], currency = 'ILS') {
-    return prices.map((row) => `${row.durationMinutes} ${t('minutes')} ${fmtMoney(row.price, currency)}`).join(' · ');
+  // The balance with when it matters: how late what is owed is, else when
+  // the next monthly charge comes.
+  function standingText(entry, currency = entry.currency) {
+    const parts = [balanceText(entry, currency)];
+    if (entry.balance < 0 && entry.daysUntilDue !== null && entry.daysUntilDue !== undefined) {
+      parts.push(entry.daysUntilDue < 0 ? t('daysLate', { days: -entry.daysUntilDue }) : t('dueToday'));
+    } else if (entry.nextPaymentAt && entry.nextChargeAmount !== null && entry.nextChargeAmount !== undefined) {
+      parts.push(t('nextChargeOn', { date: fmtDate(entry.nextPaymentAt), amount: fmtMoney(entry.nextChargeAmount, currency) }));
+    }
+    if (entry.unpricedLessons) parts.push(t('unpricedLessons', { n: entry.unpricedLessons }));
+    return parts.join(' · ');
+  }
+
+  // One price from a student's list: "Private · 60 min · ₪70 a lesson".
+  function priceText(item, currency = 'ILS') {
+    const amount = fmtMoney(item.amount, currency);
+    return [
+      t(`priceKind.${item.kind}`),
+      item.durationMinutes ? `${item.durationMinutes} ${t('minutes')}` : '',
+      item.model === 'monthly' ? t('priceMonthly', { amount }) : item.model === 'package' ? t('pricePackage', { amount, n: item.packageSize }) : t('pricePerLesson', { amount })
+    ].filter(Boolean).join(' · ');
+  }
+
+  function pricesText(prices = [], currency = 'ILS') {
+    return prices.length ? prices.map((item) => priceText(item, currency)).join(' / ') : t('noPrices');
+  }
+
+  // A student's price list as editable rows: which lessons, how billed,
+  // length (not for monthly), lessons in a package, and the amount. Rows
+  // keep their price's id so the server knows an edit from a new price.
+  // The inputs have no name, so formValues leaves them out; read() returns
+  // the list.
+  function priceEditor(prices = [], { onChange } = {}) {
+    const container = h('div', { class: 'price-rows' });
+    const changed = () => { if (onChange) onChange(); };
+    const addRow = (item = { kind: 'private', model: 'per_lesson', durationMinutes: 60, amount: null }) => {
+      const kind = h('select', { 'aria-label': t('priceKindLabel') }, window.VOCAB.priceKinds.map((value) => h('option', { value }, t(`priceKind.${value}`))));
+      kind.value = item.kind;
+      const model = h('select', { 'aria-label': t('priceModelLabel') }, window.VOCAB.priceModels.map((value) => h('option', { value }, t(`priceModel.${value}`))));
+      model.value = item.model;
+      const minutes = h('input', { type: 'number', min: 15, max: 240, step: 5, inputmode: 'numeric', value: item.durationMinutes ?? '', placeholder: t('priceAnyLength'), 'aria-label': t('duration') });
+      const size = h('input', { type: 'number', min: 1, max: 200, inputmode: 'numeric', value: item.packageSize ?? '', placeholder: t('packageLessons'), 'aria-label': t('packageLessons') });
+      const amount = h('input', { type: 'number', min: 0, step: '0.01', inputmode: 'decimal', value: item.amount ?? '', placeholder: t('amount'), 'aria-label': t('amount') });
+      const node = h('div', { class: 'price-row' }, kind, model, minutes, size, amount,
+        h('button', { class: 'btn btn-xs btn-ghost', type: 'button', 'aria-label': t('delete'), onclick: () => { node.remove(); changed(); } }, '✕'));
+      // A field that does not apply keeps its column, so amounts line up.
+      const sync = () => {
+        minutes.classList.toggle('off', model.value === 'monthly');
+        size.classList.toggle('off', model.value !== 'package');
+      };
+      model.addEventListener('change', sync);
+      node.addEventListener('change', changed);
+      sync();
+      node.read = () => ({
+        id: item.id || '',
+        kind: kind.value,
+        model: model.value,
+        durationMinutes: model.value === 'monthly' || minutes.value === '' ? null : Number(minutes.value),
+        packageSize: model.value === 'package' && size.value !== '' ? Number(size.value) : null,
+        amount: amount.value === '' ? null : Number(amount.value)
+      });
+      container.append(node);
+    };
+    for (const item of prices) addRow(item);
+    const head = h('div', { class: 'price-row price-head', 'aria-hidden': 'true' },
+      ...[t('priceKindLabel'), t('priceModelLabel'), t('duration'), t('packageLessons'), t('amount')].map((label) => h('span', null, label)), h('span'));
+    const wrapper = h('div', { class: 'stack' }, head, container, h('button', { class: 'btn btn-sm', type: 'button', onclick: () => { addRow(); changed(); } }, `+ ${t('addPrice')}`));
+    const syncHead = () => { head.hidden = !container.children.length; };
+    new MutationObserver(syncHead).observe(container, { childList: true });
+    syncHead();
+    wrapper.read = () => Array.from(container.children).map((node) => node.read());
+    wrapper.add = (item) => { addRow(item); changed(); };
+    return wrapper;
   }
 
   function fmtMonth(label) {
@@ -750,6 +820,13 @@
   }
 
   // ------------------------------------------------------------- payment modal
+  // What a new payment most likely is: what the student owes, else the
+  // next monthly charge.
+  function suggestedAmount(student) {
+    if (student.balance < 0) return -student.balance;
+    return student.nextChargeAmount ?? null;
+  }
+
   function paymentDialog({ student, payment = null, onSaved }) {
     const isEdit = Boolean(payment);
     modal({
@@ -757,14 +834,11 @@
       size: 'modal-sm',
       body: (dialog) => {
         const form = h('form', { class: 'form' },
-          field(t('amount'), h('input', { name: 'amount', type: 'number', step: '0.01', min: 0, value: payment?.amount ?? (student.balance < 0 ? -student.balance : student.price) ?? '', required: true })),
+          field(t('amount'), h('input', { name: 'amount', type: 'number', step: '0.01', min: 0, value: payment?.amount ?? suggestedAmount(student) ?? '', required: true })),
           field(t('currency'), select('currency', window.VOCAB.currencies, payment?.currency || student.currency || 'ILS')),
           field(t('paidAt'), h('input', { name: 'paidAt', type: 'date', value: payment?.paidAt || todayIso() })),
           field(t('method'), enumSelect('method', window.VOCAB.paymentMethods, 'method', payment?.method || 'bit')),
           field(t('periodLabel'), h('input', { name: 'periodLabel', type: 'month', value: payment?.periodLabel || todayIso().slice(0, 7) })),
-          // Prices by length keep the balance in money, so a lesson count
-          // would mean nothing.
-          student.lessonPrices?.length && student.billingType === 'per_lesson' ? null : field(t('lessonsCount'), h('input', { name: 'lessonsCount', type: 'number', min: 0, value: payment?.lessonsCount ?? (student.billingType === 'package' ? student.packageSize || '' : '') })),
           checkbox('receiptIssued', payment?.receiptIssued, t('receiptIssued')),
           field(t('receiptNumber'), input('receiptNumber', payment?.receiptNumber || '')),
           field(t('notes'), textarea('notes', payment?.notes || '', { rows: 2 }), { full: true }),
@@ -905,7 +979,7 @@
 
   window.UI = {
     h, append, clear, api, toast, modal, confirmDialog, field, input, phoneInput, fmtPhone, timezoneSelect, textarea, select, enumSelect, teacherSelect, checkbox, formValues, errorBox,
-    scheduleEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, lessonsBalanceText, lessonPricesText, todayIso, addDays, weekdayOf,
+    scheduleEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, balanceText, standingText, priceText, pricesText, priceEditor, todayIso, addDays, weekdayOf,
     initials, scheduleText, ratingsText, statusBadge, board, animateBoard, gameChips, suggestedGame, nextLesson, composeMessage, paymentDialog, pageHead, card, stat, empty, link, masonry, t, guard: guarded
   };
 })();

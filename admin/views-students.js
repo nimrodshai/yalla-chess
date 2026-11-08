@@ -85,21 +85,19 @@
       ),
       h('div', { class: 'row' },
         h('button', { class: 'btn btn-wa', type: 'button', onclick: () => composeMessage({ kind: 'progress', studentId: student.id, name: student.parentName || student.name, onSent: refresh }) }, t('sendMessage')),
-        admin ? h('button', { class: 'btn', type: 'button', onclick: () => paymentDialog({ student, onSaved: refresh }) }, t('recordPayment')) : null,
+        admin ? h('button', { class: 'btn', type: 'button', onclick: () => paymentDialog({ student: payer, onSaved: refresh }) }, t('recordPayment')) : null,
         admin ? h('button', { class: 'btn btn-primary', type: 'button', onclick: () => studentForm({ student, onSaved: refresh }) }, t('edit')) : null
       )
     ));
 
     const payment = data.payment;
+    // A new payment starts at what the student owes, or the next month.
+    const payer = { ...student, balance: payment?.balance, nextChargeAmount: payment?.nextChargeAmount };
     const paymentLine = admin && student.status !== 'inactive'
       ? h('div', { class: `alert ${payment.state === 'overdue' ? 'alert-danger' : payment.state === 'due_soon' ? 'alert-warn' : 'alert-sage'}` },
         statusBadge(payment.state, 'pay'),
-        h('span', null, student.billingType === 'monthly'
-          ? `${t('nextPaymentAt')}: ${fmtDate(payment.nextPaymentAt)} · ${fmtMoney(student.price, student.currency)} / ${t('billing.monthly')}`
-          : student.billingType === 'per_lesson' && student.lessonPrices?.length
-            ? `${window.UI.lessonsBalanceText(payment, student.currency)} · ${window.UI.lessonPricesText(student.lessonPrices, student.currency)}`
-            : `${t('lessonsLeft', { n: payment.lessonsRemaining ?? 0 })} · ${fmtMoney(student.price, student.currency)} × ${student.packageSize || 1}`),
-        payment.lastPaymentAt ? h('span', { class: 'muted small' }, `${t('lastPayment')}: ${fmtDate(payment.lastPaymentAt)} (${fmtMoney(payment.lastPaymentAmount, student.currency)})`) : null
+        h('span', null, window.UI.standingText(payment, student.currency)),
+        payment.lastPaymentAt ? h('span', { class: 'muted small' }, `${t('lastPayment')}: ${fmtDate(payment.lastPaymentAt)} (${fmtMoney(payment.lastPaymentAmount, payment.lastPaymentCurrency || student.currency)})`) : null
       )
       : null;
 
@@ -123,7 +121,8 @@
         detail(t('schedule'), group ? scheduleText(student.groupSchedule) : ''),
         detail(t('privateSchedule'), scheduleText(student.privateSchedule)),
         detail(t('privateZoomLink'), student.privateZoomLink ? h('a', { href: student.privateZoomLink, target: '_blank', rel: 'noopener' }, 'Zoom') : ''),
-        admin ? detail(t('billingType'), `${t(`billing.${student.billingType}`)}${student.billingDay ? ` · ${t('billingDay')} ${student.billingDay}` : ''}`) : null,
+        admin ? detail(t('prices'), h('div', null, (student.prices || []).length ? student.prices.map((item) => h('div', null, window.UI.priceText(item, student.currency))) : t('noPrices'))) : null,
+        admin && (student.prices || []).some((item) => item.model === 'monthly') ? detail(t('billingDay'), String(student.billingDay || Number((student.joinedAt || '').slice(8, 10)) || 1)) : null,
         admin ? detail(t('paymentTerms'), student.paymentTerms) : null,
         detail(t('reminders'), student.remindersEnabled ? `${t('yes')}${student.reminderLeadHours !== null ? ` · ${student.reminderLeadHours}h` : ''}` : t('no')),
         detail(t('userPhone'), student.userPhone)
@@ -169,11 +168,32 @@
         h('td', null, fmtDate(payment.paidAt, { year: 'numeric' })),
         h('td', { class: 'num strong' }, fmtMoney(payment.amount, payment.currency)),
         h('td', null, t(`method.${payment.method}`)),
-        h('td', null, payment.periodLabel, payment.lessonsCount ? ` · ${payment.lessonsCount} ${t('lessons')}` : ''),
+        h('td', null, payment.periodLabel),
         h('td', null, payment.receiptIssued ? h('span', { class: 'badge badge-sage' }, payment.receiptNumber || '✓') : h('span', { class: 'badge badge-warn' }, '—')),
         h('td', null, h('button', { class: 'btn btn-xs btn-ghost', type: 'button', onclick: () => paymentDialog({ student, payment, onSaved: refresh }) }, t('edit')))
       )))
-    )) : empty(t('noPaymentsYet')), { count: data.payments.length, sub: `${t('totalPaid')}: ${fmtMoney(payment.totalPaid, student.currency)}`, actions: [h('button', { class: 'btn btn-sm', type: 'button', onclick: () => paymentDialog({ student, onSaved: refresh }) }, `+ ${t('recordPayment')}`)] }) : null;
+    )) : empty(t('noPaymentsYet')), { count: data.payments.length, sub: `${t('totalPaid')}: ${fmtMoney(payment.totalPaid, student.currency)}`, actions: [h('button', { class: 'btn btn-sm', type: 'button', onclick: () => paymentDialog({ student: payer, onSaved: refresh }) }, `+ ${t('recordPayment')}`)] }) : null;
+
+    // Every charge and payment, newest first, with the balance after each.
+    const priceById = Object.fromEntries((student.prices || []).map((item) => [item.id, item]));
+    const accountLabel = (entry) => {
+      const item = priceById[entry.priceId];
+      const price = item ? window.UI.priceText(item, student.currency) : '';
+      if (entry.kind === 'opening') return t(entry.amount < 0 ? 'ledger.openingOwed' : 'ledger.openingCredit', { date: fmtDate(entry.date, { year: 'numeric' }) });
+      if (entry.kind === 'payment') return `${t('ledger.payment')}${entry.method ? ` · ${t(`method.${entry.method}`)}` : ''}`;
+      if (entry.kind === 'month') return [t('ledger.month', { month: window.UI.fmtMonth(entry.date.slice(0, 7)) }), price].filter(Boolean).join(' · ');
+      return [`${t(`priceKind.${entry.lessonKind}`)}${entry.topic ? `: ${entry.topic}` : ''}`, price].filter(Boolean).join(' · ');
+    };
+    const accountEntries = (data.account || []).slice().reverse();
+    const account = admin ? card(t('account'), accountEntries.length ? h('div', { class: 'table-wrap account-table' }, h('table', { class: 'table' },
+      h('thead', null, h('tr', null, h('th', null, t('date')), h('th', null, t('description')), h('th', { class: 'num' }, t('amount')), h('th', { class: 'num' }, t('balance')))),
+      h('tbody', null, accountEntries.map((entry) => h('tr', null,
+        h('td', null, entry.kind === 'opening' ? '' : fmtDate(entry.date, { year: 'numeric' })),
+        h('td', null, accountLabel(entry), entry.unpriced ? h('span', { class: 'badge badge-warn', style: { marginInlineStart: '6px' } }, t('ledger.unpriced')) : null),
+        h('td', { class: `num ${entry.amount > 0 ? 'strong' : ''}` }, entry.unpriced ? '—' : `${entry.amount > 0 ? '+' : entry.amount < 0 ? '−' : ''}${fmtMoney(Math.abs(entry.amount), student.currency)}`),
+        h('td', { class: 'num muted' }, `${entry.balance < 0 ? '−' : ''}${fmtMoney(Math.abs(entry.balance), student.currency)}`)
+      )))
+    )) : empty(t('noAccountYet')), { sub: window.UI.balanceText(payment, student.currency) }) : null;
 
     const messages = card(t('messageHistory'), data.messages.length ? h('div', { class: 'list' }, data.messages.map((message) => h('div', { class: 'list-item' },
       h('div', { class: 'list-main' },
@@ -195,7 +215,7 @@
       h('div', { class: 'breadcrumb' }, link('#/students', t('navStudents')), '›', student.name),
       head,
       paymentLine ? h('div', { style: { marginTop: '12px' } }, paymentLine) : null,
-      h('div', { style: { marginTop: '16px' } }, window.UI.masonry([details, learning, lessons, payments, messages])),
+      h('div', { style: { marginTop: '16px' } }, window.UI.masonry([details, learning, lessons, payments, account, messages].filter(Boolean))),
       danger || null
     );
   }
@@ -282,7 +302,7 @@
     // a portal account comes with its own details.
     const draft = isNew && !Object.keys(defaults).length ? readDraft() : null;
     const today = window.UI.todayIso(window.SETTINGS.businessTimezone);
-    const s = student || { status: 'active', language: 'he', level: 'basic', lessonType: 'group', billingType: 'monthly', currency: 'ILS', remindersEnabled: true, timezone: window.SETTINGS.businessTimezone, joinedAt: today, teacher: window.APP.teachers.some((teacher) => teacher.name === window.SETTINGS.teacherName) ? window.SETTINGS.teacherName : '', ...defaults, ...(draft?.values || {}) };
+    const s = student || { status: 'active', language: 'he', level: 'basic', lessonType: 'group', currency: 'ILS', remindersEnabled: true, timezone: window.SETTINGS.businessTimezone, joinedAt: today, teacher: window.APP.teachers.some((teacher) => teacher.name === window.SETTINGS.teacherName) ? window.SETTINGS.teacherName : '', ...defaults, ...(draft?.values || {}) };
 
     modal({
       title: isNew ? t('newStudent') : `${t('editStudent')}: ${[s.firstName, s.lastName].filter(Boolean).join(' ')}`,
@@ -349,63 +369,47 @@
         };
 
         // ---- step 3: money
-        const priceInput = h('input', { name: 'price', type: 'number', step: '0.01', min: 0, value: s.price ?? '', inputmode: 'decimal' });
-        let priceTouched = !isNew;
-        priceInput.addEventListener('input', () => { priceTouched = true; });
-        const billingDayField = field(t('billingDay'), h('input', { name: 'billingDay', type: 'number', min: 1, max: 28, value: s.billingDay ?? '', placeholder: '1' }));
-        const packageField = field(t('packageSize'), h('input', { name: 'packageSize', type: 'number', min: 1, value: s.packageSize ?? '', placeholder: '8' }));
-        // Per lesson, lessons of different lengths can cost different
-        // amounts: one price per length in the private schedule, plus any
-        // length already priced. The inputs have no name, so they are read
-        // on their own; an empty one falls back to the price above.
-        const lengthPrices = new Map((s.lessonPrices || []).map((row) => [row.durationMinutes, row.price]));
-        const lessonPriceRows = h('div', { class: 'schedule-rows' });
-        const lessonPricesField = field(t('lessonPrices'), lessonPriceRows, { full: true, hint: t('lessonPricesHint') });
-        const pricedLengths = () => {
-          const lengths = new Set(form.elements.lessonType.value === 'group' ? [] : schedule.read().map((row) => row.durationMinutes));
-          for (const [length, price] of lengthPrices) if (price !== null) lengths.add(length);
-          return [...lengths].sort((a, b) => b - a);
-        };
-        const readLessonPrices = () => form.elements.billingType.value === 'per_lesson'
-          ? pricedLengths().filter((length) => lengthPrices.get(length) !== null && lengthPrices.get(length) !== undefined).map((length) => ({ durationMinutes: length, price: lengthPrices.get(length) }))
-          : [];
-        const syncLessonPrices = () => {
-          const lengths = pricedLengths();
-          lessonPricesField.hidden = form.elements.billingType.value !== 'per_lesson' || lengths.length < 2;
-          window.UI.clear(lessonPriceRows);
-          for (const length of lengths) {
-            const priceField = h('input', { type: 'number', step: '0.01', min: 0, inputmode: 'decimal', value: lengthPrices.get(length) ?? '', placeholder: priceInput.value, 'aria-label': `${length} ${t('minutes')}` });
-            priceField.addEventListener('input', () => lengthPrices.set(length, priceField.value === '' ? null : Number(priceField.value)));
-            lessonPriceRows.append(h('div', { class: 'schedule-row price-row' }, h('span', null, `${length} ${t('minutes')}`), priceField));
-          }
-        };
+        // The student's own prices: one per kind of lesson they take, each
+        // billed per lesson, monthly or as a package. A new student starts
+        // from what fits their lessons when the step opens: their group's
+        // price a month, the default private price for each private length.
+        let pricesTouched = !isNew || Boolean(s.prices?.length);
+        const prices = window.UI.priceEditor(s.prices || [], { onChange: () => { pricesTouched = true; syncBilling(); } });
+        const billingDayField = field(t('billingDay'), h('input', { name: 'billingDay', type: 'number', min: 1, max: 28, value: s.billingDay ?? '', placeholder: '1' }), { hint: t('billingDayHint') });
         const billing = h('div', { class: 'form' },
-          field(t('billingType'), choice('billingType', window.VOCAB.billingTypes.map((value) => [value, t(`billing.${value}`)]), s.billingType), { full: true }),
-          field(t('price'), priceInput),
+          field(t('prices'), prices, { full: true, hint: t('pricesHint') }),
           field(t('currency'), select('currency', window.VOCAB.currencies, s.currency || 'ILS')),
           billingDayField,
-          packageField,
-          lessonPricesField,
-          field(t('nextPaymentAt'), h('input', { name: 'nextPaymentAt', type: 'date', value: s.nextPaymentAt || '' }), { hint: t('wizNextPaymentHint') }),
           h('div', { class: 'field' }, checkbox('remindersEnabled', s.remindersEnabled, t('remindersEnabled')))
         );
         const syncBilling = () => {
-          const type = form.elements.billingType.value;
-          billingDayField.hidden = type !== 'monthly';
-          packageField.hidden = type !== 'package';
-          syncLessonPrices();
+          billingDayField.hidden = !prices.read().some((item) => item.model === 'monthly');
         };
-        // A group's own price is the sensible default for a new student.
-        groupSelect.addEventListener('change', () => {
+        const suggestPrices = () => {
+          if (pricesTouched) return;
+          pricesTouched = true;
+          const type = form.elements.lessonType.value;
           const group = window.APP.groups.find((entry) => entry.id === groupSelect.value);
-          if (!priceTouched && group?.profile.price !== null && group?.profile.price !== undefined) {
-            priceInput.value = group.profile.price;
+          if (type !== 'private' && group) {
+            prices.add({ kind: 'group', model: 'monthly', amount: group.profile.price ?? window.SETTINGS.defaultGroupPrice ?? null });
             const currency = group.profile.currency || 'ILS';
             // A group still priced in a currency no longer offered brings it along.
             if (![...form.elements.currency.options].some((option) => option.value === currency)) form.elements.currency.append(h('option', { value: currency }, currency));
             form.elements.currency.value = currency;
           }
-        });
+          if (type !== 'group') {
+            for (const length of new Set(schedule.read().map((row) => row.durationMinutes))) {
+              prices.add({ kind: 'private', model: 'per_lesson', durationMinutes: length, amount: window.SETTINGS.defaultPrivatePrice ?? null });
+            }
+          }
+        };
+        // Every price needs an amount, and a package its number of lessons.
+        const pricesProblem = () => {
+          const rows = prices.read();
+          if (rows.some((item) => item.amount === null)) return t('priceNeedsAmount');
+          if (rows.some((item) => item.model === 'package' && !item.packageSize)) return t('packageNeedsSize');
+          return '';
+        };
 
         // ---- step 4: chess
         const chess = h('div', { class: 'form' },
@@ -481,7 +485,13 @@
           // lesson type leaves both exactly as they were.
           values.privateSchedule = lessonType === 'group' && typeChanged ? [] : (lessonType === 'group' ? (s.privateSchedule || []) : schedule.read());
           if (lessonType === 'private' && typeChanged) values.groupId = '';
-          values.lessonPrices = readLessonPrices();
+          const problem = pricesProblem();
+          if (problem) {
+            go(steps.findIndex((step) => step.key === 'billing'));
+            window.UI.clear(errorHost).append(errorBox(problem));
+            return;
+          }
+          values.prices = prices.read();
           for (const button of footer.querySelectorAll('button')) button.disabled = true;
           try {
             const response = student
@@ -512,6 +522,7 @@
           });
           panels.forEach((panel, index) => { panel.hidden = index !== current; });
           syncPlacement();
+          if (isNew && steps[current].key === 'billing') suggestPrices();
           syncBilling();
 
           const last = current === steps.length - 1;
@@ -538,7 +549,6 @@
 
         form.addEventListener('change', (event) => {
           if (event.target.name === 'lessonType') syncPlacement();
-          if (event.target.name === 'billingType') syncBilling();
         });
         // Enter moves to the next step for a new student and saves an edit.
         form.addEventListener('submit', (event) => {
@@ -554,7 +564,7 @@
           // The private slots share field names, so they are read on their own.
           for (const name of ['weekday', 'startTime', 'durationMinutes']) delete values[name];
           values.privateSchedule = schedule.read();
-          values.lessonPrices = readLessonPrices();
+          values.prices = prices.read();
           writeDraft({ values, step: current });
         };
         form.addEventListener('input', keepDraft);

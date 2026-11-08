@@ -153,79 +153,90 @@ describe('business API', () => {
     assert.ok(group.topicsLearned.includes('Back-rank mate'));
   });
 
-  it('tracks payments: recording one clears an overdue monthly student', async () => {
+  it('tracks payments: paying what is owed clears an overdue student', async () => {
     const overview = (await (await server.fetch('/api/business/payments', { headers: { Cookie: teacher.cookie } })).json()).overview;
-    const overdue = overview.find((entry) => entry.state === 'overdue' && entry.billingType === 'monthly');
-    assert.ok(overdue, 'demo data includes an overdue monthly student');
+    const overdue = overview.find((entry) => entry.state === 'overdue');
+    assert.ok(overdue, 'demo data includes an overdue student');
+    assert.ok(overdue.balance < 0, 'an overdue student owes money');
+    assert.ok(overdue.daysUntilDue < 0, 'and has owed it since before today');
 
-    const paid = await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: overdue.studentId, amount: overdue.price, currency: overdue.currency, method: 'bit', periodLabel: '2026-11' }));
+    const paid = await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: overdue.studentId, amount: -overdue.balance, currency: overdue.currency, method: 'bit' }));
     assert.equal(paid.status, 200);
-
     const after_ = (await (await server.fetch('/api/business/payments', { headers: { Cookie: teacher.cookie } })).json()).overview.find((entry) => entry.studentId === overdue.studentId);
-    assert.equal(after_.state, 'ok');
-    assert.ok(after_.nextPaymentAt > after_.lastPaymentAt);
-    assert.ok(after_.nextPaymentAt.startsWith('2026-12'), 'a payment for November makes the next one due in December');
-
-    // Arrears for an earlier month must not drag the due date back.
-    const arrears = await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: overdue.studentId, amount: overdue.price, currency: overdue.currency, method: 'bank', periodLabel: '2026-09' }));
-    assert.equal(arrears.status, 200);
-    const afterArrears = (await (await server.fetch('/api/business/payments', { headers: { Cookie: teacher.cookie } })).json()).overview.find((entry) => entry.studentId === overdue.studentId);
-    assert.equal(afterArrears.state, 'ok');
-    assert.ok(afterArrears.nextPaymentAt.startsWith('2026-12'), 'the latest month covered decides the next due date');
-
-    // A later payment with no month label still counts from its own date.
-    const unlabeled = await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: overdue.studentId, amount: overdue.price, currency: overdue.currency, method: 'cash', paidAt: '2026-12-03', periodLabel: '' }));
-    assert.equal(unlabeled.status, 200);
-    const afterUnlabeled = (await (await server.fetch('/api/business/payments', { headers: { Cookie: teacher.cookie } })).json()).overview.find((entry) => entry.studentId === overdue.studentId);
-    assert.equal(afterUnlabeled.state, 'ok');
-    assert.ok(afterUnlabeled.nextPaymentAt.startsWith('2027-01'), 'an unlabeled payment pushes the due date past its own month');
+    assert.equal(after_.balance, 0);
+    assert.notEqual(after_.state, 'overdue');
   });
 
-  it('keeps a per-lesson balance in money when lessons are priced by length', async () => {
+  it('keeps one account per student across their own prices', async () => {
     const get = async (path) => (await server.fetch(path, { headers: { Cookie: teacher.cookie } })).json();
+    const { usdToIls, businessTimezone } = (await get('/api/business/settings')).settings;
+    // Dates relative to today: the student started on the 1st two months
+    // ago, and the lessons were in that first month.
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: businessTimezone }).format(new Date());
+    const monthStart = (back) => {
+      const date = new Date(`${today.slice(0, 7)}-01T12:00:00Z`);
+      date.setUTCMonth(date.getUTCMonth() - back);
+      return date.toISOString().slice(0, 10);
+    };
+    const first = monthStart(2);
+    const day = (n) => `${first.slice(0, 8)}${String(n).padStart(2, '0')}`;
+    const sunday = day(2 + ((7 - new Date(`${day(2)}T12:00:00Z`).getUTCDay()) % 7));
+
     const created = await (await server.fetch('/api/business/students', json(teacher.cookie, {
-      firstName: 'Two', lastName: 'Lengths', lessonType: 'private', joinedAt: '2026-10-01', billingType: 'per_lesson', price: 70, currency: 'USD',
+      firstName: 'Mixed', lastName: 'Prices', lessonType: 'both', groupId: 'rookies', joinedAt: first, billingDay: 1, currency: 'USD',
       privateSchedule: [{ weekday: 0, startTime: '17:00', durationMinutes: 60 }, { weekday: 3, startTime: '17:00', durationMinutes: 40 }],
-      // A repeated length keeps the last price; a length with no price is dropped.
-      lessonPrices: [{ durationMinutes: 40, price: 45 }, { durationMinutes: 60, price: 70 }, { durationMinutes: 40, price: 50 }, { durationMinutes: 90, price: '' }]
+      prices: [
+        { kind: 'private', model: 'per_lesson', durationMinutes: 60, amount: 70 },
+        { kind: 'private', model: 'per_lesson', durationMinutes: 40, amount: 50 },
+        { kind: 'group', model: 'monthly', amount: 200 },
+        // A package needs its number of lessons and a price needs an amount.
+        { kind: 'any', model: 'package', amount: 500 },
+        { kind: 'any', model: 'per_lesson' }
+      ]
     }))).json();
     const pupil = created.student;
-    assert.deepEqual(pupil.lessonPrices, [{ durationMinutes: 60, price: 70 }, { durationMinutes: 40, price: 50 }]);
+    assert.equal(pupil.prices.length, 3);
+    const [sixty, forty, monthly] = pupil.prices;
 
-    // Sunday's lesson takes its slot's 60 minutes, the other has its own 40;
-    // a lesson the student missed costs nothing.
+    // The group lesson is covered by the month; Sunday's private lesson
+    // takes its slot's 60 minutes; a missed lesson costs nothing.
     const lessonIds = [];
-    for (const body of [
-      { date: '2026-11-01', startTime: '17:00' },
-      { date: '2026-11-04', startTime: '17:00', durationMinutes: 40 },
-      { date: '2026-11-08', startTime: '17:00', attendance: { [pupil.id]: 'absent' } }
-    ]) {
-      const { lesson } = await (await server.fetch('/api/business/lessons', json(teacher.cookie, { kind: 'private', studentIds: [pupil.id], topic: 'Endgames', ...body }))).json();
+    const log = async (body) => {
+      const { lesson } = await (await server.fetch('/api/business/lessons', json(teacher.cookie, { topic: 'Endgames', ...body }))).json();
       lessonIds.push(lesson.id);
-    }
-    await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: pupil.id, amount: 100, currency: 'USD', paidAt: '2026-11-01' }));
+    };
+    await log({ date: day(3), groupId: 'rookies', studentIds: [pupil.id] });
+    await log({ date: sunday, startTime: '17:00', kind: 'private', studentIds: [pupil.id] });
+    await log({ date: day(12), startTime: '17:00', durationMinutes: 40, kind: 'private', studentIds: [pupil.id] });
+    await log({ date: day(13), startTime: '17:00', durationMinutes: 60, kind: 'private', studentIds: [pupil.id], attendance: { [pupil.id]: 'absent' } });
+    await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: pupil.id, amount: 400, currency: 'USD', paidAt: day(14) }));
 
-    const owing = (await get(`/api/business/students/${pupil.id}`)).payment;
-    assert.equal(owing.balance, -20, 'paid 100 for lessons costing 70 + 50');
-    assert.equal(owing.lessonsUsed, 2);
-    assert.equal(owing.state, 'overdue');
+    // Three months at 200 and lessons at 70 and 50: 720 less 400. The
+    // payment pays the oldest charges, so last month's is the first unpaid.
+    const detail = await get(`/api/business/students/${pupil.id}`);
+    assert.equal(detail.payment.balance, -320);
+    assert.equal(detail.payment.nextPaymentAt, monthStart(1));
+    assert.equal(detail.payment.state, 'overdue');
+    assert.deepEqual(detail.account.filter((entry) => entry.kind === 'month').map((entry) => entry.date), [monthStart(2), monthStart(1), monthStart(0)]);
+    assert.deepEqual(detail.account.filter((entry) => entry.kind === 'lesson').map((entry) => entry.amount), [-70, -50]);
     const reminder = await (await server.fetch('/api/business/messages/compose', json(teacher.cookie, { kind: 'payment_reminder', studentId: pupil.id }))).json();
-    assert.ok(reminder.message.body.includes('$20'), 'the reminder asks for what is owed');
-
-    await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: pupil.id, amount: 200, currency: 'USD', paidAt: '2026-11-05' }));
-    const ahead = (await get('/api/business/payments')).overview.find((entry) => entry.studentId === pupil.id);
-    assert.equal(ahead.balance, 180);
-    assert.equal(ahead.lessonsRemaining, 3, '180 covers three lessons at the week\'s average of 60');
-    assert.equal(ahead.state, 'ok');
-
-    // Raising the prices leaves the lessons already given at what they cost.
-    await server.fetch(`/api/business/students/${pupil.id}`, json(teacher.cookie, { lessonPrices: [{ durationMinutes: 60, price: 80 }, { durationMinutes: 40, price: 60 }] }, 'PATCH'));
-    assert.equal((await get(`/api/business/students/${pupil.id}`)).payment.balance, 180);
+    assert.ok(reminder.message.body.includes('$320'), 'the reminder asks for what is owed');
 
     // A payment in shekels counts at the rate in settings.
-    const { usdToIls } = (await get('/api/business/settings')).settings;
-    await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: pupil.id, amount: usdToIls * 10, currency: 'ILS', paidAt: '2026-11-06' }));
-    assert.equal((await get(`/api/business/students/${pupil.id}`)).payment.balance, 190);
+    await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: pupil.id, amount: usdToIls * 320, currency: 'ILS', paidAt: today }));
+    const settled = (await get('/api/business/payments')).overview.find((entry) => entry.studentId === pupil.id);
+    assert.equal(settled.balance, 0);
+    assert.equal(settled.nextChargeAmount, 200);
+    assert.ok(settled.nextPaymentAt > today, 'the next charge is the coming month');
+
+    // New prices apply from now on: what was already charged stays.
+    const raised = [{ ...sixty, amount: 80 }, { ...forty, amount: 60 }, { ...monthly, amount: 250 }];
+    await server.fetch(`/api/business/students/${pupil.id}`, json(teacher.cookie, { prices: raised }, 'PATCH'));
+    assert.equal((await get(`/api/business/students/${pupil.id}`)).payment.balance, 0);
+
+    // A price picked by hand wins over the one the lesson's length matches.
+    await log({ date: day(20), startTime: '17:00', durationMinutes: 60, kind: 'private', studentIds: [pupil.id], priceChoices: { [pupil.id]: forty.id } });
+    assert.equal((await get(`/api/business/students/${pupil.id}`)).payment.balance, -60);
 
     for (const id of lessonIds) await server.fetch(`/api/business/lessons/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
     await server.fetch(`/api/business/students/${pupil.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
@@ -899,6 +910,7 @@ describe('teacher accounts', () => {
     for (const student of students) {
       assert.equal(student.groupId, 'tactics');
       assert.equal('price' in student, false);
+      assert.equal('prices' in student, false);
       assert.equal('paymentState' in student, false);
     }
 
@@ -909,6 +921,10 @@ describe('teacher accounts', () => {
     assert.equal(own.status, 200);
     assert.equal(own.body.payments, undefined);
     assert.equal(own.body.payment, undefined);
+    assert.equal(own.body.account, undefined);
+    // What a lesson cost, or a price picked for it, stays with the admin.
+    const lessonsJson = JSON.stringify((await get(teacher.cookie, '/lessons')).body);
+    assert.ok(!lessonsJson.includes('"charges"') && !lessonsJson.includes('"priceChoices"'));
 
     const portal = await (await server.fetch('/api/dashboard', { headers: { Cookie: teacher.cookie } })).json();
     assert.deepEqual(portal.groups.map((group) => group.id), ['tactics']);

@@ -198,8 +198,7 @@
       h('div', { class: 'list-main' },
         h('div', { class: 'list-title' }, link(`#/students/${entry.studentId}`, entry.name), statusBadge(entry.state, 'pay')),
         h('div', { class: 'list-sub' }, [
-          entry.billingType === 'monthly' ? (entry.daysUntilDue < 0 ? t('daysLate', { days: -entry.daysUntilDue }) : entry.daysUntilDue === 0 ? t('dueToday') : t('dueIn', { days: entry.daysUntilDue })) : window.UI.lessonsBalanceText(entry),
-          entry.price ? ` · ${fmtMoney(entry.price, entry.currency)}` : ''
+          window.UI.standingText(entry)
         ])
       ),
       h('div', { class: 'list-side' },
