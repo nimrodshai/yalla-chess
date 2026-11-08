@@ -347,14 +347,21 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .schedule-rows { display: flex; flex-direction: column; gap: 6px; }
 .schedule-row { display: grid; grid-template-columns: 1fr 110px 90px 36px; gap: 6px; align-items: center; }
 .schedule-row select, .schedule-row input { height: 36px; border: 1px solid var(--line-strong); border-radius: 9px; padding: 0 8px; }
-.price-rows { display: flex; flex-direction: column; gap: 6px; }
-.price-row { display: grid; grid-template-columns: 1fr 1fr 96px 84px 110px 36px; gap: 6px; align-items: center; }
-.price-row select, .price-row input { height: 36px; border: 1px solid var(--line-strong); border-radius: 9px; padding: 0 8px; min-width: 0; }
+.price-rows { display: flex; flex-direction: column; gap: 8px; }
+.price-row { display: grid; grid-template-columns: minmax(0, 1fr) 110px 140px 36px; gap: 6px; align-items: center; }
+/* Each price is its own box; anything that belongs to it sits inside. */
+.price-rows .price-row { border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+.price-row select, .price-row input, .price-row .money { height: 36px; border: 1px solid var(--line-strong); border-radius: 9px; padding: 0 8px; min-width: 0; }
 .price-row .off { visibility: hidden; }
-.price-head { font-size: 12px; color: var(--text-light); margin-bottom: -2px; }
-.price-single { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 13px; }
-.price-single[hidden] { display: none; }
-.price-single input { width: 110px; flex: none; }
+.price-head { font-size: 12px; color: var(--text-light); margin-bottom: -4px; padding-inline: 9px; }
+.money { display: flex; align-items: center; gap: 6px; }
+.price-row .money input { border: none; height: 100%; padding: 0; flex: 1; background: transparent; }
+.money-symbol { color: var(--text-light); font-weight: 600; }
+.price-extra { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 2px; }
+.price-extra[hidden], .price-size[hidden] { display: none; }
+.price-extra .money { width: 120px; flex: none; }
+.price-size { display: inline-flex; align-items: center; gap: 6px; }
+.price-size input { width: 80px; }
 .price-head[hidden] { display: none; }
 .attendance-item .price-pick { height: 28px; font-size: 12px; max-width: 160px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 0 6px; }
 .attendance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
@@ -627,14 +634,12 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
   .modal { padding: 16px; border-radius: 14px; }
   .schedule-row { grid-template-columns: 1fr 1fr; }
   /* Two lines: kind, billing and remove; then length, lessons, amount. */
-  .price-row { grid-template-columns: repeat(6, minmax(0, 1fr)); padding-bottom: 8px; border-bottom: 1px solid var(--line); }
-  .price-row > :nth-child(1) { grid-column: span 3; }
-  .price-row > :nth-child(2) { grid-column: span 2; }
-  .price-row > :nth-child(3) { grid-row: 2; grid-column: 1 / span 2; }
-  .price-row > :nth-child(4) { grid-row: 2; grid-column: 3 / span 2; }
-  .price-row > :nth-child(5) { grid-row: 2; grid-column: 5 / span 2; }
-  .price-row > :nth-child(6) { grid-row: 1; grid-column: 6; }
-  .price-single { grid-row: 3; flex-wrap: wrap; }
+  /* Two lines: kind and remove; then length and amount. */
+  .price-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 36px; }
+  .price-row > :nth-child(1) { grid-column: 1 / span 2; }
+  .price-row > :nth-child(2) { grid-row: 2; grid-column: 1; }
+  .price-row > :nth-child(3) { grid-row: 2; grid-column: 2 / span 2; }
+  .price-row > :nth-child(4) { grid-row: 1; grid-column: 3; }
   .price-head { display: none; }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .stat-value { font-size: 22px; }

@@ -392,10 +392,14 @@
         // from what fits their lessons when the step opens: their group's
         // price a month, the default private price for each private length.
         let pricesTouched = !isNew || Boolean(s.prices?.length);
-        const prices = window.UI.priceEditor(s.prices || [], { onChange: () => { pricesTouched = true; } });
+        // One currency for all of a student's prices, picked first; every
+        // amount shows it.
+        const currencySelect = select('currency', window.VOCAB.currencies, s.currency || 'ILS');
+        const prices = window.UI.priceEditor(s.prices || [], { currency: currencySelect.value, onChange: () => { pricesTouched = true; } });
+        currencySelect.addEventListener('change', () => prices.setCurrency(currencySelect.value));
         const billing = h('div', { class: 'form' },
+          field(t('pricesCurrency'), currencySelect, { hint: t('pricesCurrencyHint') }),
           field(t('prices'), prices, { full: true, hint: t('pricesHint') }),
-          field(t('currency'), select('currency', window.VOCAB.currencies, s.currency || 'ILS')),
           h('div', { class: 'field' }, checkbox('remindersEnabled', s.remindersEnabled, t('remindersEnabled')))
         );
         const suggestPrices = () => {
@@ -409,6 +413,7 @@
             // A group still priced in a currency no longer offered brings it along.
             if (![...form.elements.currency.options].some((option) => option.value === currency)) form.elements.currency.append(h('option', { value: currency }, currency));
             form.elements.currency.value = currency;
+            prices.setCurrency(currency);
           }
           if (type !== 'group') {
             for (const length of new Set(schedule.read().map((row) => row.durationMinutes))) {

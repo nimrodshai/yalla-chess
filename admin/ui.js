@@ -468,9 +468,13 @@
     return new Intl.DateTimeFormat('en-GB', { timeZone: timeZone || undefined, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(date);
   }
 
+  function currencySymbol(currency) {
+    return currency === 'USD' ? '$' : currency === 'EUR' ? '€' : '₪';
+  }
+
   function fmtMoney(amount, currency = 'ILS') {
     if (amount === null || amount === undefined || amount === '') return '';
-    const symbol = currency === 'USD' ? '$' : currency === 'EUR' ? '€' : '₪';
+    const symbol = currencySymbol(currency);
     // LRM keeps "₪250" in that order inside right-to-left text.
     return `\u200e${symbol}${Number(amount).toLocaleString('en-US', { maximumFractionDigits: 2 })}\u200e`;
   }
@@ -512,58 +516,70 @@
     return prices.length ? prices.map((item) => priceText(item, currency)).join(' / ') : t('noPrices');
   }
 
-  // A student's price list as editable rows: which lessons, how billed,
-  // length (not for monthly), lessons in a package, and the amount. Rows
-  // keep their price's id so the server knows an edit from a new price.
-  // The inputs have no name, so formValues leaves them out; read() returns
-  // the list.
-  function priceEditor(prices = [], { onChange } = {}) {
+  // A student's price list as editable boxes. The kind of lesson decides
+  // how a new price is billed: group is a monthly fee, with a single-lesson
+  // price for a month the student has only part of; private is per lesson,
+  // by length. A price set up otherwise before (a package, a price for any
+  // lesson) keeps its billing and says so in its box. Boxes keep their
+  // price's id so the server knows an edit from a new price. The inputs
+  // have no name, so formValues leaves them out; read() returns the list.
+  const DEFAULT_MODEL = { group: 'monthly', private: 'per_lesson' };
+  function priceEditor(prices = [], { onChange, currency = 'ILS' } = {}) {
     const container = h('div', { class: 'price-rows' });
     const changed = () => { if (onChange) onChange(); };
+    // Amounts show the student's currency, and follow it when it changes.
+    let symbol = currencySymbol(currency);
+    const money = (input) => h('div', { class: 'money' }, h('span', { class: 'money-symbol' }, symbol), input);
     const addRow = (item = { kind: 'private', model: 'per_lesson', durationMinutes: 60, amount: null }) => {
-      const kind = h('select', { 'aria-label': t('priceKindLabel') }, window.VOCAB.priceKinds.map((value) => h('option', { value }, t(`priceKind.${value}`))));
+      const kinds = ['group', 'private', ...(item.kind === 'any' ? ['any'] : [])];
+      const kind = h('select', { 'aria-label': t('priceKindLabel') }, kinds.map((value) => h('option', { value }, t(`priceKind.${value}`))));
       kind.value = item.kind;
-      const model = h('select', { 'aria-label': t('priceModelLabel') }, window.VOCAB.priceModels.map((value) => h('option', { value }, t(`priceModel.${value}`))));
-      model.value = item.model;
+      let model = item.model || DEFAULT_MODEL[item.kind] || 'per_lesson';
       const minutes = h('input', { type: 'number', min: 15, max: 240, step: 5, inputmode: 'numeric', value: item.durationMinutes ?? '', placeholder: t('priceAnyLength'), 'aria-label': t('duration') });
-      const size = h('input', { type: 'number', min: 1, max: 200, inputmode: 'numeric', value: item.packageSize ?? '', placeholder: t('packageLessons'), 'aria-label': t('packageLessons') });
       const amount = h('input', { type: 'number', min: 0, step: '0.01', inputmode: 'decimal', value: item.amount ?? '', placeholder: t('amount'), 'aria-label': t('amount') });
-      // A monthly price's single lesson, for a month the student starts
-      // after the 1st or leaves before its end.
       const single = h('input', { type: 'number', min: 0, step: '0.01', inputmode: 'decimal', value: item.lessonAmount ?? '', 'aria-label': t('singleLessonPrice') });
-      const singleLine = h('label', { class: 'price-single' }, h('span', null, t('singleLessonPrice')), single, h('span', { class: 'muted' }, t('singleLessonHint')));
-      const node = h('div', { class: 'price-row' }, kind, model, minutes, size, amount,
+      const singleLine = h('label', { class: 'price-extra' }, h('span', { class: 'strong' }, `↳ ${t('singleLessonPrice')}`), money(single), h('span', { class: 'muted' }, t('singleLessonHint')));
+      const size = h('input', { type: 'number', min: 1, max: 200, inputmode: 'numeric', value: item.packageSize ?? '', 'aria-label': t('packageLessons') });
+      const modelNote = h('span', { class: 'strong' });
+      const otherLine = h('label', { class: 'price-extra' }, modelNote, h('span', { class: 'price-size' }, size, h('span', null, t('packageLessons'))));
+      const node = h('div', { class: 'price-row' }, kind, minutes, money(amount),
         h('button', { class: 'btn btn-xs btn-ghost', type: 'button', 'aria-label': t('delete'), onclick: () => { node.remove(); changed(); } }, '✕'),
-        singleLine);
+        singleLine, otherLine);
       // A field that does not apply keeps its column, so amounts line up.
       const sync = () => {
-        minutes.classList.toggle('off', model.value === 'monthly');
-        size.classList.toggle('off', model.value !== 'package');
-        singleLine.hidden = model.value !== 'monthly';
+        minutes.classList.toggle('off', model === 'monthly');
+        singleLine.hidden = model !== 'monthly';
+        otherLine.hidden = model === DEFAULT_MODEL[kind.value];
+        modelNote.textContent = `${t('priceBilledAs')}: ${t(`priceModel.${model}`)}`;
+        size.parentNode.hidden = model !== 'package';
       };
-      model.addEventListener('change', sync);
+      kind.addEventListener('change', () => { model = DEFAULT_MODEL[kind.value] || model; sync(); });
       node.addEventListener('change', changed);
       sync();
       node.read = () => ({
         id: item.id || '',
         kind: kind.value,
-        model: model.value,
-        durationMinutes: model.value === 'monthly' || minutes.value === '' ? null : Number(minutes.value),
-        packageSize: model.value === 'package' && size.value !== '' ? Number(size.value) : null,
+        model,
+        durationMinutes: model === 'monthly' || minutes.value === '' ? null : Number(minutes.value),
+        packageSize: model === 'package' && size.value !== '' ? Number(size.value) : null,
         amount: amount.value === '' ? null : Number(amount.value),
-        lessonAmount: model.value === 'monthly' && single.value !== '' ? Number(single.value) : null
+        lessonAmount: model === 'monthly' && single.value !== '' ? Number(single.value) : null
       });
       container.append(node);
     };
     for (const item of prices) addRow(item);
     const head = h('div', { class: 'price-row price-head', 'aria-hidden': 'true' },
-      ...[t('priceKindLabel'), t('priceModelLabel'), t('duration'), t('packageLessons'), t('amount')].map((label) => h('span', null, label)), h('span'));
+      ...[t('priceKindLabel'), t('duration'), t('amount')].map((label) => h('span', null, label)), h('span'));
     const wrapper = h('div', { class: 'stack' }, head, container, h('button', { class: 'btn btn-sm', type: 'button', onclick: () => { addRow(); changed(); } }, `+ ${t('addPrice')}`));
     const syncHead = () => { head.hidden = !container.children.length; };
     new MutationObserver(syncHead).observe(container, { childList: true });
     syncHead();
     wrapper.read = () => Array.from(container.children).map((node) => node.read());
     wrapper.add = (item) => { addRow(item); changed(); };
+    wrapper.setCurrency = (code) => {
+      symbol = currencySymbol(code);
+      for (const node of wrapper.querySelectorAll('.money-symbol')) node.textContent = symbol;
+    };
     return wrapper;
   }
 
