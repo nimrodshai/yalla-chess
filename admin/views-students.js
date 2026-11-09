@@ -125,7 +125,7 @@
         detail(t('privateZoomLink'), student.privateZoomLink ? h('a', { href: student.privateZoomLink, target: '_blank', rel: 'noopener' }, 'Zoom') : ''),
         admin ? detail(t('prices'), h('div', null, (student.prices || []).length ? student.prices.map((item) => h('div', null, window.UI.priceText(item, student.currency))) : t('noPrices'))) : null,
         admin ? detail(t('paymentTerms'), student.paymentTerms) : null,
-        detail(t('reminders'), student.remindersEnabled ? `${t('yes')}${student.reminderLeadHours !== null ? ` · ${student.reminderLeadHours}h` : ''}` : t('no')),
+        detail(t('autoMessagesStudent'), student.autoMessages ? t('autoOn') : student.autoMessagesOptedOutAt ? t('autoOptedOutOn', { date: fmtDate(student.autoMessagesOptedOutAt.slice(0, 10), { year: 'numeric' }) }) : t('autoOff')),
         detail(t('userPhone'), student.userPhone)
       ),
       window.UI.nextLesson(data.nextLesson, { timezone: student.timezone, onSaved: refresh })
@@ -212,7 +212,7 @@
 
     const messages = card(t('messageHistory'), data.messages.length ? h('div', { class: 'list' }, data.messages.map((message) => h('div', { class: 'list-item' },
       h('div', { class: 'list-main' },
-        h('div', { class: 'list-title' }, t(`msg.${message.kind}`), h('span', { class: `badge ${message.status === 'sent' ? 'badge-sage' : ''}` }, t(message.status === 'sent' ? 'sent' : 'notSent')), h('span', { class: 'muted small' }, fmtDateTime(message.createdAt, tz))),
+        h('div', { class: 'list-title' }, t(`msg.${message.kind}`), window.UI.messageStatusBadge(message), h('span', { class: 'muted small' }, fmtDateTime(message.createdAt, tz))),
         h('div', { class: 'list-sub', style: { whiteSpace: 'pre-wrap' } }, message.body.slice(0, 220))
       )
     ))) : empty(t('noMessagesYet')), { count: data.messages.length });
@@ -319,7 +319,7 @@
     // a portal account comes with its own details.
     const draft = isNew && !Object.keys(defaults).length ? readDraft() : null;
     const today = window.UI.todayIso(window.SETTINGS.businessTimezone);
-    const s = student || { status: 'active', language: 'he', level: 'basic', lessonType: 'group', currency: 'ILS', remindersEnabled: true, timezone: window.SETTINGS.businessTimezone, joinedAt: today, teacher: window.APP.teachers.some((teacher) => teacher.name === window.SETTINGS.teacherName) ? window.SETTINGS.teacherName : '', ...defaults, ...(draft?.values || {}) };
+    const s = student || { status: 'active', language: 'he', level: 'basic', lessonType: 'group', currency: 'ILS', remindersEnabled: true, autoMessages: Boolean(window.SETTINGS.autoMessages?.newStudents), timezone: window.SETTINGS.businessTimezone, joinedAt: today, teacher: window.APP.teachers.some((teacher) => teacher.name === window.SETTINGS.teacherName) ? window.SETTINGS.teacherName : '', ...defaults, ...(draft?.values || {}) };
 
     modal({
       title: isNew ? t('newStudent') : `${t('editStudent')}: ${[s.firstName, s.lastName].filter(Boolean).join(' ')}`,
@@ -409,7 +409,11 @@
         const billing = h('div', { class: 'form' },
           field(t('pricesCurrency'), currencySelect, { hint: t('pricesCurrencyHint') }),
           field(t('prices'), prices, { full: true, hint: t('pricesHint') }),
-          h('div', { class: 'field' }, checkbox('remindersEnabled', s.remindersEnabled, t('remindersEnabled')))
+          h('div', { class: 'field' },
+            checkbox('autoMessages', s.autoMessages, t('autoMessagesStudentToggle')),
+            // The parent asked to stop: ticking the box again is the school's
+            // call, so say what it means.
+            s.autoMessagesOptedOutAt ? h('div', { class: 'hint' }, t('autoOptedOutHint', { date: fmtDate(s.autoMessagesOptedOutAt.slice(0, 10), { year: 'numeric' }) })) : null)
         );
         // A group's own price, in its currency, wins over the default; the
         // first time, a group with a price brings its currency along.

@@ -1002,7 +1002,20 @@
     return root;
   }
 
+  // Where a logged message stands. One sent by hand is just sent; one the
+  // server sent follows Twilio's delivery reports, and a failed one says why.
+  const MESSAGE_STATUS_TONES = { sent: 'sage', delivered: 'sage', read: 'sage', sending: 'gold', queued: 'gold', trial: 'info', failed: 'danger' };
+  function messageStatusBadge(message) {
+    const status = message.createdBy === 'auto' ? message.status : (message.status === 'sent' ? 'sent' : 'notSent');
+    const label = status === 'sent' || status === 'notSent' ? t(status) : t(`msgStatus.${status}`);
+    return h('span', { class: 'row', style: { gap: '4px', display: 'inline-flex' } },
+      message.createdBy === 'auto' ? h('span', { class: 'badge badge-ink' }, t('msgAuto')) : null,
+      h('span', { class: `badge ${MESSAGE_STATUS_TONES[status] ? `badge-${MESSAGE_STATUS_TONES[status]}` : ''}`, title: message.error || '' }, label)
+    );
+  }
+
   window.UI = {
+    messageStatusBadge,
     h, append, clear, api, toast, modal, confirmDialog, field, input, phoneInput, fmtPhone, timezoneSelect, textarea, select, enumSelect, teacherSelect, checkbox, formValues, errorBox,
     scheduleEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, balanceText, standingText, priceText, pricesText, priceEditor, todayIso, addDays, weekdayOf,
     initials, scheduleText, ratingsText, statusBadge, board, animateBoard, gameChips, suggestedGame, nextLesson, composeMessage, paymentDialog, pageHead, card, stat, empty, link, masonry, t, guard: guarded

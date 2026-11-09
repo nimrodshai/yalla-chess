@@ -60,6 +60,23 @@ services:
         sync: false
       - key: TWILIO_API_KEY_SECRET
         sync: false
+      # Automatic WhatsApp reminders, optional (README, "Automatic WhatsApp
+      # reminders"). The account SID and auth token are needed for sending
+      # and for trusting Twilio's webhooks.
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_FROM
+        sync: false
+      - key: TWILIO_CONTENT_LESSON_REMINDER_HE
+        sync: false
+      - key: TWILIO_CONTENT_LESSON_REMINDER_EN
+        sync: false
+      - key: TWILIO_CONTENT_PAYMENT_DUE_HE
+        sync: false
+      - key: TWILIO_CONTENT_PAYMENT_DUE_EN
+        sync: false
       # Contact-form email, optional. Leave blank to skip.
       - key: RESEND_API_KEY
         sync: false

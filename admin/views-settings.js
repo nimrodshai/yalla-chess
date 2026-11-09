@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   window.VIEWS = window.VIEWS || {};
-  const { h, api, t, card, field, input, textarea } = window.UI;
+  const { h, api, t, card, field, input, textarea, checkbox, confirmDialog, toast, link, fmtDate } = window.UI;
 
   // One queue for every settings save the app makes, across re-renders and
   // visits to this page, so an older save can never land after a newer one.
@@ -120,6 +120,70 @@
       return { defaultPrices: { [currency]: { [kind]: element.value } } };
     });
 
+    // Automatic WhatsApp reminders: off, trial or on, the quiet hours and
+    // the reply a parent gets when they write to the reminders number. What
+    // is set up in Twilio comes from the server, never the values.
+    const autoStatus = h('span', { class: 'autosave-status', 'aria-live': 'polite' });
+    const auto = settings.autoMessages || {};
+    const { whatsApp } = await api('/settings');
+    const ready = (ok) => h('span', { class: `badge ${ok ? 'badge-sage' : 'badge-warn'}` }, t(ok ? 'autoReady' : 'autoMissing'));
+    const autoForm = h('form', { class: 'form' },
+      field(t('autoMode'), window.UI.select('autoMessages.mode', ['off', 'trial', 'on'].map((mode) => [mode, t(`autoMode.${mode}`)]), auto.mode), { full: true, hint: t('autoModeHint') }),
+      h('div', { class: 'field full' }, checkbox('autoMessages.newStudents', auto.newStudents, t('autoNewStudents'))),
+      field(t('autoQuietStart'), h('input', { name: 'autoMessages.quietStart', type: 'time', value: auto.quietStart })),
+      field(t('autoQuietEnd'), h('input', { name: 'autoMessages.quietEnd', type: 'time', value: auto.quietEnd })),
+      field(`${t('autoReply')} · ${t('hebrew')}`, textarea('autoMessages.autoReply.he', auto.autoReply?.he || '', { rows: 3, dir: 'rtl' }), { full: true, hint: t('autoReplyHint') }),
+      field(`${t('autoReply')} · ${t('english')}`, textarea('autoMessages.autoReply.en', auto.autoReply?.en || '', { rows: 3, dir: 'ltr' }), { full: true })
+    );
+    autosave(autoForm, autoStatus, (element) => {
+      // autoMessages.autoReply.he → { autoMessages: { autoReply: { he: value } } }
+      const keys = element.name.split('.');
+      return keys.reduceRight((value, key) => ({ [key]: value }), element.type === 'checkbox' ? element.checked : element.value);
+    });
+
+    // Which students get automatic messages, who asked to stop, and the
+    // switch for everyone at once.
+    const roster = await api('/auto-messages');
+    const everyone = (enabled) => async () => {
+      if (!(await confirmDialog(t(enabled ? 'autoAllOnConfirm' : 'autoAllOffConfirm'), { danger: !enabled, okLabel: t(enabled ? 'autoAllOn' : 'autoAllOff') }))) return;
+      const result = await api('/auto-messages', { method: 'POST', body: { enabled } });
+      window.SETTINGS = result.settings;
+      toast(t('autoAllDone', { count: result.changed }), 'success');
+      refresh();
+    };
+    const optedOut = roster.off.filter((student) => student.optedOutAt);
+    const otherOff = roster.off.filter((student) => !student.optedOutAt);
+    const offRow = (student) => h('div', { class: 'list-item' },
+      h('div', { class: 'list-main' },
+        h('div', { class: 'list-title' }, link(`#/students/${student.id}`, student.name),
+          student.optedOutAt ? h('span', { class: 'badge badge-warn' }, t('autoOptedOutOn', { date: fmtDate(student.optedOutAt.slice(0, 10), { year: 'numeric' }) }))
+            : student.remindersOff ? h('span', { class: 'badge' }, t('autoRemindersWereOff')) : null),
+        student.parentName ? h('div', { class: 'list-sub' }, student.parentName) : null
+      )
+    );
+    const autoRoster = h('div', { class: 'stack', style: { marginTop: '16px' } },
+      h('div', { class: 'row', style: { justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' } },
+        h('div', { class: 'strong' }, t('autoRosterCount', { on: roster.on, off: roster.off.length })),
+        h('div', { class: 'row', style: { gap: '8px' } },
+          h('button', { class: 'btn btn-sm', type: 'button', onclick: everyone(true) }, t('autoAllOn')),
+          h('button', { class: 'btn btn-sm', type: 'button', onclick: everyone(false) }, t('autoAllOff'))
+        )
+      ),
+      h('div', { class: 'card-sub' }, t('autoOptedOutTitle', { count: optedOut.length })),
+      optedOut.length ? h('div', { class: 'list' }, optedOut.map(offRow)) : h('p', { class: 'small muted' }, t('autoNoOptOuts')),
+      otherOff.length ? h('details', null,
+        h('summary', { class: 'small' }, t('autoOtherOff', { count: otherOff.length })),
+        h('div', { class: 'list' }, otherOff.map(offRow))
+      ) : null
+    );
+    const autoSetup = whatsApp && h('div', { class: 'list', style: { marginTop: '12px' } },
+      h('div', { class: 'list-item' }, h('div', { class: 'list-title' }, t('autoSender'), ready(whatsApp.sender))),
+      h('div', { class: 'list-item' }, h('div', { class: 'list-title' }, t('autoWebhooks'), ready(whatsApp.webhooks))),
+      ['lesson_reminder', 'payment_reminder'].flatMap((kind) => ['he', 'en'].map((lang) => h('div', { class: 'list-item' },
+        h('div', { class: 'list-title' }, `${t(`msg.${kind}`)} · ${t(lang === 'he' ? 'hebrew' : 'english')}`, ready(whatsApp.templates?.[kind]?.[lang]))
+      )))
+    );
+
     const templatesForm = h('form', { class: 'stack' },
       window.VOCAB.messageKinds.map((kind) => h('div', { class: 'card', style: { padding: '14px 16px' } },
         h('div', { class: 'card-title', style: { marginBottom: '8px' } }, t(`msg.${kind}`)),
@@ -140,6 +204,7 @@
         card(t('general'), generalForm, { actions: [status] }),
         card(t('matchingTitle'), matchingForm, { sub: t('matchingSub'), actions: [matchingStatus] }),
         card(t('defaultPricesTitle'), pricesForm, { sub: t('defaultPricesSub'), actions: [pricesStatus] }),
+        card(t('autoTitle'), h('div', null, autoForm, autoRoster, autoSetup), { sub: t('autoSub'), actions: [autoStatus] }),
         card(t('templates'), templatesForm, { sub: t('templatesSub'), actions: [templatesStatus] }),
         card(t('portalAccounts'), h('p', { class: 'small' }, t('portalAccountsNote'))),
         card(t('integrations'), h('p', { class: 'small' }, t('integrationsNote')))

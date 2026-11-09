@@ -70,7 +70,50 @@ portal's `groups` table; a student with a portal phone is added to their
 group there automatically. In development the database is seeded with demo
 students, lessons, payments and prospects (`lib/business-seed.mjs`).
 Messages open WhatsApp with the text prefilled and are logged once sent;
-automatic sending, Google Calendar sync and the assistant are the next step.
+Google Calendar sync and the assistant are the next step.
+
+### Automatic WhatsApp reminders
+
+The server sends two messages by itself, through Twilio's WhatsApp sender
+(`lib/auto-messages.mjs`, `lib/whatsapp.mjs`): a lesson reminder at each
+student's reminder time before the lesson, and a payment message on the day
+the family starts to owe (a debt that started more than two days ago gets
+none). It checks once a minute. Each message goes out once, logged in the
+student's message history under the same reference a reminder sent by hand
+gets, so neither is ever sent twice; a failed one is logged with Twilio's
+reason and not retried. Nothing goes out during the quiet hours in the
+family's own time zone.
+
+Every student has their own switch (the student form, under payment), and
+every student starts with it off: nothing goes out to a family until it is
+turned on for them. Settings has "Turn on for everyone", which leaves out
+parents who asked to stop and students whose reminders were turned off
+before, and makes new students start on; "Turn off for everyone" undoes
+both. A parent who replies "הסר" or STOP to the number has automatic
+messages turned off for all their children and is told so; Settings lists
+them with the date, and ticking the switch again by hand turns them back on.
+
+Settings → "Automatic WhatsApp reminders" has the mode: **off**, **trial**
+(every message that would have gone out is logged, nothing is sent) or
+**on**. It also shows which Twilio parts are set up. To set it up:
+
+Rolling it out: deploy with everyone off; set the mode to on and turn it on
+for one test student whose parent phone is yours; tell the families; then
+"Turn on for everyone".
+
+1. Connect the business number as a WhatsApp sender in the Twilio console.
+2. Create the four templates in Twilio's Content Template Builder with the
+   text in `TEMPLATES` in `lib/whatsapp.mjs` (lesson reminder and payment
+   due, Hebrew and English, category Utility) and submit them to WhatsApp.
+3. Set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM` and
+   the four `TWILIO_CONTENT_*` SIDs.
+4. On the sender, set "When a message comes in" to
+   `<PUBLIC_ORIGIN>/api/whatsapp/inbound`. Delivery reports come to
+   `/api/whatsapp/status` by themselves. Both are refused unless Twilio
+   signed them.
+
+A parent who writes to the number gets the automatic reply from the
+settings, at most once every 12 hours, and only while the mode is on.
 
 ## Configuration
 
@@ -86,6 +129,7 @@ the full list. The ones that matter:
 | `DATA_DIR` | Where the SQLite database lives. A persistent volume, or an ephemeral directory plus the `LITESTREAM_*` variables below. |
 | `LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT`, `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` | Docker image only. Replicate the database to an S3-compatible bucket and restore from it at boot, for hosts without a persistent disk. Empty bucket means off. |
 | `TWILIO_VERIFY_SERVICE_SID` + API key or account token | Required in production. |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`, `TWILIO_CONTENT_*` | Automatic WhatsApp reminders. Optional; see above. |
 | `BOOTSTRAP_TEACHER_PHONE` | Creates the admin account when the database is empty. Remove after first boot. |
 
 A production process **refuses to start** (exit code 78) without Twilio

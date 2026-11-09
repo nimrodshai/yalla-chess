@@ -41,6 +41,8 @@ import { withWriteLock } from './lib/mutex.mjs';
 import { isBusinessStoreEmpty, openBusinessStore, teachers as teacherRecords } from './lib/business-db.mjs';
 import { forgetGroup, getSettings, groupHasStudents, handleBusinessRequest, HttpError, migrateStudentPrices, teacherForPhone, teacherGroupIds } from './lib/business.mjs';
 import { seedBusinessDemo } from './lib/business-seed.mjs';
+import { answerInbound, recordDeliveryStatus, runAutoMessages } from './lib/auto-messages.mjs';
+import { getWhatsAppConfig, isValidTwilioSignature } from './lib/whatsapp.mjs';
 
 const ROOT = process.cwd();
 const PORT = config.port;
@@ -2109,6 +2111,107 @@ async function serveStatic(req, res, pathname) {
   createReadStream(absolute).pipe(res);
 }
 
+// ------------------------------------------------- automatic WhatsApp
+
+// Where Twilio reports on each message sent; without a public origin there
+// is no address Twilio could reach, so no reports are asked for.
+function whatsAppStatusCallback() {
+  return config.publicOrigin ? `${config.publicOrigin}/api/whatsapp/status` : '';
+}
+
+let autoMessagesRunning = false;
+
+// Under the write lock, like any other change to the data; a run still in
+// progress makes the next one skip rather than queue up behind it.
+async function runAutoMessagesOnce(now = new Date()) {
+  if (autoMessagesRunning) return null;
+  autoMessagesRunning = true;
+  try {
+    return await withWriteLock(async () => runAutoMessages({ groups: await loadGroups(), now, statusCallback: whatsAppStatusCallback() }));
+  } finally {
+    autoMessagesRunning = false;
+  }
+}
+
+function startAutoMessages() {
+  const tick = () => runAutoMessagesOnce().catch((error) => logError('auto_messages.failed', error));
+  // A first run soon after boot catches up on what came due while the
+  // server was asleep or restarting.
+  setTimeout(tick, 15_000).unref();
+  setInterval(tick, 60_000).unref();
+}
+
+// A Twilio webhook: form fields, signed with the account's auth token over
+// the exact URL Twilio called. Anything unsigned is refused.
+async function readTwilioWebhook(req, res) {
+  let raw;
+  try {
+    raw = await readRequestBody(req, 64 * 1024);
+  } catch (error) {
+    sendText(res, error.statusCode || 400, 'Bad Request');
+    return null;
+  }
+  const params = Object.fromEntries(new URLSearchParams(raw));
+  const origin = config.publicOrigin || `http://${req.headers.host || '127.0.0.1'}`;
+  if (!isValidTwilioSignature({ url: `${origin}${req.url}`, params, signature: req.headers['x-twilio-signature'] }, getWhatsAppConfig().authToken)) {
+    logWarn('whatsapp.webhook_rejected', { path: req.url?.split('?')[0] });
+    sendText(res, 403, 'Forbidden');
+    return null;
+  }
+  return params;
+}
+
+async function handleWhatsAppStatus(req, res) {
+  const params = await readTwilioWebhook(req, res);
+  if (!params) return;
+  await withWriteLock(async () => recordDeliveryStatus({
+    sid: params.MessageSid || params.SmsSid || '',
+    status: String(params.MessageStatus || params.SmsStatus || '').toLowerCase(),
+    errorCode: params.ErrorCode || '',
+    errorMessage: params.ErrorMessage || ''
+  }));
+  sendText(res, 200, '');
+}
+
+const escapeXml = (value) => String(value).replace(/[<>&'"]/g, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[char]);
+
+// A parent wrote to the reminders number. Nobody reads it, so they get the
+// automatic reply, or, when they asked to stop, are taken off the automatic
+// messages and told so. The answer goes in the webhook's own TwiML
+// response: replying to someone who just wrote needs no approved template.
+async function handleWhatsAppInbound(req, res) {
+  const params = await readTwilioWebhook(req, res);
+  if (!params) return;
+  const from = String(params.From || '').replace(/^whatsapp:/, '');
+  logInfo('whatsapp.inbound', { from: from.slice(0, -4).replace(/\d/g, '•') + from.slice(-4) });
+  const reply = await withWriteLock(async () => answerInbound({ from, body: params.Body || '' }));
+  const twiml = reply ? `<Response><Message>${escapeXml(reply)}</Message></Response>` : '<Response/>';
+  sendText(res, 200, `<?xml version="1.0" encoding="UTF-8"?>${twiml}`, 'text/xml; charset=utf-8');
+}
+
+// Runs the automatic messages as if it were `now`, for tests.
+async function handleDebugAutoMessages(req, res) {
+  if (!config.enableDebugEndpoints) {
+    sendJson(res, 404, { ok: false, error: 'Not found.' }, getCorsHeaders(req));
+    return;
+  }
+  let payload = {};
+  try {
+    payload = JSON.parse((await readRequestBody(req)) || '{}');
+  } catch {
+    sendJson(res, 400, { ok: false, error: 'Invalid JSON payload.' });
+    return;
+  }
+  const now = payload.now ? new Date(payload.now) : new Date();
+  if (Number.isNaN(now.getTime())) {
+    sendJson(res, 400, { ok: false, error: 'Invalid time.' });
+    return;
+  }
+  // Wait for a run already under way rather than skip.
+  while (autoMessagesRunning) await new Promise((resolve) => setTimeout(resolve, 20));
+  sendJson(res, 200, { ok: true, summary: await runAutoMessagesOnce(now) });
+}
+
 async function handleRequest(req, res) {
   clearExpiredSessions();
   pruneRateLimits();
@@ -2172,6 +2275,21 @@ async function handleRequest(req, res) {
 
   if (url.pathname === '/api/debug/session' && req.method === 'GET') {
     await handleDebugSession(req, res, url);
+    return;
+  }
+
+  if (url.pathname === '/api/debug/auto-messages' && req.method === 'POST') {
+    await handleDebugAutoMessages(req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/whatsapp/status' && req.method === 'POST') {
+    await handleWhatsAppStatus(req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/whatsapp/inbound' && req.method === 'POST') {
+    await handleWhatsAppInbound(req, res);
     return;
   }
 
@@ -2430,4 +2548,5 @@ server.listen(PORT, config.host, () => {
     sms: hasTwilioCredentials() ? 'twilio' : (config.smsConsoleFallback ? 'console' : 'disabled'),
     debugEndpoints: config.enableDebugEndpoints
   });
+  startAutoMessages();
 });
