@@ -119,7 +119,7 @@ settings, at most once every 12 hours, and only while the mode is on.
 
 Every lesson on the calendar whose Zoom link has a meeting number
 (`zoom.us/j/…`) is watched once it is over. When Zoom has finished the
-meeting's audio transcript, Claude (`claude-opus-5`) writes the lesson's log
+meeting's audio transcript, Claude (`claude-sonnet-5`) writes the lesson's log
 from it: topic, topics, exercises, games, successes, difficulties, homework,
 next steps and a short summary. A lesson not logged yet is logged as held,
 with everyone present; a lesson already logged gets only the fields still

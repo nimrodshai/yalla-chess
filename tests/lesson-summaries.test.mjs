@@ -176,7 +176,7 @@ describe('lesson summaries from Zoom', () => {
     // student's language and a schema for the answer.
     const call = stub.state.claudeCalls[0];
     assert.equal(call.headers['x-api-key'], 'test-key');
-    assert.equal(call.body.model, 'claude-opus-5');
+    assert.equal(call.body.model, 'claude-sonnet-5');
     assert.equal(call.body.output_config.format.type, 'json_schema');
     const prompt = call.body.messages[0].content;
     assert.match(prompt, /Dolev: Today we learn about pins\. Find the pin in this position\.\nNoa Cohen: Bishop to b5!/);
