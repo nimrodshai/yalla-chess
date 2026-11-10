@@ -555,6 +555,8 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
 .viewer-stage.fullscreen-on .viewer-meta { color: #bab9b8; }
 .viewer-controls { display: flex; gap: 6px; justify-content: center; margin-top: 10px; direction: ltr; }
 .viewer-controls .btn { min-width: 44px; }
+.viewer-fullscreen { display: inline-flex; align-items: center; justify-content: center; }
+.viewer-fullscreen svg { width: 18px; height: 18px; display: block; }
 .viewer-moves { max-height: 420px; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; direction: ltr; font-variant-numeric: tabular-nums; line-height: 1.9; }
 .viewer-move { display: inline-block; padding: 0 5px; border-radius: 6px; cursor: pointer; font-family: 'Inter', monospace; font-size: 14px; }
 .viewer-move:hover { background: var(--gold-soft); }

@@ -211,6 +211,10 @@
   }
 
   // ----------------------------------------------------------- viewer
+  // Full-screen button icons: two diagonal arrows pointing out, and in.
+  const ICON_ATTRS = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+  const ICON_EXPAND = `<svg ${ICON_ATTRS}><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg>`;
+  const ICON_SHRINK = `<svg ${ICON_ATTRS}><path d="M20 10h-6V4M14 10l7-7M4 14h6v6M10 14l-7 7"/></svg>`;
   function gameViewer(item) {
     const { headers, moves } = window.CHESS.parsePgn(item.pgn || '');
     // A game that starts from a position (puzzle or study) carries a FEN tag.
@@ -252,7 +256,7 @@
       h('button', { class: 'btn', type: 'button', title: t('prevMove'), onclick: () => go(index - 1) }, '◀'),
       h('button', { class: 'btn', type: 'button', title: t('nextMove'), onclick: () => go(index + 1) }, '▶'),
       h('button', { class: 'btn', type: 'button', title: t('gameEnd'), onclick: () => go(positions.length - 1) }, '⏭'),
-      h('button', { class: 'btn viewer-fullscreen', type: 'button', title: t('fullscreen'), 'aria-label': t('fullscreen'), onclick: () => toggleFullscreen() }, '⛶')
+      h('button', { class: 'btn viewer-fullscreen', type: 'button', title: t('fullscreen'), 'aria-label': t('fullscreen'), html: ICON_EXPAND, onclick: () => toggleFullscreen() })
     );
     // Full screen shows the board, the controls and the move status on their
     // own. Browsers without the Fullscreen API on elements (iPhone Safari)
@@ -264,6 +268,7 @@
       stage.classList.toggle('fullscreen-on', on);
       const button = controls.querySelector('.viewer-fullscreen');
       button.title = t(on ? 'exitFullscreen' : 'fullscreen');
+      button.innerHTML = on ? ICON_SHRINK : ICON_EXPAND;
       button.setAttribute('aria-label', button.title);
       // The board's size changes, so redraw without animating.
       shown = null; render();
