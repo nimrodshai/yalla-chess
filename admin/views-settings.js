@@ -125,7 +125,7 @@
     // is set up in Twilio comes from the server, never the values.
     const autoStatus = h('span', { class: 'autosave-status', 'aria-live': 'polite' });
     const auto = settings.autoMessages || {};
-    const { whatsApp } = await api('/settings');
+    const { whatsApp, lessonSummaries } = await api('/settings');
     const ready = (ok) => h('span', { class: `badge ${ok ? 'badge-sage' : 'badge-warn'}` }, t(ok ? 'autoReady' : 'autoMissing'));
     const autoForm = h('form', { class: 'form' },
       field(t('autoMode'), window.UI.select('autoMessages.mode', ['off', 'trial', 'on'].map((mode) => [mode, t(`autoMode.${mode}`)]), auto.mode), { full: true, hint: t('autoModeHint') }),
@@ -184,6 +184,15 @@
       )))
     );
 
+    // Which parts of the Zoom summaries are set up, from the server.
+    const zoomSetup = lessonSummaries && h('div', null,
+      h('div', { class: 'list' },
+        h('div', { class: 'list-item' }, h('div', { class: 'list-title' }, t('zoomSummariesZoom'), ready(lessonSummaries.zoom))),
+        h('div', { class: 'list-item' }, h('div', { class: 'list-title' }, t('zoomSummariesClaude'), ready(lessonSummaries.claude)))
+      ),
+      h('p', { class: 'small muted', style: { marginTop: '8px' } }, t('zoomSummariesNote'))
+    );
+
     const templatesForm = h('form', { class: 'stack' },
       window.VOCAB.messageKinds.map((kind) => h('div', { class: 'card', style: { padding: '14px 16px' } },
         h('div', { class: 'card-title', style: { marginBottom: '8px' } }, t(`msg.${kind}`)),
@@ -205,6 +214,7 @@
         card(t('matchingTitle'), matchingForm, { sub: t('matchingSub'), actions: [matchingStatus] }),
         card(t('defaultPricesTitle'), pricesForm, { sub: t('defaultPricesSub'), actions: [pricesStatus] }),
         card(t('autoTitle'), h('div', null, autoForm, autoRoster, autoSetup), { sub: t('autoSub'), actions: [autoStatus] }),
+        zoomSetup ? card(t('zoomSummariesTitle'), zoomSetup, { sub: t('zoomSummariesSub') }) : null,
         card(t('templates'), templatesForm, { sub: t('templatesSub'), actions: [templatesStatus] }),
         card(t('portalAccounts'), h('p', { class: 'small' }, t('portalAccountsNote'))),
         card(t('integrations'), h('p', { class: 'small' }, t('integrationsNote')))

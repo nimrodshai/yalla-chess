@@ -77,6 +77,16 @@ services:
         sync: false
       - key: TWILIO_CONTENT_PAYMENT_DUE_EN
         sync: false
+      # Lesson summaries from Zoom, optional (README, "Lesson summaries
+      # from Zoom").
+      - key: ZOOM_ACCOUNT_ID
+        sync: false
+      - key: ZOOM_CLIENT_ID
+        sync: false
+      - key: ZOOM_CLIENT_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
       # Contact-form email, optional. Leave blank to skip.
       - key: RESEND_API_KEY
         sync: false

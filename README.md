@@ -115,6 +115,29 @@ for one test student whose parent phone is yours; tell the families; then
 A parent who writes to the number gets the automatic reply from the
 settings, at most once every 12 hours, and only while the mode is on.
 
+### Lesson summaries from Zoom
+
+Every lesson on the calendar whose Zoom link has a meeting number
+(`zoom.us/j/…`) is watched once it is over. When Zoom has finished the
+meeting's audio transcript, Claude (`claude-opus-5`) writes the lesson's log
+from it: topic, topics, exercises, games, successes, difficulties, homework,
+next steps and a short summary. A lesson not logged yet is logged as held,
+with everyone present; a lesson already logged gets only the fields still
+empty. The lesson page shows the summary with a "Filled from Zoom" badge.
+Nothing is sent to parents. The server checks every 5 minutes, a lesson
+without a transcript yet less and less often, for up to 3 days
+(`lib/lesson-summaries.mjs`). Settings shows which parts are set up.
+
+1. In Zoom (a paid plan): Settings → Recording → turn on cloud recording,
+   automatic recording to the cloud, and "Create audio transcript".
+2. In the Zoom App Marketplace, create a Server-to-Server OAuth app with the
+   scopes to list past meeting instances and read cloud recordings
+   (`meeting:read:list_past_instances:admin`,
+   `cloud_recording:read:list_recording_files:admin`, or the classic
+   `meeting:read:admin` and `recording:read:admin`), and activate it.
+3. Set `ZOOM_ACCOUNT_ID`, `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET` from the app
+   and `ANTHROPIC_API_KEY` from console.anthropic.com.
+
 ## Configuration
 
 Every setting is an environment variable; see [.env.example](.env.example) for
@@ -130,6 +153,7 @@ the full list. The ones that matter:
 | `LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT`, `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` | Docker image only. Replicate the database to an S3-compatible bucket and restore from it at boot, for hosts without a persistent disk. Empty bucket means off. |
 | `TWILIO_VERIFY_SERVICE_SID` + API key or account token | Required in production. |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`, `TWILIO_CONTENT_*` | Automatic WhatsApp reminders. Optional; see above. |
+| `ZOOM_ACCOUNT_ID`, `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, `ANTHROPIC_API_KEY` | Lesson summaries from Zoom. Optional; see above. |
 | `BOOTSTRAP_TEACHER_PHONE` | Creates the admin account when the database is empty. Remove after first boot. |
 
 A production process **refuses to start** (exit code 78) without Twilio

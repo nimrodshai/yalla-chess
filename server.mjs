@@ -43,6 +43,7 @@ import { forgetGroup, getSettings, groupHasStudents, handleBusinessRequest, Http
 import { seedBusinessDemo } from './lib/business-seed.mjs';
 import { answerInbound, recordDeliveryStatus, runAutoMessages } from './lib/auto-messages.mjs';
 import { getWhatsAppConfig, isValidTwilioSignature } from './lib/whatsapp.mjs';
+import { forgetWaiting, runLessonSummaries } from './lib/lesson-summaries.mjs';
 
 const ROOT = process.cwd();
 const PORT = config.port;
@@ -2212,6 +2213,52 @@ async function handleDebugAutoMessages(req, res) {
   sendJson(res, 200, { ok: true, summary: await runAutoMessagesOnce(now) });
 }
 
+// ------------------------------------------- lesson summaries from Zoom
+
+let lessonSummariesRunning = false;
+
+// Only the change to the lesson takes the write lock: the calls to Zoom
+// and Claude in between can take a minute and must not hold up the admin.
+async function runLessonSummariesOnce(now = new Date()) {
+  if (lessonSummariesRunning) return null;
+  lessonSummariesRunning = true;
+  try {
+    return await runLessonSummaries({ groups: await loadGroups(), now, write: (change) => withWriteLock(async () => change()) });
+  } finally {
+    lessonSummariesRunning = false;
+  }
+}
+
+function startLessonSummaries() {
+  const tick = () => runLessonSummariesOnce().catch((error) => logError('lesson_summaries.failed', error));
+  setTimeout(tick, 60_000).unref();
+  setInterval(tick, 5 * 60_000).unref();
+}
+
+// Runs the lesson summaries as if it were `now`, for tests; `fresh` forgets
+// which lessons were waiting for a transcript.
+async function handleDebugLessonSummaries(req, res) {
+  if (!config.enableDebugEndpoints) {
+    sendJson(res, 404, { ok: false, error: 'Not found.' }, getCorsHeaders(req));
+    return;
+  }
+  let payload = {};
+  try {
+    payload = JSON.parse((await readRequestBody(req)) || '{}');
+  } catch {
+    sendJson(res, 400, { ok: false, error: 'Invalid JSON payload.' });
+    return;
+  }
+  const now = payload.now ? new Date(payload.now) : new Date();
+  if (Number.isNaN(now.getTime())) {
+    sendJson(res, 400, { ok: false, error: 'Invalid time.' });
+    return;
+  }
+  if (payload.fresh) forgetWaiting();
+  while (lessonSummariesRunning) await new Promise((resolve) => setTimeout(resolve, 20));
+  sendJson(res, 200, { ok: true, summary: await runLessonSummariesOnce(now) });
+}
+
 async function handleRequest(req, res) {
   clearExpiredSessions();
   pruneRateLimits();
@@ -2280,6 +2327,11 @@ async function handleRequest(req, res) {
 
   if (url.pathname === '/api/debug/auto-messages' && req.method === 'POST') {
     await handleDebugAutoMessages(req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/debug/lesson-summaries' && req.method === 'POST') {
+    await handleDebugLessonSummaries(req, res);
     return;
   }
 
@@ -2549,4 +2601,5 @@ server.listen(PORT, config.host, () => {
     debugEndpoints: config.enableDebugEndpoints
   });
   startAutoMessages();
+  startLessonSummaries();
 });

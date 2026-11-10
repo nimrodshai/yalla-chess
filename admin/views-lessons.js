@@ -106,7 +106,8 @@
             h('span', { class: 'badge' }, `${fmtDate(lesson.date, { weekday: 'long', year: 'numeric' })} ${lesson.startTime}`),
             h('span', { class: 'badge' }, t(`kind.${lesson.kind}`)),
             lesson.durationMinutes ? h('span', { class: 'badge' }, `${lesson.durationMinutes} ${t('minutes')}`) : null,
-            lesson.status === 'cancelled' ? statusBadge('cancelled', 'lessonStatus') : null
+            lesson.status === 'cancelled' ? statusBadge('cancelled', 'lessonStatus') : null,
+            lesson.aiSummaryAt ? h('span', { class: 'badge badge-sage' }, t('aiSummaryBadge')) : null
           )
         ),
         h('div', { class: 'row' },
@@ -120,6 +121,7 @@
       h('div', { class: 'grid grid-2', style: { marginTop: '16px' } },
         card(t('details'), h('dl', { class: 'stack' },
           lesson.topics?.length ? h('div', { class: 'chips' }, lesson.topics.map((topic) => h('span', { class: 'chip' }, topic))) : null,
+          block(t('aiSummary'), lesson.aiSummary),
           block(t('exercises'), lesson.exercises),
           lesson.gamesResolved?.length ? h('div', { class: 'detail' }, h('dt', null, t('gamesFromList')), h('dd', null, window.UI.gameChips(lesson, { withFreeText: false }))) : null,
           block(t('gamesOther'), lesson.games),
