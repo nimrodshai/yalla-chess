@@ -277,12 +277,18 @@
         stage.classList.remove('is-fullscreen');
         placeholder.replaceWith(stage);
         syncFullscreen();
-      } else if (stage.requestFullscreen && document.fullscreenEnabled) stage.requestFullscreen().catch(fillWindow);
-      else fillWindow();
+      } else if (stage.requestFullscreen && document.fullscreenEnabled) {
+        // Some embedded browsers neither grant nor refuse the request, so
+        // fill the window if full screen has not started shortly after.
+        let settled = false;
+        stage.requestFullscreen().then(() => { settled = true; }, () => { settled = true; fillWindow(); });
+        setTimeout(() => { if (!settled && document.fullscreenElement !== stage) fillWindow(); }, 500);
+      } else fillWindow();
     };
     // Also used when the browser refuses real full screen (an embedding
     // page's permissions, for one).
     const fillWindow = () => {
+      if (stage.classList.contains('is-fullscreen') || document.fullscreenElement === stage) return;
       stage.replaceWith(placeholder);
       document.body.append(stage);
       stage.classList.add('is-fullscreen');
