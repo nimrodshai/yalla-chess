@@ -316,7 +316,7 @@
     };
     render();
 
-    stage.append(boardHost, controls, h('div', { class: 'viewer-meta', style: { textAlign: 'center', marginTop: '6px' } }, status, h('div', { class: 'tiny' }, t('useArrows'))));
+    stage.append(boardHost, controls, h('div', { class: 'viewer-meta viewer-status', style: { textAlign: 'center', marginTop: '6px' } }, status, h('div', { class: 'tiny' }, t('useArrows'))));
     const node = h('div', { class: 'viewer' },
       stage,
       h('div', null,
