@@ -1224,15 +1224,19 @@
       align-items: center;
     }
 
+    /* The hero board matches the management app's game board: the green
+       chess.com theme in a dark frame with the coordinates outside, and the
+       same piece images. Gutters and labels scale with --size. */
     .chess-board-display {
-      width: 320px;
-      height: 320px;
+      --size: 320px;
+      width: var(--size);
       display: grid;
-      grid-template-columns: repeat(8, 1fr);
-      grid-template-rows: repeat(8, 1fr);
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 20px 60px var(--shadow-lg), 0 0 0 4px rgba(201, 168, 76, 0.15);
+      grid-template-columns: calc(var(--size) * 0.0356) minmax(0, 1fr) calc(var(--size) * 0.0075);
+      grid-template-rows: calc(var(--size) * 0.0151) auto calc(var(--size) * 0.0431);
+      direction: ltr;
+      background: #302e2b;
+      border-radius: 8px;
+      box-shadow: 0 20px 60px var(--shadow-lg);
       transform: perspective(800px) rotateY(-5deg) rotateX(5deg);
       transition: transform 0.5s;
     }
@@ -1241,19 +1245,43 @@
       transform: perspective(800px) rotateY(0deg) rotateX(0deg);
     }
 
+    .chess-board-display .squares {
+      grid-column: 2;
+      grid-row: 2;
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      grid-template-rows: repeat(8, 1fr);
+      aspect-ratio: 1;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .chess-board-display .ranks { grid-column: 1; grid-row: 2; display: grid; grid-template-rows: repeat(8, 1fr); }
+    .chess-board-display .files { grid-column: 2; grid-row: 3; display: grid; grid-template-columns: repeat(8, 1fr); }
+    .chess-board-display .ranks span,
+    .chess-board-display .files span {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #989795;
+      font: 700 max(7px, calc(var(--size) * 0.023))/1 'Inter', system-ui, sans-serif;
+      user-select: none;
+    }
+
     .chess-board-display .cell {
       display: flex;
       align-items: center;
       justify-content: center;
-      aspect-ratio: 1;
-      font-size: 2rem;
+      min-width: 0;
+      min-height: 0;
+      font-size: calc(var(--size) * 0.08);
       line-height: 1;
       font-family: 'Segoe UI Symbol', 'Noto Sans Symbols', serif;
-      transition: background 0.3s;
     }
 
-    .chess-board-display .cell.light { background: var(--board-light); }
-    .chess-board-display .cell.dark { background: var(--board-dark); }
+    .chess-board-display .cell img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+    .chess-board-display .cell.light { background: #ebecd3; }
+    .chess-board-display .cell.dark { background: #7a945a; }
     .chess-board-display .cell.piece-black { color: #1a1a1a; }
     .chess-board-display .cell.piece-white { color: #fff; text-shadow: 0 0 2px rgba(0,0,0,0.4); }
 
@@ -3540,8 +3568,7 @@
       .hero-visual { order: -1; }
 
       .chess-board-display {
-        width: 280px;
-        height: 280px;
+        --size: 280px;
         transform: none;
       }
 
@@ -3731,11 +3758,8 @@
       }
 
       .chess-board-display {
-        width: 220px;
-        height: 220px;
+        --size: 220px;
       }
-
-      .chess-board-display .cell { font-size: 1.2rem; }
 
       .stat-item .stat-num { font-size: 1.4rem; }
       .stat-item .stat-label { font-size: 0.78rem; }
@@ -3959,39 +3983,32 @@
     :where(:root[data-theme="dark"]) .portal-brand { color: var(--portal-text); }
     :where(:root[data-theme="dark"]) .portal-brand-kicker { color: rgba(248, 241, 230, 0.58); }
     :where(:root[data-theme="dark"]) .portal-brand-title { color: var(--portal-text); }
-
     :where(:root[data-theme="dark"]) .portal-title { color: white; }
     :where(:root[data-theme="dark"]) .portal-clock { background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(41, 41, 41, 0.11); }
     :where(:root[data-theme="dark"]) .portal-clock-value { color: white; }
-
     :where(:root[data-theme="dark"]) .portal-body { background: rgba(30, 25, 18, 0.98); color: rgb(220, 214, 204); box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.176); }
     :where(:root[data-theme="dark"]) .portal-group-list { border-top: 1px solid rgba(201, 168, 76, 0.16); }
     :where(:root[data-theme="dark"]) .portal-group-row { border-bottom: 1px solid rgba(201, 168, 76, 0.16); }
-
     :where(:root[data-theme="dark"]) .portal-group-title { color: rgb(220, 214, 204); }
     :where(:root[data-theme="dark"]) .portal-group-subtitle { color: rgb(201, 188, 177); }
     :where(:root[data-theme="dark"]) .portal-group-meta-line { color: rgb(201, 188, 177); }
     :where(:root[data-theme="dark"]) .portal-group-meta-line strong { color: rgb(220, 214, 204); }
-
     :where(:root[data-theme="dark"]) .portal-group-status { color: rgb(201, 188, 177); }
     :where(:root[data-theme="dark"]) .portal-group-status[data-tone="success"] { color: rgb(128, 218, 161); }
     :where(:root[data-theme="dark"]) .portal-group-status[data-tone="error"] { color: #c44949; }
     :where(:root[data-theme="dark"]) .portal-group-status[data-tone="info"] { color: rgb(218, 191, 128); }
     :where(:root[data-theme="dark"]) .portal-empty { color: rgb(201, 188, 177); }
-
     :where(:root[data-theme="dark"]) .member-portal { background: rgb(29, 26, 20); color: rgb(227, 222, 214); }
     :where(:root[data-theme="dark"]) .portal-topbar { background: linear-gradient(180deg, #060504 0%, #090806 100%); box-shadow: 0 16px 34px rgba(0, 0, 0, 0.484); }
     :where(:root[data-theme="dark"]) .portal-brand { color: #fff; }
     :where(:root[data-theme="dark"]) .portal-brand-kicker { color: rgba(255, 255, 255, 0.95); }
     :where(:root[data-theme="dark"]) .portal-brand-title { color: rgba(255, 255, 255, 0.82); }
-
     :where(:root[data-theme="dark"]) .portal-profile-button { background: rgba(255, 255, 255, 0.04); color: #fff; }
     :where(:root[data-theme="dark"]) .portal-profile-button:hover,
 :where(:root[data-theme="dark"]) .portal-profile-button:focus-visible { background: rgba(255, 255, 255, 0.08); }
     :where(:root[data-theme="dark"]) .portal-profile-avatar { background: linear-gradient(135deg, rgba(204, 153, 49, 0.98), rgba(235, 206, 126, 0.9)); color: #0f0d09; }
     :where(:root[data-theme="dark"]) .portal-profile-caret { color: rgba(255, 255, 255, 0.76); }
     :where(:root[data-theme="dark"]) .portal-workspace-switch { border: 1px solid rgba(41, 41, 41, 0.08); background: rgba(255, 255, 255, 0.03); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.01); }
-
     :where(:root[data-theme="dark"]) .portal-hero-grid { background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.035), transparent 30%), linear-gradient(180deg, #0d0c0a 0%, #070605 100%); border: 1px solid rgba(41, 41, 41, 0.06); box-shadow: 0 22px 58px rgba(0, 0, 0, 0.528); }
     :where(:root[data-theme="dark"]) .portal-lesson-icon { background: radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.06), transparent 62%), linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)); border: 1px solid rgba(41, 41, 41, 0.08); color: rgb(229, 192, 108); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.013); }
     :where(:root[data-theme="dark"]) .portal-lesson-copy { border-right: 1px solid rgba(41, 41, 41, 0.14); }
@@ -4005,7 +4022,6 @@
     :where(:root[data-theme="dark"]) .portal-clock-unit { background: rgba(255, 255, 255, 0.035); }
     :where(:root[data-theme="dark"]) .portal-clock-value { color: #fff; }
     :where(:root[data-theme="dark"]) .portal-clock-unit-label { color: rgba(255, 255, 255, 0.66); }
-
     :where(:root[data-theme="dark"]) .hero-title { color: rgb(220, 214, 204); }
     :where(:root[data-theme="dark"]) .section-title { color: rgb(220, 214, 204); }
     :where(:root[data-theme="dark"]) .section-subtitle { color: rgb(201, 188, 177); }
@@ -4025,7 +4041,6 @@
 :where(:root[data-theme="dark"]) .mobile-menu-btn:focus-visible { border-color: rgba(201, 168, 76, 0.56); background: rgba(26, 23, 15, 0.94); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.176); }
     :where(:root[data-theme="dark"]) .hero::before { background: radial-gradient(circle, rgba(201, 168, 76, 0.08) 0%, transparent 70%); }
     :where(:root[data-theme="dark"]) .hero-board-pattern .cell { background: var(--charcoal); }
-
     :where(:root[data-theme="dark"]) .hero-title .highlight { color: var(--gold); }
     :where(:root[data-theme="dark"]) .hero-desc { color: rgb(201, 188, 177); }
     :where(:root[data-theme="dark"]) .btn-primary { background: linear-gradient(135deg, var(--gold), var(--gold-dark)); color: white; box-shadow: 0 4px 15px rgba(201, 168, 76, 0.3); }
@@ -4034,9 +4049,12 @@
     :where(:root[data-theme="dark"]) .btn-secondary:hover { border-color: var(--gold); background: rgba(201, 168, 76, 0.05); }
     :where(:root[data-theme="dark"]) .stat-item .stat-num { color: rgb(218, 191, 128); }
     :where(:root[data-theme="dark"]) .stat-item .stat-label { color: rgb(201, 188, 177); }
-    :where(:root[data-theme="dark"]) .chess-board-display { border-radius: 16px; box-shadow: 0 20px 60px var(--shadow-lg), 0 0 0 4px rgba(201, 168, 76, 0.15); }
-    :where(:root[data-theme="dark"]) .chess-board-display .cell.light { background: var(--board-light); }
-    :where(:root[data-theme="dark"]) .chess-board-display .cell.dark { background: var(--board-dark); }
+    :where(:root[data-theme="dark"]) .chess-board-display { background: #302e2b; border-radius: 8px; box-shadow: 0 20px 60px var(--shadow-lg); }
+    :where(:root[data-theme="dark"]) .chess-board-display .squares { border-radius: 3px; }
+    :where(:root[data-theme="dark"]) .chess-board-display .ranks span,
+:where(:root[data-theme="dark"]) .chess-board-display .files span { color: #989795; }
+    :where(:root[data-theme="dark"]) .chess-board-display .cell.light { background: #ebecd3; }
+    :where(:root[data-theme="dark"]) .chess-board-display .cell.dark { background: #7a945a; }
     :where(:root[data-theme="dark"]) .chess-board-display .cell.piece-black { color: #1a1a1a; }
     :where(:root[data-theme="dark"]) .chess-board-display .cell.piece-white { color: #fff; text-shadow: 0 0 2px rgba(0,0,0,0.4); }
     :where(:root[data-theme="dark"]) .floating-badge { background: rgb(19, 19, 19); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.33); }
@@ -4045,7 +4063,6 @@
     :where(:root[data-theme="dark"]) .about { background: rgb(28, 25, 17); }
     :where(:root[data-theme="dark"]) .about-image-placeholder { box-shadow: 0 20px 60px rgba(0, 0, 0, 0.33); }
     :where(:root[data-theme="dark"]) .about-image-placeholder::after { background: linear-gradient(to top, rgba(44, 44, 44, 0.3), transparent); }
-
     :where(:root[data-theme="dark"]) .highlight-item { background: rgb(19, 19, 19); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.176); }
     :where(:root[data-theme="dark"]) .highlight-item .hi-sub { color: rgb(201, 188, 177); }
     :where(:root[data-theme="dark"]) .step-card { background: rgb(19, 19, 19); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.176); }
@@ -4061,7 +4078,6 @@
     :where(:root[data-theme="dark"]) .popular-tag { background: linear-gradient(135deg, var(--gold), var(--gold-dark)); color: white; }
     :where(:root[data-theme="dark"]) .service-icon { background: linear-gradient(135deg, rgba(201, 168, 76, 0.12), rgba(201, 168, 76, 0.04)); }
     :where(:root[data-theme="dark"]) .service-card h3 { color: rgb(220, 214, 204); }
-
     :where(:root[data-theme="dark"]) .service-card p { color: rgb(201, 188, 177); }
     :where(:root[data-theme="dark"]) .service-features li { color: rgb(215, 209, 198); border-bottom: 1px solid rgba(236, 217, 164, 0.044); }
     :where(:root[data-theme="dark"]) .service-features li::before { color: rgb(175, 193, 165); }
@@ -4097,7 +4113,6 @@
     :where(:root[data-theme="dark"]) .auth-copy { background: linear-gradient(145deg, rgba(42, 34, 23, 0.76), rgba(26, 23, 15, 0.72)), repeating-conic-gradient(from 45deg, rgba(181, 136, 99, 0.2) 0 25%, rgba(42, 34, 23, 0.18) 0 50%) 50% / 72px 72px; }
     :where(:root[data-theme="dark"]) .auth-kicker { color: rgb(218, 191, 128); }
     :where(:root[data-theme="dark"]) .auth-title { color: rgb(220, 214, 204); }
-
     :where(:root[data-theme="dark"]) .auth-stage-shell { border: 1px solid rgba(201, 168, 76, 0.22); background: linear-gradient(180deg, rgba(19, 19, 19, 0.98), rgba(26, 23, 15, 0.92)), repeating-linear-gradient(135deg, rgba(201, 168, 76, 0.06) 0 1px, transparent 1px 18px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18); }
     :where(:root[data-theme="dark"]) .auth-stage-shell::before { background: linear-gradient(115deg, transparent 42%, rgba(19, 19, 19, 0.5) 50%, transparent 58%); }
     :where(:root[data-theme="dark"]) .auth-stage-shell::after { background: linear-gradient(90deg, rgba(201, 168, 76, 0.08), transparent 22%, transparent 78%, rgba(201, 168, 76, 0.08)); }
@@ -4150,7 +4165,6 @@
     :where(:root[data-theme="dark"]) body.rtl .settings-rail { border-left: 1px solid rgba(201, 168, 76, 0.14); }
     :where(:root[data-theme="dark"]) .settings-kicker { color: rgb(218, 191, 128); }
     :where(:root[data-theme="dark"]) .settings-title { color: rgb(220, 214, 204); }
-
     :where(:root[data-theme="dark"]) .settings-menu-toggle { border: 1px solid rgba(201, 168, 76, 0.24); background: rgba(26, 23, 15, 0.88); color: rgb(220, 214, 204); }
     :where(:root[data-theme="dark"]) .settings-menu-toggle:hover,
 :where(:root[data-theme="dark"]) .settings-menu-toggle:focus-visible { background: rgb(19, 19, 19); border-color: rgba(201, 168, 76, 0.38); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.132); }
@@ -4973,27 +4987,42 @@
     function buildBoard() {
       const board = document.getElementById('chessBoard');
       board.innerHTML = '';
-      // Use filled (black) unicode chars for all pieces; CSS colors them
+      // Same images as the management app's board; bump the version with
+      // PIECE_VERSION in admin/ui.js. The Unicode glyph is the fallback.
       // \uFE0E = text variation selector, prevents emoji rendering on mobile
-      const VS = '\uFE0E';
-      const pieces = [
-        ['\u265C'+VS,'\u265E'+VS,'\u265D'+VS,'\u265B'+VS,'\u265A'+VS,'\u265D'+VS,'\u265E'+VS,'\u265C'+VS],
-        ['\u265F'+VS,'\u265F'+VS,'\u265F'+VS,'\u265F'+VS,'\u265F'+VS,'\u265F'+VS,'\u265F'+VS,'\u265F'+VS],
-        [],[],[],[],
-        ['\u265F'+VS,'\u265F'+VS,'\u265F'+VS,'\u265F'+VS,'\u265F'+VS,'\u265F'+VS,'\u265F'+VS,'\u265F'+VS],
-        ['\u265C'+VS,'\u265E'+VS,'\u265D'+VS,'\u265B'+VS,'\u265A'+VS,'\u265D'+VS,'\u265E'+VS,'\u265C'+VS]
-      ];
+      const GLYPHS = { K: '\u265A', Q: '\u265B', R: '\u265C', B: '\u265D', N: '\u265E', P: '\u265F' };
+      const back = ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'];
+      const pieces = [back, Array(8).fill('P'), [], [], [], [], Array(8).fill('P'), back];
+      const span = (text) => { const node = document.createElement('span'); node.textContent = text; return node; };
+      const ranks = document.createElement('div');
+      ranks.className = 'ranks';
+      for (let rank = 8; rank >= 1; rank--) ranks.appendChild(span(String(rank)));
+      const files = document.createElement('div');
+      files.className = 'files';
+      for (const file of 'abcdefgh') files.appendChild(span(file));
+      const squares = document.createElement('div');
+      squares.className = 'squares';
       for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
           const cell = document.createElement('div');
           cell.className = 'cell ' + ((r + c) % 2 === 0 ? 'light' : 'dark');
-          if (pieces[r] && pieces[r][c]) {
-            cell.textContent = pieces[r][c];
-            cell.classList.add(r <= 1 ? 'piece-black' : 'piece-white');
+          const piece = pieces[r][c];
+          if (piece) {
+            const color = r <= 1 ? 'b' : 'w';
+            const img = document.createElement('img');
+            img.src = '/admin/pieces/' + color + piece + '.png?v=2';
+            img.alt = '';
+            img.draggable = false;
+            img.addEventListener('error', () => {
+              cell.classList.add(color === 'b' ? 'piece-black' : 'piece-white');
+              img.replaceWith(GLYPHS[piece] + '\uFE0E');
+            }, { once: true });
+            cell.appendChild(img);
           }
-          board.appendChild(cell);
+          squares.appendChild(cell);
         }
       }
+      board.append(ranks, squares, files);
     }
 
     // Hero background pattern
