@@ -1264,7 +1264,7 @@
       align-items: center;
       justify-content: center;
       color: #989795;
-      font: 700 max(7px, calc(var(--size) * 0.023))/1 'Inter', system-ui, sans-serif;
+      font: 700 max(7px, calc(var(--size) * 0.026))/1 'Inter', system-ui, sans-serif;
       user-select: none;
     }
 
@@ -5010,7 +5010,7 @@
           if (piece) {
             const color = r <= 1 ? 'b' : 'w';
             const img = document.createElement('img');
-            img.src = '/admin/pieces/' + color + piece + '.png?v=2';
+            img.src = '/admin/pieces/' + color + piece + '.png?v=3';
             img.alt = '';
             img.draggable = false;
             img.addEventListener('error', () => {

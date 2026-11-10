@@ -636,7 +636,7 @@
   // images under /admin/pieces (wK.png ... bP.png); the Unicode glyph is the
   // fallback if an image is missing. Images are cached for a day, so bump
   // PIECE_VERSION whenever the set is redrawn.
-  const PIECE_VERSION = 2;
+  const PIECE_VERSION = 3;
   const PIECES = { K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙', k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
   function pieceImage(piece) {
     const color = piece === piece.toUpperCase() ? 'w' : 'b';

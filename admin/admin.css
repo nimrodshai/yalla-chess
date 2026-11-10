@@ -516,7 +516,7 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
 .board-frame .files { grid-column: 2; grid-row: 3; display: grid; grid-template-columns: repeat(8, 1fr); }
 .board-frame .ranks span, .board-frame .files span {
   display: flex; align-items: center; justify-content: center;
-  color: #989795; font: 700 max(8px, 2.3cqw)/1 'Inter', system-ui, sans-serif; user-select: none;
+  color: #989795; font: 700 max(8px, 2.6cqw)/1 'Inter', system-ui, sans-serif; user-select: none;
 }
 .board {
   grid-column: 2; grid-row: 2;
