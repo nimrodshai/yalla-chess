@@ -89,7 +89,6 @@ html[lang="en"] { --font: 'Inter', 'Heebo', system-ui, sans-serif; }
 }
 :root[data-theme="dark"] .avatar.ink { color: #6d5521; }
 :root[data-theme="dark"] .modal-backdrop { background: rgba(0, 0, 0, 0.62); }
-:root[data-theme="dark"] .board { border-color: #3a2d1f; }
 /* The pawn emoji is drawn black; on a dark sidebar it needs lifting. */
 :root[data-theme="dark"] .nav-item:not(.active)[data-route="groups"] .nav-icon { filter: invert(0.82) sepia(0.4); }
 
@@ -504,34 +503,42 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
 .pipe-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
 .pipe-actions:empty { display: none; }
 
-/* chess board (FEN) */
+/* chess board (FEN), in the chess.com green theme: a dark frame with the
+   rank numbers to the left and the file letters below. The frame's gutters
+   are sized from the board-wrap's width (cqw), so a small preview board and
+   the viewer board share the same proportions. */
+.board-wrap { display: flex; flex-direction: column; gap: 6px; align-items: center; width: 100%; max-width: 360px; container-type: inline-size; }
+.board-frame {
+  display: grid; grid-template-columns: 3.56cqw minmax(0, 1fr) 0.75cqw; grid-template-rows: 1.51cqw auto 4.31cqw;
+  width: 100%; direction: ltr; background: #302e2b; border-radius: 6px;
+}
+.board-frame .ranks { grid-column: 1; grid-row: 2; display: grid; grid-template-rows: repeat(8, 1fr); }
+.board-frame .files { grid-column: 2; grid-row: 3; display: grid; grid-template-columns: repeat(8, 1fr); }
+.board-frame .ranks span, .board-frame .files span {
+  display: flex; align-items: center; justify-content: center;
+  color: #989795; font: 700 max(8px, 2.3cqw)/1 'Inter', system-ui, sans-serif; user-select: none;
+}
 .board {
+  grid-column: 2; grid-row: 2;
   position: relative; display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr);
-  width: 100%; aspect-ratio: 1 / 1; direction: ltr; overflow: hidden;
-  border: 4px solid #4a3a28; border-radius: 6px; box-shadow: 0 6px 18px rgba(60, 40, 10, 0.18);
-  background: #b58863;
+  width: 100%; aspect-ratio: 1 / 1; direction: ltr; overflow: hidden; border-radius: 3px;
+  background: #7a945a;
 }
 .board .sq { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; user-select: none; }
-.board .sq.light { background: #f0d9b5; }
-.board .sq.dark { background: #b58863; }
-.board .sq.hl::before { content: ''; position: absolute; inset: 0; background: rgba(255, 210, 60, 0.55); }
-.board .sq img { position: relative; width: 88%; height: 88%; object-fit: contain; pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.25)); }
+.board .sq.light { background: #ebecd3; }
+.board .sq.dark { background: #7a945a; }
+.board .sq.hl { background: #bdc95e; }
+.board .sq img { position: relative; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 /* The glyph fallback is sized from the board's own width (one square is
    12.5cqw), so it never overflows a small board such as a puzzle card. */
 .board { container-type: inline-size; }
 .board .sq .glyph { position: relative; font-size: 9cqw; line-height: 1; }
 @supports not (font-size: 1cqw) { .board .sq .glyph { font-size: clamp(10px, 4vw, 30px); } }
 .board .float { position: absolute; display: flex; align-items: center; justify-content: center; pointer-events: none; will-change: transform, opacity; }
-.board .float img { width: 88%; height: 88%; object-fit: contain; filter: drop-shadow(0 6px 6px rgba(0,0,0,0.3)); }
+.board .float img { width: 100%; height: 100%; object-fit: contain; }
 .board .float .glyph { font-size: 9cqw; line-height: 1; }
 .board .sq .glyph.w, .board .float .glyph.w { color: #fff; text-shadow: 0 0 2px #000, 0 0 1px #000; }
 .board .sq .glyph.b, .board .float .glyph.b { color: #111; }
-.board .coord { position: absolute; font-size: clamp(8px, 1.6vw, 11px); font-weight: 700; line-height: 1; opacity: .8; font-family: 'Inter', sans-serif; }
-.board .coord.rank { top: 3px; left: 4px; }
-.board .coord.file { bottom: 2px; right: 4px; }
-.board .sq.light .coord { color: #8a6a44; }
-.board .sq.dark .coord { color: #f0d9b5; }
-.board-wrap { display: flex; flex-direction: column; gap: 6px; align-items: center; width: 100%; max-width: 360px; }
 .board-caption { font-size: 12px; color: var(--text-light); }
 .viewer { display: grid; grid-template-columns: minmax(280px, 560px) minmax(220px, 1fr); gap: 22px; align-items: start; }
 .viewer .board-wrap { max-width: 560px; }

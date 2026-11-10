@@ -631,13 +631,16 @@
   }
 
   // ------------------------------------------------------------- FEN board
-  // An 8x8 CSS grid with a fixed 1:1 aspect ratio per square. Pieces are
+  // An 8x8 CSS grid with a fixed 1:1 aspect ratio per square, inside a dark
+  // frame that carries the coordinates. Pieces are
   // images under /admin/pieces (wK.png ... bP.png); the Unicode glyph is the
-  // fallback if an image is missing.
+  // fallback if an image is missing. Images are cached for a day, so bump
+  // PIECE_VERSION whenever the set is redrawn.
+  const PIECE_VERSION = 2;
   const PIECES = { K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙', k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
   function pieceImage(piece) {
     const color = piece === piece.toUpperCase() ? 'w' : 'b';
-    const img = h('img', { src: `/admin/pieces/${color}${piece.toUpperCase()}.png`, alt: PIECES[piece], draggable: false });
+    const img = h('img', { src: `/admin/pieces/${color}${piece.toUpperCase()}.png?v=${PIECE_VERSION}`, alt: PIECES[piece], draggable: false });
     img.addEventListener('error', () => { img.replaceWith(h('span', { class: `glyph ${color}` }, PIECES[piece])); }, { once: true });
     return img;
   }
@@ -650,22 +653,25 @@
       let file = 0;
       for (const char of rank) {
         if (/\d/.test(char)) {
-          for (let i = 0; i < Number(char); i += 1) { node.append(square(rankIndex, file, '', highlights, coords)); file += 1; }
+          for (let i = 0; i < Number(char); i += 1) { node.append(square(rankIndex, file, '', highlights)); file += 1; }
         } else {
-          node.append(square(rankIndex, file, char, highlights, coords));
+          node.append(square(rankIndex, file, char, highlights));
           file += 1;
         }
       }
     });
     const sideToMove = String(fen || '').trim().split(/\s+/)[1];
-    return h('div', { class: 'board-wrap' }, node, caption && sideToMove ? h('div', { class: 'board-caption' }, sideToMove === 'b' ? t('blackToMove') : t('whiteToMove')) : null);
+    const frame = h('div', { class: 'board-frame' },
+      coords ? h('div', { class: 'ranks' }, ...[8, 7, 6, 5, 4, 3, 2, 1].map((rank) => h('span', null, String(rank)))) : null,
+      node,
+      coords ? h('div', { class: 'files' }, ...[...'abcdefgh'].map((file) => h('span', null, file))) : null
+    );
+    return h('div', { class: 'board-wrap' }, frame, caption && sideToMove ? h('div', { class: 'board-caption' }, sideToMove === 'b' ? t('blackToMove') : t('whiteToMove')) : null);
   }
-  function square(rankIndex, file, piece, highlights, coords) {
+  function square(rankIndex, file, piece, highlights) {
     const light = (rankIndex + file) % 2 === 0;
     const squareName = 'abcdefgh'[file] + (8 - rankIndex);
     return h('div', { class: `sq ${light ? 'light' : 'dark'} ${highlights.includes(squareName) ? 'hl' : ''}`, dataset: { square: squareName } },
-      coords && file === 0 ? h('span', { class: 'coord rank' }, String(8 - rankIndex)) : null,
-      coords && rankIndex === 7 ? h('span', { class: 'coord file' }, 'abcdefgh'[file]) : null,
       piece ? pieceImage(piece) : null
     );
   }
