@@ -633,14 +633,14 @@
   // ------------------------------------------------------------- FEN board
   // An 8x8 CSS grid with a fixed 1:1 aspect ratio per square, inside a dark
   // frame that carries the coordinates. Pieces are
-  // images under /admin/pieces (wK.png ... bP.png); the Unicode glyph is the
+  // SVG images under /admin/pieces (wK.svg ... bP.svg); the Unicode glyph is the
   // fallback if an image is missing. Images are cached for a day, so bump
   // PIECE_VERSION whenever the set is redrawn.
-  const PIECE_VERSION = 3;
+  const PIECE_VERSION = 4;
   const PIECES = { K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙', k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
   function pieceImage(piece) {
     const color = piece === piece.toUpperCase() ? 'w' : 'b';
-    const img = h('img', { src: `/admin/pieces/${color}${piece.toUpperCase()}.png?v=${PIECE_VERSION}`, alt: PIECES[piece], draggable: false });
+    const img = h('img', { src: `/admin/pieces/${color}${piece.toUpperCase()}.svg?v=${PIECE_VERSION}`, alt: PIECES[piece], draggable: false });
     img.addEventListener('error', () => { img.replaceWith(h('span', { class: `glyph ${color}` }, PIECES[piece])); }, { once: true });
     return img;
   }
