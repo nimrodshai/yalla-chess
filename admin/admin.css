@@ -542,6 +542,17 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
 .board-caption { font-size: 12px; color: var(--text-light); }
 .viewer { display: grid; grid-template-columns: minmax(280px, 560px) minmax(220px, 1fr); gap: 22px; align-items: start; }
 .viewer .board-wrap { max-width: 560px; }
+/* Full screen: the board as large as the screen allows, with the controls
+   and the move status under it on the board's dark frame color. */
+.viewer-stage.fullscreen-on {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: #161512; padding: 16px; box-sizing: border-box; overflow: hidden;
+}
+.viewer-stage.is-fullscreen { position: fixed; inset: 0; z-index: 1000; width: 100vw; height: 100vh; height: 100dvh; }
+.viewer-stage:fullscreen { width: 100vw; height: 100vh; }
+.viewer-stage.fullscreen-on .viewer-board { width: min(100%, calc(100vh - 130px)); width: min(100%, calc(100dvh - 130px)); }
+.viewer-stage.fullscreen-on .board-wrap { max-width: none; }
+.viewer-stage.fullscreen-on .viewer-meta { color: #bab9b8; }
 .viewer-controls { display: flex; gap: 6px; justify-content: center; margin-top: 10px; direction: ltr; }
 .viewer-controls .btn { min-width: 44px; }
 .viewer-moves { max-height: 420px; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; direction: ltr; font-variant-numeric: tabular-nums; line-height: 1.9; }

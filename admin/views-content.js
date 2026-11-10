@@ -217,7 +217,7 @@
     const { positions, error } = window.CHESS.replay(moves, headers.FEN || item.fen || undefined);
     let index = 0;
     let shown = null; // index currently on the board, to animate from
-    const boardHost = h('div');
+    const boardHost = h('div', { class: 'viewer-board' });
     const movesHost = h('div', { class: 'viewer-moves' });
     const status = h('div', { class: 'viewer-meta' });
 
@@ -251,28 +251,77 @@
       h('button', { class: 'btn', type: 'button', title: t('gameStart'), onclick: () => go(0) }, '⏮'),
       h('button', { class: 'btn', type: 'button', title: t('prevMove'), onclick: () => go(index - 1) }, '◀'),
       h('button', { class: 'btn', type: 'button', title: t('nextMove'), onclick: () => go(index + 1) }, '▶'),
-      h('button', { class: 'btn', type: 'button', title: t('gameEnd'), onclick: () => go(positions.length - 1) }, '⏭')
+      h('button', { class: 'btn', type: 'button', title: t('gameEnd'), onclick: () => go(positions.length - 1) }, '⏭'),
+      h('button', { class: 'btn viewer-fullscreen', type: 'button', title: t('fullscreen'), 'aria-label': t('fullscreen'), onclick: () => toggleFullscreen() }, '⛶')
     );
+    // Full screen shows the board, the controls and the move status on their
+    // own. Browsers without the Fullscreen API on elements (iPhone Safari)
+    // get the same layout fixed over the whole window instead.
+    const stage = h('div', { class: 'viewer-stage' });
+    const isFullscreen = () => document.fullscreenElement === stage || stage.classList.contains('is-fullscreen');
+    const syncFullscreen = () => {
+      const on = isFullscreen();
+      stage.classList.toggle('fullscreen-on', on);
+      const button = controls.querySelector('.viewer-fullscreen');
+      button.title = t(on ? 'exitFullscreen' : 'fullscreen');
+      button.setAttribute('aria-label', button.title);
+      // The board's size changes, so redraw without animating.
+      shown = null; render();
+    };
+    // The fallback moves the stage to <body> while it is on: the modal's
+    // blurred backdrop would otherwise pin a fixed element to itself.
+    const placeholder = document.createComment('viewer-stage');
+    const toggleFullscreen = () => {
+      if (document.fullscreenElement === stage) document.exitFullscreen();
+      else if (stage.classList.contains('is-fullscreen')) {
+        stage.classList.remove('is-fullscreen');
+        placeholder.replaceWith(stage);
+        syncFullscreen();
+      } else if (stage.requestFullscreen && document.fullscreenEnabled) stage.requestFullscreen().catch(fillWindow);
+      else fillWindow();
+    };
+    // Also used when the browser refuses real full screen (an embedding
+    // page's permissions, for one).
+    const fillWindow = () => {
+      stage.replaceWith(placeholder);
+      document.body.append(stage);
+      stage.classList.add('is-fullscreen');
+      syncFullscreen();
+    };
+    stage.addEventListener('fullscreenchange', syncFullscreen);
     const onKey = (event) => {
-      if (!document.body.contains(node)) { node.dispose(); return; }
+      if (!document.body.contains(node) && !document.body.contains(placeholder)) { node.dispose(); return; }
       if (event.target instanceof Element && event.target.closest('input, textarea, select')) return;
       if (event.key === 'ArrowRight') { go(index + 1); event.preventDefault(); }
       else if (event.key === 'ArrowLeft') { go(index - 1); event.preventDefault(); }
       else if (event.key === 'Home') go(0);
       else if (event.key === 'End') go(positions.length - 1);
+      else if (event.key === 'f' || event.key === 'F') toggleFullscreen();
+    };
+    // Escape leaves the window-filling fallback before it can close the modal.
+    const onEscape = (event) => {
+      if (event.key !== 'Escape' || !stage.classList.contains('is-fullscreen')) return;
+      event.stopImmediatePropagation(); event.preventDefault(); toggleFullscreen();
     };
     render();
 
+    stage.append(boardHost, controls, h('div', { class: 'viewer-meta', style: { textAlign: 'center', marginTop: '6px' } }, status, h('div', { class: 'tiny' }, t('useArrows'))));
     const node = h('div', { class: 'viewer' },
-      h('div', null, boardHost, controls, h('div', { class: 'viewer-meta', style: { textAlign: 'center', marginTop: '6px' } }, status, h('div', { class: 'tiny' }, t('useArrows')))),
+      stage,
       h('div', null,
         h('div', { class: 'viewer-meta' }, [headers.White && `${t('gamePlayers')}: ${headers.White} – ${headers.Black || '?'}`, headers.Event && `${t('gameEvent')}: ${headers.Event}`, headers.Date && !headers.Date.includes('?') && headers.Date, headers.Result && `${t('gameResult')}: ${headers.Result}`].filter(Boolean).join(' · ')),
         error ? h('div', { class: 'alert alert-warn', style: { marginBottom: '8px' } }, t('replayError', { move: error })) : null,
         movesHost
       )
     );
-    node.dispose = () => document.removeEventListener('keydown', onKey);
+    node.dispose = () => {
+      if (stage.classList.contains('is-fullscreen')) toggleFullscreen();
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onEscape, true);
+      if (document.fullscreenElement === stage) document.exitFullscreen().catch(() => {});
+    };
     document.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onEscape, true);
     return node;
   }
 
