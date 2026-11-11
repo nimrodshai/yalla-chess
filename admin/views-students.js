@@ -65,7 +65,7 @@
     const student = data.student;
     const admin = window.APP.isAdmin;
     const tz = window.SETTINGS.businessTimezone;
-    const group = window.APP.groups.find((entry) => entry.id === student.groupId);
+    const groups = (student.groupIds || []).map((groupId) => window.APP.groups.find((entry) => entry.id === groupId)).filter(Boolean);
 
     const head = h('div', { class: 'card' }, h('div', { class: 'row-between' },
       h('div', { class: 'profile-head' },
@@ -78,7 +78,7 @@
             h('span', { class: 'badge' }, t(`level.${student.level}`)),
             student.chesscomRating ? h('span', { class: 'badge badge-gold' }, `Chess.com ${student.chesscomRating}`) : null,
             student.lichessRating ? h('span', { class: 'badge badge-gold' }, `Lichess ${student.lichessRating}`) : null,
-            group ? h('span', { class: 'badge badge-gold' }, link(`#/groups/${group.id}`, group.name)) : null,
+            ...groups.map((group) => h('span', { class: 'badge badge-gold' }, link(`#/groups/${group.id}`, group.name))),
             student.userPhone ? h('span', { class: 'badge badge-sage' }, t('portalLinked')) : null
           )
         )
@@ -120,7 +120,7 @@
         detail(t('joinedAt'), fmtDate(student.joinedAt, { year: 'numeric' })),
         detail(t('leftAt'), fmtDate(student.leftAt, { year: 'numeric' })),
         admin ? detail(t('source'), sourceLabel(student)) : null,
-        detail(t('schedule'), group ? scheduleText(student.groupSchedule) : ''),
+        detail(t('schedule'), groups.length ? scheduleText(student.groupSchedule) : ''),
         detail(t('privateSchedule'), scheduleText(student.privateSchedule)),
         detail(t('privateZoomLink'), student.privateZoomLink ? h('a', { href: student.privateZoomLink, target: '_blank', rel: 'noopener' }, 'Zoom') : ''),
         admin ? detail(t('prices'), h('div', null, (student.prices || []).length ? student.prices.map((item) => h('div', null, window.UI.priceText(item, student.currency))) : t('noPrices'))) : null,
@@ -185,7 +185,7 @@
       if (entry.kind === 'month') {
         return [
           t('ledger.month', { month: window.UI.fmtMonth(entry.month) }),
-          item ? t(`priceKind.${item.kind}`) : '',
+          item ? window.UI.priceKindText(item) : '',
           entry.partial ? t('ledger.partialMonth', { n: entry.count, amount: fmtMoney(entry.lessonAmount, student.currency) }) : ''
         ].filter(Boolean).join(' · ');
       }
@@ -372,11 +372,32 @@
         );
 
         // ---- step 2: where
-        // Closed groups are hidden from the choice, except the one the student
-        // is already in: dropping it from the list would silently clear it.
-        const groupOptions = [['', t('noGroup')], ...window.APP.groups.filter((group) => group.profile.status !== 'closed' || group.id === s.groupId).map((group) => [group.id, `${group.name}${group.profile.gender && group.profile.gender !== 'mixed' ? ` (${t(`groupGender.${group.profile.gender}`)})` : ''} · ${window.UI.scheduleText(group.schedule)} · ${group.seatsFree ? t('seatsFreeOf', { free: group.seatsFree, total: group.seatsTotal }) : t('full')}`])];
-        const groupSelect = select('groupId', groupOptions, s.groupId || '');
-        const groupField = field(t('group'), groupSelect, { full: true });
+        // A student can be in any number of groups, ticked in a list.
+        // Closed groups are left out, except ones the student is already in:
+        // dropping those from the list would silently take them out.
+        let chosenGroups = s.groupIds || (s.groups ? s.groups.map((entry) => entry.groupId) : s.groupId ? [s.groupId] : []);
+        const groupChoices = window.APP.groups.filter((group) => group.profile.status !== 'closed' || chosenGroups.includes(group.id));
+        const groupLabel = (group) => `${group.name}${group.profile.gender && group.profile.gender !== 'mixed' ? ` (${t(`groupGender.${group.profile.gender}`)})` : ''} · ${window.UI.scheduleText(group.schedule)} · ${group.seatsFree ? t('seatsFreeOf', { free: group.seatsFree, total: group.seatsTotal }) : t('full')}`;
+        const groupPicker = h('div', { class: 'pick-list', role: 'group', 'aria-label': t('groupsField') });
+        const renderGroupPicker = () => {
+          window.UI.clear(groupPicker);
+          if (!groupChoices.length) groupPicker.append(h('div', { class: 'pick-empty muted small' }, t('noGroupsYet')));
+          for (const group of groupChoices) {
+            const on = chosenGroups.includes(group.id);
+            const box = h('input', { type: 'checkbox', tabindex: -1, 'aria-hidden': 'true' });
+            box.checked = on;
+            const toggle = () => {
+              setGroups(on ? chosenGroups.filter((id) => id !== group.id) : [...chosenGroups, group.id]);
+              renderGroupPicker();
+              groupPicker.querySelector(`[data-group="${group.id}"]`)?.focus();
+            };
+            groupPicker.append(h('div', { class: `pick-item${on ? ' selected' : ''}`, role: 'checkbox', tabindex: 0, 'aria-checked': String(on), 'data-group': group.id, onclick: toggle, onkeydown: (event) => {
+              if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); toggle(); }
+            } }, box, h('span', { class: 'pick-label', dir: 'auto' }, groupLabel(group))));
+          }
+        };
+        renderGroupPicker();
+        const groupField = field(t('groupsField'), groupPicker, { full: true, hint: t('groupsFieldHint') });
         const scheduleField = field(t('privateSchedule'), schedule, { full: true });
         const lessonType = choice('lessonType', [['group', t('lessonType.group')], ['private', t('lessonType.private')], ['both', t('lessonType.both')]], s.lessonType);
         const placement = h('div', { class: 'form' },
@@ -407,7 +428,35 @@
         // One currency for all of a student's prices, picked first; every
         // amount shows it.
         const currencySelect = select('currency', window.VOCAB.currencies, s.currency || 'ILS');
-        const prices = window.UI.priceEditor(s.prices || [], { currency: currencySelect.value, onChange: () => { if (!suggesting) { pricesTouched = true; suggested = false; } } });
+        const prices = window.UI.priceEditor(s.prices || [], { currency: currencySelect.value, groupIds: chosenGroups, onChange: () => { if (!suggesting) { pricesTouched = true; suggested = false; } } });
+        // A month in a group: the group's own price when it is in this
+        // currency, else the default.
+        const groupDefault = (groupId, currency) => {
+          const group = window.APP.groups.find((entry) => entry.id === groupId);
+          const own = group && group.profile.price !== null && (group.profile.currency || 'ILS') === currency ? group.profile.price : null;
+          return own ?? window.SETTINGS.defaultPrices?.[currency]?.group ?? null;
+        };
+        // Ticking or unticking a group. Prices not set up yet are suggested
+        // again; set ones keep what was typed: a group left takes its price
+        // along, and a group joined gets its default. With more than one
+        // group, each has its own price, so one for any group becomes the
+        // first group's.
+        const setGroups = (next) => {
+          const before = chosenGroups;
+          chosenGroups = next;
+          prices.setGroups(next);
+          if (suggested) { prices.clear(); suggestPrices({ again: true }); return; }
+          if (!pricesTouched) return;
+          const rows = prices.read();
+          const stayed = next.filter((id) => before.includes(id));
+          if (next.length > 1 && stayed.length === 1 && !rows.some((item) => item.groupId === stayed[0])) prices.assignGeneral(stayed[0]);
+          for (const id of next.filter((entry) => !before.includes(entry))) {
+            const current = prices.read();
+            if (current.some((item) => item.groupId === id)) continue;
+            if (next.length === 1 && current.some((item) => item.kind !== 'private' && !item.groupId)) continue;
+            prices.add({ kind: 'group', groupId: next.length > 1 ? id : '', model: 'monthly', amount: groupDefault(id, currencySelect.value) });
+          }
+        };
         currencySelect.addEventListener('change', () => {
           prices.setCurrency(currencySelect.value);
           if (suggested) { prices.clear(); suggestPrices({ again: true }); }
@@ -428,7 +477,7 @@
           pricesTouched = true;
           suggesting = true;
           const type = form.elements.lessonType.value;
-          const group = window.APP.groups.find((entry) => entry.id === groupSelect.value);
+          const group = window.APP.groups.find((entry) => entry.id === chosenGroups[0]);
           const groupPrice = group?.profile.price ?? null;
           const groupCurrency = group?.profile.currency || 'ILS';
           if (!again && type !== 'private' && groupPrice !== null) {
@@ -439,8 +488,8 @@
           }
           const currency = currencySelect.value;
           const defaults = window.SETTINGS.defaultPrices?.[currency] || {};
-          if (type !== 'private' && group) {
-            prices.add({ kind: 'group', model: 'monthly', amount: groupPrice !== null && groupCurrency === currency ? groupPrice : defaults.group ?? null });
+          if (type !== 'private') {
+            for (const id of chosenGroups) prices.add({ kind: 'group', groupId: chosenGroups.length > 1 ? id : '', model: 'monthly', amount: groupDefault(id, currency) });
           }
           if (type !== 'group') {
             for (const length of new Set(schedule.read().map((row) => row.durationMinutes))) {
@@ -531,7 +580,7 @@
           // private-only leaves the group; an edit that does not touch the
           // lesson type leaves both exactly as they were.
           values.privateSchedule = lessonType === 'group' && typeChanged ? [] : (lessonType === 'group' ? (s.privateSchedule || []) : schedule.read());
-          if (lessonType === 'private' && typeChanged) values.groupId = '';
+          values.groupIds = lessonType === 'private' && typeChanged ? [] : chosenGroups;
           const problem = pricesProblem();
           if (problem) {
             go(steps.findIndex((step) => step.key === 'billing'));
@@ -610,6 +659,7 @@
           // The private slots share field names, so they are read on their own.
           for (const name of ['weekday', 'startTime', 'durationMinutes']) delete values[name];
           values.privateSchedule = schedule.read();
+          values.groupIds = chosenGroups;
           values.prices = prices.read();
           writeDraft({ values, step: current });
         };

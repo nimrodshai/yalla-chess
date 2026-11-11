@@ -39,7 +39,7 @@ import {
 } from './lib/db.mjs';
 import { withWriteLock } from './lib/mutex.mjs';
 import { isBusinessStoreEmpty, openBusinessStore, teachers as teacherRecords } from './lib/business-db.mjs';
-import { forgetGroup, getSettings, groupHasStudents, handleBusinessRequest, HttpError, migrateStudentPrices, teacherForPhone, teacherGroupIds } from './lib/business.mjs';
+import { forgetGroup, getSettings, groupHasStudents, groupIdsOf, handleBusinessRequest, HttpError, migrateStudentPrices, teacherForPhone, teacherGroupIds } from './lib/business.mjs';
 import { seedBusinessDemo } from './lib/business-seed.mjs';
 import { answerInbound, recordDeliveryStatus, runAutoMessages } from './lib/auto-messages.mjs';
 import { getWhatsAppConfig, isValidTwilioSignature } from './lib/whatsapp.mjs';
@@ -1842,11 +1842,12 @@ async function syncStudentPortal(student, previous, session) {
   let changed = false;
   if (previousPhone && previousPhone !== nextPhone) changed = removePhoneFromGroups(groups, previousPhone, actor) || changed;
   if (nextPhone) {
-    const active = ['active', 'trial'].includes(student.status) && student.groupId;
+    const active = ['active', 'trial'].includes(student.status);
+    const groupIds = groupIdsOf(student);
     for (const group of groups) {
       const members = normalizeGroupMembers(group.members);
       const has = members.some((member) => sameUserIdentifier(member, nextPhone));
-      const shouldHave = active && group.id === student.groupId;
+      const shouldHave = active && groupIds.includes(group.id);
       if (has === shouldHave) continue;
       group.members = shouldHave ? [...members, nextPhone] : members.filter((member) => !sameUserIdentifier(member, nextPhone));
       group.updatedAt = new Date().toISOString();

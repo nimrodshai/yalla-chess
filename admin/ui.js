@@ -501,11 +501,17 @@
     return parts.join(' · ');
   }
 
+  // What a price is for: a kind of lesson, or one of the student's groups.
+  function priceKindText(item) {
+    const group = item.groupId ? window.APP.groups.find((entry) => entry.id === item.groupId) : null;
+    return group ? `${t('priceKind.group')}: ${group.name}` : t(`priceKind.${item.kind}`);
+  }
+
   // One price from a student's list: "Private · 60 min · ₪70 a lesson".
   function priceText(item, currency = 'ILS') {
     const amount = fmtMoney(item.amount, currency);
     return [
-      t(`priceKind.${item.kind}`),
+      priceKindText(item),
       item.durationMinutes ? `${item.durationMinutes} ${t('minutes')}` : '',
       item.model === 'monthly' ? t('priceMonthly', { amount }) : item.model === 'package' ? t('pricePackage', { amount, n: item.packageSize }) : t('pricePerLesson', { amount }),
       item.model === 'monthly' && item.lessonAmount !== null && item.lessonAmount !== undefined ? t('priceSingleLesson', { amount: fmtMoney(item.lessonAmount, currency) }) : ''
@@ -520,20 +526,35 @@
   // how a new price is billed: group is a monthly fee, with a single-lesson
   // price for a month the student has only part of; private is per lesson,
   // by length. A price set up otherwise before (a package, a price for any
-  // lesson) keeps its billing and says so in its box. Boxes keep their
+  // lesson) keeps its billing and says so in its box. A student in more
+  // than one group can have a price for each of them. Boxes keep their
   // price's id so the server knows an edit from a new price. The inputs
   // have no name, so formValues leaves them out; read() returns the list.
   const DEFAULT_MODEL = { group: 'monthly', private: 'per_lesson' };
-  function priceEditor(prices = [], { onChange, currency = 'ILS' } = {}) {
+  // A kind choice is a kind of lesson, or "group:<id>" for one group.
+  const kindOf = (value) => (value.startsWith('group:') ? 'group' : value);
+  function priceEditor(prices = [], { onChange, currency = 'ILS', groupIds = [] } = {}) {
     const container = h('div', { class: 'price-rows' });
     const changed = () => { if (onChange) onChange(); };
     // Amounts show the student's currency, and follow it when it changes.
     let symbol = currencySymbol(currency);
+    let groups = groupIds;
     const money = (input) => h('div', { class: 'money' }, h('span', { class: 'money-symbol' }, symbol), input);
+    // Prices for any group are "any group" once there is more than one.
+    const fillKinds = (kind, any) => {
+      const value = kind.value;
+      const named = groups.map((id) => window.APP.groups.find((group) => group.id === id)).filter(Boolean);
+      kind.replaceChildren(
+        h('option', { value: 'group' }, named.length > 1 ? t('priceAnyGroup') : t('priceKind.group')),
+        ...(named.length > 1 ? named.map((group) => h('option', { value: `group:${group.id}` }, `${t('priceKind.group')}: ${group.name}`)) : []),
+        h('option', { value: 'private' }, t('priceKind.private')),
+        ...(any ? [h('option', { value: 'any' }, t('priceKind.any'))] : [])
+      );
+      kind.value = [...kind.options].some((option) => option.value === value) ? value : kindOf(value);
+    };
     const addRow = (item = { kind: 'private', model: 'per_lesson', durationMinutes: 60, amount: null }) => {
-      const kinds = ['group', 'private', ...(item.kind === 'any' ? ['any'] : [])];
-      const kind = h('select', { 'aria-label': t('priceKindLabel') }, kinds.map((value) => h('option', { value }, t(`priceKind.${value}`))));
-      kind.value = item.kind;
+      const kind = h('select', { 'aria-label': t('priceKindLabel') }, h('option', { value: item.groupId ? `group:${item.groupId}` : item.kind }));
+      fillKinds(kind, item.kind === 'any');
       let model = item.model || DEFAULT_MODEL[item.kind] || 'per_lesson';
       const minutes = h('input', { type: 'number', min: 15, max: 240, step: 5, inputmode: 'numeric', value: item.durationMinutes ?? '', placeholder: t('priceAnyLength'), 'aria-label': t('duration') });
       const amount = h('input', { type: 'number', min: 0, step: '0.01', inputmode: 'decimal', value: item.amount ?? '', placeholder: t('amount'), 'aria-label': t('amount') });
@@ -549,16 +570,19 @@
       const sync = () => {
         minutes.classList.toggle('off', model === 'monthly');
         singleLine.hidden = model !== 'monthly';
-        otherLine.hidden = model === DEFAULT_MODEL[kind.value];
+        otherLine.hidden = model === DEFAULT_MODEL[kindOf(kind.value)];
         modelNote.textContent = `${t('priceBilledAs')}: ${t(`priceModel.${model}`)}`;
         size.parentNode.hidden = model !== 'package';
       };
-      kind.addEventListener('change', () => { model = DEFAULT_MODEL[kind.value] || model; sync(); });
+      kind.addEventListener('change', () => { model = DEFAULT_MODEL[kindOf(kind.value)] || model; sync(); });
       node.addEventListener('change', changed);
       sync();
+      node.kind = kind;
+      node.refill = () => fillKinds(kind, item.kind === 'any');
       node.read = () => ({
         id: item.id || '',
-        kind: kind.value,
+        kind: kindOf(kind.value),
+        groupId: kind.value.startsWith('group:') ? kind.value.slice(6) : '',
         model,
         durationMinutes: model === 'monthly' || minutes.value === '' ? null : Number(minutes.value),
         packageSize: model === 'package' && size.value !== '' ? Number(size.value) : null,
@@ -577,6 +601,23 @@
     wrapper.read = () => Array.from(container.children).map((node) => node.read());
     wrapper.add = (item) => { addRow(item); changed(); };
     wrapper.clear = () => { container.replaceChildren(); };
+    // The student's groups changed: a price for a group they left goes, and
+    // the choices name the groups they are in now.
+    wrapper.setGroups = (ids) => {
+      groups = ids;
+      for (const node of [...container.children]) {
+        const id = node.read().groupId;
+        if (id && !ids.includes(id)) node.remove();
+        else node.refill();
+      }
+    };
+    // Gives a price for any group to this group, keeping its amount.
+    wrapper.assignGeneral = (groupId) => {
+      const general = [...container.children].filter((node) => node.read().kind === 'group' && !node.read().groupId);
+      if (general.length !== 1) return false;
+      general[0].kind.value = `group:${groupId}`;
+      return true;
+    };
     wrapper.setCurrency = (code) => {
       symbol = currencySymbol(code);
       for (const node of wrapper.querySelectorAll('.money-symbol')) node.textContent = symbol;
@@ -1023,7 +1064,7 @@
   window.UI = {
     messageStatusBadge,
     h, append, clear, api, toast, modal, confirmDialog, field, input, phoneInput, fmtPhone, timezoneSelect, textarea, select, enumSelect, teacherSelect, checkbox, formValues, errorBox,
-    scheduleEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, balanceText, standingText, priceText, pricesText, priceEditor, todayIso, addDays, weekdayOf,
+    scheduleEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, balanceText, standingText, priceKindText, priceText, pricesText, priceEditor, todayIso, addDays, weekdayOf,
     initials, scheduleText, ratingsText, statusBadge, board, animateBoard, gameChips, suggestedGame, nextLesson, composeMessage, paymentDialog, pageHead, card, stat, empty, link, masonry, t, guard: guarded
   };
 })();

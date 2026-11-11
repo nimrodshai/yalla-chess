@@ -74,7 +74,7 @@
     const nextLesson = calendar.occurrences.find((occurrence) => occurrence.groupId === id && occurrence.kind !== 'cancel' && !occurrence.loggedLessonId && occurrence.endAt > now);
     const profile = group.profile;
     const admin = window.APP.isAdmin;
-    const unassigned = studentsResponse.students.filter((student) => student.groupId !== id && student.status !== 'inactive');
+    const unassigned = studentsResponse.students.filter((student) => !(student.groupIds || []).includes(id) && student.status !== 'inactive');
 
     const head = h('div', { class: 'card' }, h('div', { class: 'row-between' },
       h('div', null,
@@ -116,7 +116,8 @@
         h('button', { class: 'btn btn-xs', type: 'button', onclick: () => moveDialog(student, group, refresh) }, t('moveToGroup')),
         h('button', { class: 'btn btn-xs btn-danger', type: 'button', onclick: async () => {
           if (!(await confirmDialog(t('removeFromGroup') + '?', { okLabel: t('removeFromGroup') }))) return;
-          await api(`/students/${student.id}`, { method: 'PATCH', body: { groupId: '' } });
+          // Only this group: the student stays in their other groups.
+          await api(`/students/${student.id}`, { method: 'PATCH', body: { groupIds: student.groupIds.filter((groupId) => groupId !== group.id) } });
           toast(t('saved'), 'success');
           refresh();
         } }, t('removeFromGroup'))
@@ -125,7 +126,7 @@
 
     const waitlist = group.waitlist.length ? card(t('waitlistFor'), h('div', { class: 'list' }, group.waitlist.map((student) => h('div', { class: 'list-item' },
       h('div', { class: 'list-main' }, link(`#/students/${student.id}`, student.name)),
-      admin && h('button', { class: 'btn btn-xs', type: 'button', onclick: async () => { await api(`/students/${student.id}`, { method: 'PATCH', body: { status: 'active', groupId: group.id } }); toast(t('saved'), 'success'); refresh(); } }, t('status.active'))
+      admin && h('button', { class: 'btn btn-xs', type: 'button', onclick: async () => { await api(`/students/${student.id}`, { method: 'PATCH', body: { status: 'active', groupIds: [...new Set([...student.groupIds, group.id])] } }); toast(t('saved'), 'success'); refresh(); } }, t('status.active'))
     ))), { count: group.waitlist.length }) : null;
 
     const topics = card(t('groupTopics'), group.topicsLearned.length ? h('div', { class: 'chips' }, group.topicsLearned.map((topic) => h('span', { class: 'chip' }, topic))) : empty(t('noTopics')), { count: group.topicsLearned.length });
@@ -366,7 +367,7 @@
           let added = 0;
           try {
             for (const student of [...chosen]) {
-              const body = { groupId: group.id };
+              const body = { groupIds: [...(student.groupIds || []), group.id] };
               if (student.status === 'waitlist') body.status = 'active';
               if (student.lessonType === 'private') body.lessonType = 'both';
               await api(`/students/${student.id}`, { method: 'PATCH', body });
@@ -406,14 +407,17 @@
       title: `${t('moveToGroup')}: ${student.name}`,
       size: 'modal-sm',
       body: (dialog) => {
-        const options = window.APP.groups.filter((group) => group.id !== fromGroup.id).map((group) => [group.id, `${group.name} (${group.studentCount}/${group.seatsTotal})`]);
+        // Moving swaps this group for the one picked; the student's other
+        // groups stay as they are.
+        const options = window.APP.groups.filter((group) => !student.groupIds.includes(group.id)).map((group) => [group.id, `${group.name} (${group.studentCount}/${group.seatsTotal})`]);
         const picker = select('groupId', [['', t('noGroup')], ...options]);
         return h('div', { class: 'stack' },
           field(t('pickGroup'), picker),
           h('div', { class: 'form-actions' },
             h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, t('cancel')),
             h('button', { class: 'btn btn-primary', type: 'button', onclick: async () => {
-              await api(`/students/${student.id}`, { method: 'PATCH', body: { groupId: picker.value } });
+              const groupIds = student.groupIds.map((groupId) => (groupId === fromGroup.id ? picker.value : groupId)).filter(Boolean);
+              await api(`/students/${student.id}`, { method: 'PATCH', body: { groupIds } });
               toast(t('saved'), 'success');
               dialog.close();
               refresh();

@@ -212,7 +212,8 @@
         // date; the teacher can tick someone who has moved since, or untick.
         // A saved lesson's list, or one the teacher touched, is left alone.
         let rosterTouched = Boolean(lesson);
-        const inGroupOn = (student, groupId, date) => student.groupId === groupId && !leftBy(student, date) && (student.groupJoinedAt || student.joinedAt || '') <= (date || '9999-12-31');
+        const membership = (student, groupId) => (student.groups || []).find((entry) => entry.groupId === groupId);
+        const inGroupOn = (student, groupId, date) => Boolean(membership(student, groupId)) && !leftBy(student, date) && (membership(student, groupId).joinedAt || student.joinedAt || '') <= (date || '9999-12-31');
         let students = [];
         const offered = () => { students = allStudents.filter((student) => selectedStudents.has(student.id) || !leftBy(student, form.date.value)); };
         const defaultRoster = () => {
@@ -224,7 +225,7 @@
         const renderStudentPicker = () => {
           window.UI.clear(studentPicker);
           const groupId = groupSelect.value;
-          const rank = (student) => (selectedStudents.has(student.id) ? 0 : groupId && student.groupId === groupId ? 1 : 2);
+          const rank = (student) => (selectedStudents.has(student.id) ? 0 : groupId && membership(student, groupId) ? 1 : 2);
           for (const student of [...students].sort((a, b) => rank(a) - rank(b))) {
             const box = h('input', { type: 'checkbox' });
             box.checked = selectedStudents.has(student.id);

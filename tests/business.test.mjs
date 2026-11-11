@@ -307,6 +307,55 @@ describe('business API', () => {
     for (const student of [alice, bob]) await server.fetch(`/api/business/students/${student.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
   });
 
+  it('puts a student in several groups, each charged its own month', async () => {
+    const get = async (path) => (await server.fetch(path, { headers: { Cookie: teacher.cookie } })).json();
+    const patch = async (id, body) => (await (await server.fetch(`/api/business/students/${id}`, json(teacher.cookie, body, 'PATCH'))).json()).student;
+    const pupil = (await (await server.fetch('/api/business/students', json(teacher.cookie, {
+      firstName: 'Two', lastName: 'Groups', groupIds: ['rookies', 'tactics'], currency: 'ILS',
+      prices: [{ kind: 'group', groupId: 'rookies', model: 'monthly', amount: 250 }, { kind: 'group', groupId: 'tactics', model: 'monthly', amount: 180 }]
+    }))).json()).student;
+    assert.deepEqual(pupil.groupIds, ['rookies', 'tactics']);
+    assert.deepEqual(pupil.prices.map((item) => [item.groupId, item.amount]), [['rookies', 250], ['tactics', 180]]);
+
+    // A member of both groups, on both rosters, and charged both months.
+    const views = (await get('/api/business/groups')).groups;
+    for (const id of ['rookies', 'tactics']) assert.ok(views.find((view) => view.id === id).students.some((entry) => entry.id === pupil.id), id);
+    assert.ok((await get('/api/business/students?groupId=tactics')).students.some((entry) => entry.id === pupil.id));
+    const lessonIds = [];
+    for (const groupId of ['rookies', 'tactics']) {
+      const { lesson } = await (await server.fetch('/api/business/lessons', json(teacher.cookie, { date: pupil.joinedAt, groupId, topic: 'Both' }))).json();
+      assert.ok(lesson.studentIds.includes(pupil.id), groupId);
+      lessonIds.push(lesson.id);
+    }
+    const detail = await get(`/api/business/students/${pupil.id}`);
+    assert.deepEqual(detail.account.filter((entry) => entry.kind === 'month').map((entry) => entry.amount).sort(), [-180, -250]);
+    assert.equal(detail.payment.balance, -430);
+
+    // Leaving a group from its page takes its price along; joining one
+    // prices it at its default: the group's own price in the student's
+    // currency, else the default month.
+    const left = await patch(pupil.id, { groupIds: ['rookies'] });
+    assert.deepEqual(left.prices.map((item) => item.groupId), ['rookies']);
+    const joined = await patch(pupil.id, { groupIds: ['rookies', 'champions'] });
+    assert.deepEqual(joined.prices.map((item) => [item.groupId, item.amount]), [['rookies', 250], ['champions', 200]]);
+    assert.equal((await get('/api/business/groups')).groups.find((view) => view.id === 'tactics').students.some((entry) => entry.id === pupil.id), false);
+
+    // A price for any group becomes the first group's once a second is joined.
+    const single = (await (await server.fetch('/api/business/students', json(teacher.cookie, {
+      firstName: 'One', lastName: 'Group', groupId: 'rookies', currency: 'ILS', prices: [{ kind: 'group', model: 'monthly', amount: 300 }]
+    }))).json()).student;
+    const moved = await patch(single.id, { groupIds: ['rookies', 'tactics'] });
+    assert.deepEqual(moved.prices.map((item) => [item.groupId, item.amount]), [['rookies', 300], ['tactics', 280]]);
+    // Moving between groups with a price for any group keeps that one.
+    const plain = (await (await server.fetch('/api/business/students', json(teacher.cookie, {
+      firstName: 'Plain', lastName: 'Mover', groupId: 'rookies', currency: 'ILS', prices: [{ kind: 'group', model: 'monthly', amount: 300 }]
+    }))).json()).student;
+    assert.deepEqual((await patch(plain.id, { groupIds: ['tactics'] })).prices.map((item) => [item.groupId, item.amount]), [['', 300]]);
+
+    for (const id of lessonIds) await server.fetch(`/api/business/lessons/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+    for (const student of [pupil, single, plain]) await server.fetch(`/api/business/students/${student.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+  });
+
   it('keeps default prices per currency, changed one at a time', async () => {
     const read = async () => (await (await server.fetch('/api/business/settings', { headers: { Cookie: teacher.cookie } })).json()).settings.defaultPrices;
     assert.deepEqual(await read(), { ILS: { group: 200, private: 140 }, USD: { group: 120, private: 65 } });
