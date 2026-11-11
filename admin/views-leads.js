@@ -130,8 +130,29 @@
     );
   }
 
+  // A new lead being typed in is kept in this browser as it is typed, so the
+  // dialog can be closed to look something up and opened again where it was
+  // left. Saving or Cancel drops it, and it is forgotten after two hours.
+  const DRAFT_KEY = 'yallaChessLeadDraft';
+  const DRAFT_TTL_MS = 2 * 60 * 60 * 1000;
+  const readDraft = () => {
+    try {
+      const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+      if (draft && Date.now() - draft.savedAt < DRAFT_TTL_MS) return draft;
+      localStorage.removeItem(DRAFT_KEY);
+    } catch (error) { /* ignore */ }
+    return null;
+  };
+  const writeDraft = (values) => {
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ values, savedAt: Date.now() })); } catch (error) { /* ignore */ }
+  };
+  const dropDraft = () => {
+    try { localStorage.removeItem(DRAFT_KEY); } catch (error) { /* ignore */ }
+  };
+
   function leadForm({ lead = null, onSaved }) {
-    const l = lead || { language: 'he', preference: 'either' };
+    const draft = lead ? null : readDraft();
+    const l = lead || { language: 'he', preference: 'either', ...(draft?.values || {}) };
     modal({
       title: lead ? t('editLead') : t('newLead'),
       body: (dialog) => {
@@ -151,14 +172,28 @@
           ...window.VIEWS.sourceFields(l),
           field(t('notes'), textarea('notes', l.notes || '', { rows: 3 }), { full: true }),
           h('div', { class: 'form-actions' },
-            h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, t('cancel')),
+            h('button', { class: 'btn', type: 'button', onclick: () => { if (!lead) dropDraft(); dialog.close(); } }, t('cancel')),
             h('button', { class: 'btn btn-primary', type: 'submit' }, t('save'))
           )
         );
+        if (!lead) {
+          const keepDraft = () => { if (form.isConnected) writeDraft(formValues(form)); };
+          form.addEventListener('input', keepDraft);
+          form.addEventListener('change', keepDraft);
+        }
+        if (draft) form.prepend(h('div', { class: 'row-between draft-note', style: { gridColumn: '1 / -1' } },
+          h('span', null, t('draftRestored')),
+          h('button', { class: 'btn btn-xs btn-ghost', type: 'button', onclick: () => {
+            dropDraft();
+            dialog.close();
+            leadForm({ lead, onSaved });
+          } }, t('draftStartOver'))
+        ));
         form.addEventListener('submit', async (event) => {
           event.preventDefault();
           try {
             const response = lead ? await api(`/leads/${lead.id}`, { method: 'PATCH', body: formValues(form) }) : await api('/leads', { method: 'POST', body: formValues(form) });
+            if (!lead) dropDraft();
             toast(t('saved'), 'success');
             dialog.close();
             if (onSaved) onSaved(response.lead);
