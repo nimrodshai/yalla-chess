@@ -297,13 +297,19 @@
   // ----------------------------------------------------------- draft
   // A new student being typed in is kept in this browser as it is typed, so
   // a dialog closed by mistake opens again where it was left. Saving or
-  // Cancel drops it.
+  // Cancel drops it, and it is forgotten after two hours.
   const DRAFT_KEY = 'yallaChessStudentDraft';
+  const DRAFT_TTL_MS = 2 * 60 * 60 * 1000;
   const readDraft = () => {
-    try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch (error) { return null; }
+    try {
+      const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+      if (draft && Date.now() - draft.savedAt < DRAFT_TTL_MS) return draft;
+      localStorage.removeItem(DRAFT_KEY);
+    } catch (error) { /* ignore */ }
+    return null;
   };
   const writeDraft = (draft) => {
-    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (error) { /* ignore */ }
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...draft, savedAt: Date.now() })); } catch (error) { /* ignore */ }
   };
   const dropDraft = () => {
     try { localStorage.removeItem(DRAFT_KEY); } catch (error) { /* ignore */ }
