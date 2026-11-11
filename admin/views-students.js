@@ -638,5 +638,6 @@
 
   window.VIEWS.studentForm = studentForm;
   window.VIEWS.sourceFields = sourceFields;
+  window.VIEWS.countryFields = countryFields;
   window.VIEWS.sourceLabel = sourceLabel;
 })();

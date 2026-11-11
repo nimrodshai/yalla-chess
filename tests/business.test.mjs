@@ -848,6 +848,14 @@ describe('business API', () => {
     assert.equal(suggestGroupFor(child('boy'), [group('girls', 'girls'), group('mixed', 'mixed')], settings).group.id, 'mixed');
   });
 
+  it('keeps where a lead lives and their time zone, and carries them to the student', async () => {
+    const { normalizeLead, convertLead } = await import('../lib/business.mjs');
+    const lead = normalizeLead({ parentFirstName: 'Esther', country: 'US', region: 'Florida', timezone: 'America/New_York' });
+    assert.deepEqual([lead.country, lead.region, lead.timezone], ['US', 'Florida', 'America/New_York']);
+    const student = convertLead(lead, {});
+    assert.deepEqual([student.country, student.region, student.timezone], ['US', 'Florida', 'America/New_York']);
+  });
+
   it('records a student\'s sex and a group\'s, and flags a mismatch when matching', async () => {
     const created = await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Maya', sex: 'girl', age: 9 }))).json();
     assert.equal(created.student.sex, 'girl');
