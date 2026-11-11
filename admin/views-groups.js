@@ -36,8 +36,17 @@
         h('th', null, t('name')), h('th', null, t('schedule')), h('th', null, t('level')), h('th', null, t('teacher')),
         h('th', { class: 'center' }, t('students')), h('th', null, t('lastLesson')), h('th', { class: 'center' }, t('status'))
       )),
-      h('tbody', null, groups.map(groupRow))
+      h('tbody', null, [...groups].sort(byWeekTime).map(groupRow))
     ));
+  }
+
+  // Sunday morning first, Saturday night last, by each group's earliest slot
+  // in the week; groups without a schedule go to the bottom.
+  function byWeekTime(a, b) {
+    const firstSlot = (group) => (group.schedule || [])
+      .map((row) => `${row.weekday}${row.startTime.padStart(5, '0')}`)
+      .sort()[0] || '9';
+    return firstSlot(a).localeCompare(firstSlot(b)) || a.name.localeCompare(b.name);
   }
 
   function groupRow(group) {
