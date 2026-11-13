@@ -5,7 +5,7 @@
   window.VIEWS = window.VIEWS || {};
   // The portal keeps a group lesson between 30 and 180 minutes.
   const GROUP_MINUTES = { minMinutes: 30, maxMinutes: 180 };
-  const { h, clear, api, t, card, empty, fmtDate, statusBadge, link, modal, field, input, textarea, select, enumSelect, teacherSelect, formValues, errorBox, toast, scheduleText, scheduleEditor, weekdayPicker, initials, confirmDialog, ratingsText } = window.UI;
+  const { h, clear, api, t, card, empty, fmtDate, statusBadge, link, modal, field, input, textarea, select, enumSelect, teacherSelect, formValues, errorBox, toast, scheduleText, scheduleEditor, availabilityEditor, timezoneSelect, initials, confirmDialog, ratingsText } = window.UI;
 
   // A teacher sees their own groups to teach, not to arrange: no new
   // groups, placement, profile edits or moving students.
@@ -432,19 +432,24 @@
   async function matchTool(query) {
     const results = h('div');
     const suggestions = h('div');
-    const days = weekdayPicker([]);
+    const availability = availabilityEditor([]);
     const form = h('form', { class: 'form' },
       field(t('age'), h('input', { name: 'age', type: 'number', min: 3, max: 99, value: query.age || '' })),
       field(t('sex'), enumSelect('sex', window.VOCAB.sexes, 'sex', query.sex || '', { blank: '—' })),
       field(t('rating'), h('input', { name: 'rating', type: 'number', min: 0, max: 4000, value: query.rating || '' })),
       field(t('level'), enumSelect('level', window.VOCAB.levels, 'level', query.level || '', { blank: '—' })),
       field(t('language'), enumSelect('language', window.VOCAB.languages, 'lang', query.language || 'he')),
-      field(t('availability'), days, { full: true }),
+      // Hours are read in the family's own clock; left blank, in the
+      // school's.
+      field(t('timezone'), timezoneSelect('timezone', '', { blank: t('schoolTimezone') })),
+      field(t('whenFree'), availability, { full: true, hint: t('availabilityHint') }),
       h('div', { class: 'form-actions' }, h('button', { class: 'btn btn-primary', type: 'submit' }, t('runMatch')))
     );
     const run = async () => {
-      const values = formValues(form);
-      values.availability = days.read();
+      // The availability rows' own inputs are read by the editor, not sent
+      // as criteria.
+      const { weekday, startTime, endTime, ...values } = formValues(form);
+      values.availability = availability.read();
       if (query.studentId) values.excludeStudentId = query.studentId;
       const data = await api('/groups/match', { method: 'POST', body: values });
       window.UI.clear(results).append(renderMatches(data.matches));
@@ -472,6 +477,7 @@
       h('div', { class: 'list-main' },
         h('div', { class: 'list-title' }, link(`#/groups/${match.groupId}`, match.name), match.recommended ? h('span', { class: 'badge badge-sage' }, t('recommended')) : null, h('span', { class: match.seatsFree ? 'badge badge-gold' : 'badge badge-danger' }, match.seatsFree ? `${match.seatsFree} ${t('seatsFree')}` : t('full'))),
         h('div', { class: 'list-sub' }, scheduleText(match.schedule)),
+        match.localSchedule?.length ? h('div', { class: 'list-sub' }, `${t('familyTime')}: ${scheduleText(match.localSchedule)}`) : null,
         h('div', { class: 'chips', style: { marginTop: '6px' } },
           match.reasons.map((reason) => h('span', { class: 'chip', style: { borderColor: 'rgba(122,143,110,0.5)' } }, `✓ ${t(`reason.${reason}`)}`)),
           match.problems.map((problem) => h('span', { class: 'chip', style: { borderColor: 'rgba(180,68,58,0.5)', color: 'var(--danger)' } }, `✕ ${t(`problem.${problem}`)}`))

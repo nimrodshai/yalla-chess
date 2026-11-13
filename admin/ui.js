@@ -458,17 +458,6 @@
     return wrapper;
   }
 
-  function weekdayPicker(selected = []) {
-    const state = new Set(selected);
-    const wrapper = h('div', { class: 'weekday-picker' });
-    t('weekdaysShort').forEach((label, index) => {
-      const button = h('button', { type: 'button', class: state.has(index) ? 'active' : '', onclick: () => { if (state.has(index)) state.delete(index); else state.add(index); button.classList.toggle('active'); } }, label);
-      wrapper.append(button);
-    });
-    wrapper.read = () => Array.from(state).sort();
-    return wrapper;
-  }
-
   // ------------------------------------------------------------- formatting
   function locale() { return window.I18N.locale; }
 
@@ -1101,7 +1090,7 @@
   window.UI = {
     messageStatusBadge,
     h, append, clear, api, toast, modal, confirmDialog, field, input, phoneInput, fmtPhone, timezoneSelect, textarea, select, enumSelect, teacherSelect, checkbox, formValues, errorBox,
-    scheduleEditor, availabilityEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, balanceText, standingText, priceKindText, priceText, pricesText, priceEditor, todayIso, addDays, weekdayOf,
+    scheduleEditor, availabilityEditor, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, balanceText, standingText, priceKindText, priceText, pricesText, priceEditor, todayIso, addDays, weekdayOf,
     initials, scheduleText, availabilityText, ratingsText, statusBadge, board, animateBoard, gameChips, suggestedGame, nextLesson, composeMessage, paymentDialog, pageHead, card, stat, empty, link, masonry, t, guard: guarded
   };
 })();

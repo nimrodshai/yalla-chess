@@ -340,9 +340,6 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .modal .form > .form-actions { margin-top: 4px; padding-top: 16px; border-top: 1px solid var(--line); }
 .form-error { scroll-margin: 16px; grid-column: 1 / -1; color: var(--danger); background: var(--danger-soft); padding: 8px 12px; border-radius: 10px; font-size: 13px; }
 .draft-note { margin-bottom: 12px; padding: 6px 6px 6px 12px; border-radius: 10px; background: var(--gold-soft); font-size: 13px; }
-.weekday-picker { display: flex; gap: 4px; flex-wrap: wrap; }
-.weekday-picker button { height: 32px; min-width: 36px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--paper); font-size: 13px; font-weight: 600; }
-.weekday-picker button.active { background: var(--ink); color: var(--cream); border-color: var(--ink); }
 .schedule-rows { display: flex; flex-direction: column; gap: 6px; }
 .schedule-row { display: grid; grid-template-columns: 1fr 110px 90px 36px; gap: 6px; align-items: center; }
 .schedule-row select, .schedule-row input { height: 36px; border: 1px solid var(--line-strong); border-radius: 9px; padding: 0 8px; }
