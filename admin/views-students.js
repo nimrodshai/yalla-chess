@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   window.VIEWS = window.VIEWS || {};
-  const { h, api, t, card, empty, fmtDate, fmtDateTime, fmtMoney, statusBadge, composeMessage, paymentDialog, link, modal, field, input, textarea, select, enumSelect, checkbox, formValues, errorBox, scheduleEditor, toast, confirmDialog, initials, scheduleText, ratingsText } = window.UI;
+  const { h, api, t, card, empty, fmtDate, fmtDateTime, fmtMoney, statusBadge, composeMessage, paymentDialog, link, modal, field, input, textarea, select, enumSelect, checkbox, formValues, errorBox, scheduleEditor, toast, confirmDialog, initials, scheduleText, ratingsText, availabilityEditor, availabilityText } = window.UI;
 
   window.VIEWS.students = async ({ id, query, refresh }) => {
     if (id) return studentDetail(id, refresh);
@@ -111,6 +111,7 @@
         detail(t('email'), student.parentEmail),
         detail(t('country'), [countryName(student.country), student.region].filter(Boolean).join(' · ')),
         detail(t('timezone'), student.timezone),
+        detail(t('whenFree'), availabilityText(student.availability)),
         detail(t('sex'), student.sex ? t(`sex.${student.sex}`) : ''),
         detail(t('language'), t(`lang.${student.language}`)),
         detail(t('parentLanguage'), t(`lang.${student.parentLanguage || (student.language === 'en' ? 'en' : 'he')}`)),
@@ -397,6 +398,7 @@
           }
         };
         renderGroupPicker();
+        const availability = availabilityEditor(s.availability || []);
         const groupField = field(t('groupsField'), groupPicker, { full: true, hint: t('groupsFieldHint') });
         const scheduleField = field(t('privateSchedule'), schedule, { full: true });
         const lessonType = choice('lessonType', [['group', t('lessonType.group')], ['private', t('lessonType.private')], ['both', t('lessonType.both')]], s.lessonType);
@@ -404,6 +406,7 @@
           field(t('lessonType'), lessonType, { full: true }),
           groupField,
           scheduleField,
+          field(t('whenFree'), availability, { full: true, hint: t('availabilityHintStudent') }),
           field(t('joinedAt'), h('input', { name: 'joinedAt', type: 'date', value: s.joinedAt || '' })),
           // Leaving ends their lessons and charges from that day.
           !isNew ? field(t('leftAt'), h('input', { name: 'leftAt', type: 'date', value: s.leftAt || '', max: today }), { hint: t('leftAtHint') }) : null,
@@ -588,6 +591,7 @@
             return;
           }
           values.prices = prices.read();
+          values.availability = availability.read();
           for (const button of footer.querySelectorAll('button')) button.disabled = true;
           try {
             const response = student
@@ -656,9 +660,11 @@
           // Cancel drops the draft and closes; nothing is kept after that.
           if (!isNew || !form.isConnected) return;
           const values = formValues(form);
-          // The private slots share field names, so they are read on their own.
-          for (const name of ['weekday', 'startTime', 'durationMinutes']) delete values[name];
+          // The private slots and the availability windows share field
+          // names, so they are read on their own.
+          for (const name of ['weekday', 'startTime', 'endTime', 'durationMinutes']) delete values[name];
           values.privateSchedule = schedule.read();
+          values.availability = availability.read();
           values.groupIds = chosenGroups;
           values.prices = prices.read();
           writeDraft({ values, step: current });

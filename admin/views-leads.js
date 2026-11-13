@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   window.VIEWS = window.VIEWS || {};
-  const { h, api, t, card, empty, fmtDate, link, modal, field, input, textarea, enumSelect, formValues, errorBox, toast, composeMessage, confirmDialog, scheduleText } = window.UI;
+  const { h, api, t, card, empty, fmtDate, link, modal, field, input, textarea, enumSelect, formValues, errorBox, toast, composeMessage, confirmDialog, scheduleText, availabilityEditor, availabilityText } = window.UI;
 
   window.VIEWS.leads = async ({ id, query, refresh }) => {
     if (id) return leadDetail(id, refresh);
@@ -105,20 +105,27 @@
       detail(t('email'), lead.parentEmail),
       detail(t('country'), [window.VIEWS.countryName(lead.country), lead.region].filter(Boolean).join(' · ')),
       detail(t('timezone'), lead.timezone),
+      detail(t('whenFree'), availabilityText(lead.availability)),
       detail(t('date'), fmtDate(lead.createdAt.slice(0, 10), { year: 'numeric' })),
       detail(t('source'), window.VIEWS.sourceLabel(lead)),
       lead.notes ? h('div', { class: 'detail', style: { gridColumn: '1 / -1' } }, h('dt', null, t('notes')), h('dd', { class: 'pre' }, lead.notes)) : null
     ));
 
     // Where this child could go: groups that fit, the ones with room first.
-    const openings = data.matches.filter((match) => match.seatsFree).slice(0, 5);
+    // A group that meets when the family said they cannot is left out, even
+    // when it is only part of the lesson that falls outside their hours.
+    const clashes = (match) => match.problems.includes('availability') || match.problems.includes('availability_partial');
+    const openings = data.matches.filter((match) => match.seatsFree && !clashes(match)).slice(0, 5);
+    const ruledOut = data.matches.filter((match) => match.seatsFree && clashes(match)).length;
     const matches = card(t('groupsWithRoom'), openings.length ? h('div', { class: 'list' }, openings.map((match) => h('div', { class: 'list-item' },
       h('div', { class: 'list-main' },
         h('div', { class: 'list-title' }, link(`#/groups/${match.groupId}`, match.name)),
-        h('div', { class: 'list-sub' }, scheduleText(match.schedule))
+        h('div', { class: 'list-sub' }, scheduleText(match.schedule)),
+        // A family in another zone reads the hour in their own.
+        match.localSchedule?.length ? h('div', { class: 'list-sub' }, `${t('familyTime')}: ${scheduleText(match.localSchedule)}`) : null
       ),
       h('span', { class: 'badge badge-gold' }, t('seatsFreeCount', { n: match.seatsFree }))
-    ))) : empty(t('noMatch')));
+    ))) : empty(t('noMatch')), { sub: ruledOut ? t('ruledOutByAvailability', { n: ruledOut }) : '' });
 
     return h('div', null,
       h('div', { class: 'breadcrumb' }, link('#/leads', t('navLeads')), '›', name),
@@ -158,6 +165,7 @@
     modal({
       title: lead ? t('editLead') : t('newLead'),
       body: (dialog) => {
+        const availability = availabilityEditor(l.availability || []);
         const form = h('form', { class: 'form' },
           field(t('parentFirstName'), input('parentFirstName', l.parentFirstName || '', { required: !l.childName })),
           field(t('parentLastName'), input('parentLastName', l.parentLastName || '')),
@@ -173,6 +181,7 @@
           field(t('preference'), enumSelect('preference', window.VOCAB.leadPreferences, 'pref', l.preference)),
           ...window.VIEWS.countryFields(l),
           field(t('timezone'), window.UI.timezoneSelect('timezone', l.timezone || '', { blank: '—' })),
+          field(t('whenFree'), availability, { full: true, hint: t('availabilityHint') }),
           ...window.VIEWS.sourceFields(l),
           field(t('notes'), textarea('notes', l.notes || '', { rows: 3 }), { full: true }),
           h('div', { class: 'form-actions' },
@@ -180,8 +189,14 @@
             h('button', { class: 'btn btn-primary', type: 'submit' }, t('save'))
           )
         );
+        // The availability rows' own inputs are read by the editor, not sent
+        // as lead fields.
+        const leadValues = () => {
+          const { weekday, startTime, endTime, ...values } = formValues(form);
+          return { ...values, availability: availability.read() };
+        };
         if (!lead) {
-          const keepDraft = () => { if (form.isConnected) writeDraft(formValues(form)); };
+          const keepDraft = () => { if (form.isConnected) writeDraft(leadValues()); };
           form.addEventListener('input', keepDraft);
           form.addEventListener('change', keepDraft);
         }
@@ -196,7 +211,8 @@
         form.addEventListener('submit', async (event) => {
           event.preventDefault();
           try {
-            const response = lead ? await api(`/leads/${lead.id}`, { method: 'PATCH', body: formValues(form) }) : await api('/leads', { method: 'POST', body: formValues(form) });
+            const body = leadValues();
+            const response = lead ? await api(`/leads/${lead.id}`, { method: 'PATCH', body }) : await api('/leads', { method: 'POST', body });
             if (!lead) dropDraft();
             toast(t('saved'), 'success');
             dialog.close();

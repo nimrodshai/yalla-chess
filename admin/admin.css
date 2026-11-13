@@ -346,6 +346,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .schedule-rows { display: flex; flex-direction: column; gap: 6px; }
 .schedule-row { display: grid; grid-template-columns: 1fr 110px 90px 36px; gap: 6px; align-items: center; }
 .schedule-row select, .schedule-row input { height: 36px; border: 1px solid var(--line-strong); border-radius: 9px; padding: 0 8px; }
+.schedule-row.time-range { grid-template-columns: 1fr 110px 110px 36px; }
 .price-rows { display: flex; flex-direction: column; gap: 8px; }
 .price-row { display: grid; grid-template-columns: minmax(0, 1fr) 110px 140px 36px; gap: 6px; align-items: center; }
 /* Each price is its own box; anything that belongs to it sits inside. */
@@ -654,6 +655,7 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
   .modal-backdrop { padding: 12px 8px; }
   .modal { padding: 16px; border-radius: 14px; }
   .schedule-row { grid-template-columns: 1fr 1fr; }
+  .schedule-row.time-range { grid-template-columns: 1fr 1fr; }
   /* Two lines: kind, billing and remove; then length, lessons, amount. */
   /* Two lines: kind and remove; then length and amount. */
   .price-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 36px; }

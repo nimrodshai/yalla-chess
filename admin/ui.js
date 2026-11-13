@@ -428,6 +428,36 @@
     return wrapper;
   }
 
+  // When a family can learn: weekday + from + to, in their own time zone.
+  // Placement reads these rows, so a row is only kept once both hours are
+  // filled in.
+  function availabilityEditor(rows = []) {
+    const container = h('div', { class: 'schedule-rows' });
+    // A row added or dropped is a change to the form around it, so a draft
+    // being kept as the form is typed keeps the rows too.
+    const changed = () => container.dispatchEvent(new Event('change', { bubbles: true }));
+    const addRow = (row = { weekday: 1, startTime: '16:00', endTime: '20:00' }, announce = false) => {
+      const node = h('div', { class: 'schedule-row time-range' },
+        select('weekday', t('weekdays').map((name, index) => [index, name]), row.weekday ?? 1),
+        h('input', { name: 'startTime', type: 'time', value: row.startTime || '16:00' }),
+        h('input', { name: 'endTime', type: 'time', value: row.endTime || '20:00' }),
+        h('button', { class: 'btn btn-xs btn-ghost', type: 'button', onclick: () => { node.remove(); changed(); } }, '✕')
+      );
+      container.append(node);
+      if (announce) changed();
+    };
+    for (const row of rows || []) addRow(row);
+    const wrapper = h('div', { class: 'stack' }, container, h('button', { class: 'btn btn-sm', type: 'button', onclick: () => addRow(undefined, true) }, `+ ${t('addAvailability')}`));
+    wrapper.read = () => Array.from(container.children)
+      .map((node) => ({
+        weekday: Number(node.querySelector('[name=weekday]').value),
+        startTime: node.querySelector('[name=startTime]').value,
+        endTime: node.querySelector('[name=endTime]').value
+      }))
+      .filter((row) => row.startTime && row.endTime);
+    return wrapper;
+  }
+
   function weekdayPicker(selected = []) {
     const state = new Set(selected);
     const wrapper = h('div', { class: 'weekday-picker' });
@@ -659,6 +689,13 @@
 
   function scheduleText(rows = []) {
     return rows.map((row) => `${t('weekdays')[row.weekday]} ${row.startTime}`).join(' · ');
+  }
+
+  // The two hours of a window are one left-to-right run, which Hebrew around
+  // them would otherwise flip into 20:00-16:00; the isolate marks keep them
+  // in the order they were typed.
+  function availabilityText(rows = []) {
+    return (rows || []).map((row) => `${t('weekdays')[row.weekday]} \u2066${row.startTime}–${row.endTime}\u2069`).join(' · ');
   }
 
   function statusBadge(status, prefix = 'status') {
@@ -1064,7 +1101,7 @@
   window.UI = {
     messageStatusBadge,
     h, append, clear, api, toast, modal, confirmDialog, field, input, phoneInput, fmtPhone, timezoneSelect, textarea, select, enumSelect, teacherSelect, checkbox, formValues, errorBox,
-    scheduleEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, balanceText, standingText, priceKindText, priceText, pricesText, priceEditor, todayIso, addDays, weekdayOf,
-    initials, scheduleText, ratingsText, statusBadge, board, animateBoard, gameChips, suggestedGame, nextLesson, composeMessage, paymentDialog, pageHead, card, stat, empty, link, masonry, t, guard: guarded
+    scheduleEditor, availabilityEditor, weekdayPicker, fmtDate, fmtDateLong, fmtDateTime, fmtTime, fmtMoney, fmtMonth, balanceText, standingText, priceKindText, priceText, pricesText, priceEditor, todayIso, addDays, weekdayOf,
+    initials, scheduleText, availabilityText, ratingsText, statusBadge, board, animateBoard, gameChips, suggestedGame, nextLesson, composeMessage, paymentDialog, pageHead, card, stat, empty, link, masonry, t, guard: guarded
   };
 })();

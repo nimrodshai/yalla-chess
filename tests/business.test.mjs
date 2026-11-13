@@ -897,12 +897,80 @@ describe('business API', () => {
     assert.equal(suggestGroupFor(child('boy'), [group('girls', 'girls'), group('mixed', 'mixed')], settings).group.id, 'mixed');
   });
 
-  it('keeps where a lead lives and their time zone, and carries them to the student', async () => {
+  it('keeps where a lead lives, their time zone and their hours, and carries them to the student', async () => {
     const { normalizeLead, convertLead } = await import('../lib/business.mjs');
-    const lead = normalizeLead({ parentFirstName: 'Esther', country: 'US', region: 'Florida', timezone: 'America/New_York' });
+    const hours = [{ weekday: 1, startTime: '16:00', endTime: '20:00' }];
+    const lead = normalizeLead({ parentFirstName: 'Esther', country: 'US', region: 'Florida', timezone: 'America/New_York', availability: hours });
     assert.deepEqual([lead.country, lead.region, lead.timezone], ['US', 'Florida', 'America/New_York']);
     const student = convertLead(lead, {});
     assert.deepEqual([student.country, student.region, student.timezone], ['US', 'Florida', 'America/New_York']);
+    assert.deepEqual(student.availability, hours, 'the hours they gave as a prospect still place them as a student');
+
+    // And they survive a round trip through the students table.
+    const created = await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Esther', timezone: 'America/New_York', availability: hours }))).json();
+    assert.deepEqual(created.student.availability, hours);
+    const read = await (await server.fetch(`/api/business/students/${created.student.id}`, { headers: { Cookie: teacher.cookie } })).json();
+    assert.deepEqual(read.student.availability, hours);
+  });
+
+  it('places a prospect only in groups that meet inside the hours they gave', async () => {
+    const { normalizeLead, suggestGroupFor } = await import('../lib/business.mjs');
+
+    // Hours are kept as weekly windows; a window that ends before it starts
+    // is not a window.
+    const lead = normalizeLead({
+      parentFirstName: 'Dana',
+      availability: [
+        { weekday: 4, startTime: '11:00', endTime: '13:00' },
+        { weekday: 1, startTime: '16:00', endTime: '20:00' },
+        { weekday: 1, startTime: '18:00', endTime: '21:00' },
+        { weekday: 2, startTime: '18:00', endTime: '17:00' },
+        { weekday: 3, startTime: '', endTime: '19:00' }
+      ]
+    });
+    assert.deepEqual(lead.availability, [
+      { weekday: 1, startTime: '16:00', endTime: '21:00' },
+      { weekday: 4, startTime: '11:00', endTime: '13:00' }
+    ], 'hours that overlap on a day are one window');
+
+    // Monday 16:00-20:00 and Thursday 11:00-13:00, in Israel.
+    const group = (id, weekday, startTime, durationMinutes = 60) => ({
+      id, name: id, nameEn: id, seatsFree: 2, seatsTotal: 5, timezone: 'Asia/Jerusalem',
+      schedule: [{ weekday, startTime, durationMinutes }],
+      students: [{ age: 9, level: 'beginner', chesscomRating: 550 }],
+      profile: { status: 'active', language: 'he', gender: 'mixed', minAge: null, maxAge: null, level: '', ratingMin: null, ratingMax: null }
+    });
+    const settings = { matchAgeYears: 2, matchLevelSteps: 1, matchRatingPoints: 150, businessTimezone: 'Asia/Jerusalem' };
+    const child = { ...lead, preference: 'group', language: 'he', childAge: 9, level: 'beginner', chesscomRating: 550 };
+    assert.equal(suggestGroupFor(child, [group('monday', 1, '17:00')], settings).group.id, 'monday');
+    assert.equal(suggestGroupFor(child, [group('tuesday', 2, '17:00')], settings).reason, 'none_fits');
+    assert.equal(suggestGroupFor(child, [group('late', 1, '20:30')], settings).reason, 'none_fits', 'a lesson running past their hours is not a placement');
+    assert.equal(suggestGroupFor({ ...child, availability: [] }, [group('tuesday', 2, '17:00')], settings).group.id, 'tuesday', 'a prospect who gave no hours is placed as before');
+  });
+
+  it('reads a family\'s hours in their own time zone when matching', async () => {
+    const created = await server.fetch('/api/groups', json(teacher.cookie, { title: { he: 'שעון', en: 'Clocks' }, schedule: { timezone: 'Asia/Jerusalem', rows: [{ weekday: 1, startTime: '17:00', durationMinutes: 60 }] } }));
+    const { id } = (await created.json()).group;
+    const match = async (body) => (await (await server.fetch('/api/business/groups/match', json(teacher.cookie, body))).json()).matches.find((entry) => entry.groupId === id);
+
+    // 17:00 in Israel is the same Monday morning in New York, so the hours a
+    // family abroad gave are read on their own clock, not the school's.
+    const morning = [{ weekday: 1, startTime: '09:00', endTime: '12:00' }];
+    assert.ok((await match({ availability: morning, timezone: 'America/New_York' })).reasons.includes('availability'));
+    assert.ok((await match({ availability: morning, timezone: 'Asia/Jerusalem' })).problems.includes('availability'));
+    assert.equal((await match({ availability: morning, timezone: 'America/New_York' })).localSchedule[0].startTime, '10:00');
+    assert.deepEqual((await match({ availability: morning, timezone: 'Asia/Jerusalem' })).localSchedule, [], 'a family on the school\'s own clock needs no second hour');
+
+    // A lesson that only half fits is flagged, and never recommended.
+    const half = [{ weekday: 1, startTime: '16:00', endTime: '17:30' }];
+    assert.ok((await match({ availability: half, timezone: 'Asia/Jerusalem' })).problems.includes('availability_partial'));
+    assert.equal((await match({ availability: half, timezone: 'Asia/Jerusalem' })).recommended, false);
+
+    // The placement tool still sends plain weekdays, which mean the day.
+    assert.ok((await match({ availability: [1] })).reasons.includes('availability'));
+    assert.ok((await match({ availability: [2] })).problems.includes('availability'));
+
+    await server.fetch(`/api/groups/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
   });
 
   it('records a student\'s sex and a group\'s, and flags a mismatch when matching', async () => {
