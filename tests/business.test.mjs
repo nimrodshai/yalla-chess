@@ -973,6 +973,17 @@ describe('business API', () => {
     await server.fetch(`/api/groups/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
   });
 
+  it('records whether a student\'s family approved recordings', async () => {
+    const created = await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Noa' }))).json();
+    assert.equal(created.student.recordingsConsent, '');
+    const approved = await (await server.fetch(`/api/business/students/${created.student.id}`, json(teacher.cookie, { recordingsConsent: 'approved' }, 'PATCH'))).json();
+    assert.equal(approved.student.recordingsConsent, 'approved');
+    const denied = await (await server.fetch(`/api/business/students/${created.student.id}`, json(teacher.cookie, { recordingsConsent: 'denied' }, 'PATCH'))).json();
+    assert.equal(denied.student.recordingsConsent, 'denied');
+    const cleared = await (await server.fetch(`/api/business/students/${created.student.id}`, json(teacher.cookie, { recordingsConsent: 'maybe' }, 'PATCH'))).json();
+    assert.equal(cleared.student.recordingsConsent, '');
+  });
+
   it('records a student\'s sex and a group\'s, and flags a mismatch when matching', async () => {
     const created = await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Maya', sex: 'girl', age: 9 }))).json();
     assert.equal(created.student.sex, 'girl');

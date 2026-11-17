@@ -113,6 +113,7 @@
         detail(t('timezone'), student.timezone),
         detail(t('whenFree'), availabilityText(student.availability)),
         detail(t('sex'), student.sex ? t(`sex.${student.sex}`) : ''),
+        detail(t('recordingsConsent'), t(`recordingsConsent.${student.recordingsConsent || 'none'}`)),
         detail(t('language'), t(`lang.${student.language}`)),
         detail(t('parentLanguage'), t(`lang.${student.parentLanguage || (student.language === 'en' ? 'en' : 'he')}`)),
         detail(t('chesscomUsername'), student.chesscomUsername),
@@ -369,7 +370,8 @@
           field(t('parentLanguage'), parentLanguage, { hint: t('parentLanguageHint') }),
           field(t('parentFirstName'), input('parentFirstName', s.parentFirstName || '', { autocomplete: 'off' })),
           field(t('parentLastName'), input('parentLastName', s.parentLastName || '', { autocomplete: 'off' })),
-          field(t('parentPhone'), input('parentPhone', s.parentPhone || '', { dir: 'ltr', placeholder: '050-1234567', inputmode: 'tel' }), { hint: t('wizPhoneHint') })
+          field(t('parentPhone'), input('parentPhone', s.parentPhone || '', { dir: 'ltr', placeholder: '050-1234567', inputmode: 'tel' }), { hint: t('wizPhoneHint') }),
+          field(t('recordingsConsent'), enumSelect('recordingsConsent', window.VOCAB.recordingsConsents, 'recordingsConsent', s.recordingsConsent || '', { blank: t('recordingsConsent.none') }))
         );
 
         // ---- step 2: where
