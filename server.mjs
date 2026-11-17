@@ -39,11 +39,12 @@ import {
 } from './lib/db.mjs';
 import { withWriteLock } from './lib/mutex.mjs';
 import { isBusinessStoreEmpty, openBusinessStore, teachers as teacherRecords } from './lib/business-db.mjs';
-import { forgetGroup, getSettings, groupHasStudents, groupIdsOf, handleBusinessRequest, HttpError, migrateStudentPrices, teacherForPhone, teacherGroupIds } from './lib/business.mjs';
+import { applyPaymeSaleState, fetchPaymeSaleState, findPaymeSaleByPaymeId, forgetGroup, getSettings, groupHasStudents, groupIdsOf, handleBusinessRequest, HttpError, migrateStudentPrices, paymeSalesToCheck, teacherForPhone, teacherGroupIds } from './lib/business.mjs';
 import { seedBusinessDemo } from './lib/business-seed.mjs';
 import { answerInbound, recordDeliveryStatus, runAutoMessages } from './lib/auto-messages.mjs';
 import { getWhatsAppConfig, isValidTwilioSignature } from './lib/whatsapp.mjs';
 import { forgetWaiting, runLessonSummaries } from './lib/lesson-summaries.mjs';
+import * as businessStore from './lib/business-db.mjs';
 
 const ROOT = process.cwd();
 const PORT = config.port;
@@ -2084,7 +2085,7 @@ async function serveStatic(req, res, pathname) {
     return;
   }
 
-  // Serving the 86MB video without this means re-sending the whole file for
+  // Serving a video without this means re-sending the whole file for
   // every seek, and browsers cannot scrub at all.
   if (range) {
     const length = range.end - range.start + 1;
@@ -2260,6 +2261,122 @@ async function handleDebugLessonSummaries(req, res) {
   sendJson(res, 200, { ok: true, summary: await runLessonSummariesOnce(now) });
 }
 
+// ------------------------------------------------------------ PayMe
+
+// One look at PayMe per link at a time; a look already under way answers
+// for the callbacks that arrive meanwhile.
+const paymeChecking = new Map();
+
+// Asks PayMe about one link and applies the answer. The question goes out
+// without the write lock (it can take seconds); only the change takes it.
+function checkPaymeSale(id) {
+  if (paymeChecking.has(id)) return paymeChecking.get(id);
+  const run = (async () => {
+    const sale = businessStore.paymeSales.get(id);
+    if (!sale) return null;
+    const state = await fetchPaymeSaleState(sale);
+    const result = await withWriteLock(async () => applyPaymeSaleState(id, state));
+    if (result.recorded) logInfo('payme.payment_recorded', { sale: id, student: sale.studentId });
+    if (result.sale?.checkError) logWarn('payme.check_failed', { sale: id, error: result.sale.checkError });
+    return result;
+  })().finally(() => paymeChecking.delete(id));
+  paymeChecking.set(id, run);
+  return run;
+}
+
+let paymeRecheckRunning = false;
+
+async function runPaymeRecheck(now = new Date()) {
+  if (paymeRecheckRunning) return null;
+  paymeRecheckRunning = true;
+  try {
+    const due = paymeSalesToCheck(now);
+    for (const sale of due) {
+      try {
+        await checkPaymeSale(sale.id);
+      } catch (error) {
+        logError('payme.recheck_failed', error, { sale: sale.id });
+      }
+    }
+    return { checked: due.length };
+  } finally {
+    paymeRecheckRunning = false;
+  }
+}
+
+// Callbacks can be lost, and without a public origin none are asked for,
+// so every open link is also looked up on a timer.
+function startPaymeRecheck() {
+  const tick = () => runPaymeRecheck().catch((error) => logError('payme.recheck_failed', error));
+  setTimeout(tick, 30_000).unref();
+  setInterval(tick, 5 * 60_000).unref();
+}
+
+// PayMe's server-to-server callback, form-encoded. It is unsigned for a
+// direct seller, so its content decides nothing: it only says which of our
+// links to look up. PayMe wants an answer within five seconds, so it gets
+// one at once and the look-up runs after.
+async function handlePaymeCallback(req, res) {
+  let raw;
+  try {
+    raw = await readRequestBody(req, 64 * 1024);
+  } catch (error) {
+    sendText(res, error.statusCode || 400, 'Bad Request');
+    return;
+  }
+  const params = new URLSearchParams(raw);
+  const paymeSaleId = String(params.get('payme_sale_id') || '').slice(0, 80);
+  const sale = findPaymeSaleByPaymeId(paymeSaleId);
+  logInfo('payme.callback', { notifyType: String(params.get('notify_type') || '').slice(0, 40), sale: sale?.id || '', known: Boolean(sale) });
+  sendText(res, 200, 'OK');
+  if (sale) checkPaymeSale(sale.id).catch((error) => logError('payme.callback_check_failed', error, { sale: sale.id }));
+}
+
+const PAID_PAGE = `<!doctype html>
+<html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yalla Chess · תודה</title>
+<style>
+  body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f4ee;color:#1f2a24;font:17px/1.6 system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
+  main{max-width:420px;margin:24px 16px;padding:32px 24px;background:#fff;border-radius:16px;box-shadow:0 2px 16px rgba(0,0,0,.06);text-align:center}
+  h1{font-size:24px;margin:0 0 8px}
+  p{margin:6px 0}
+  .en{direction:ltr;color:#5b6660;font-size:15px;margin-top:20px;border-top:1px solid #eee;padding-top:16px}
+  img{width:64px;height:64px;margin-bottom:8px}
+</style></head>
+<body><main>
+  <img src="/logo.png" alt="">
+  <h1>התשלום התקבל, תודה!</h1>
+  <p>הקבלה תישלח אליכם מ-PayMe.</p>
+  <p>אפשר לסגור את החלון.</p>
+  <div class="en"><p><strong>Payment received, thank you!</strong></p><p>PayMe will send you the receipt. You can close this window.</p></div>
+</main></body></html>`;
+
+// Where PayMe sends the parent after paying: /paid/<our order id>. The page
+// only thanks them; the order id prompts a look-up, which is what decides.
+function handlePaidPage(req, res, url) {
+  const id = decodeURIComponent(url.pathname.slice('/paid/'.length)).slice(0, 80);
+  if (id && businessStore.paymeSales.get(id)) checkPaymeSale(id).catch((error) => logError('payme.return_check_failed', error, { sale: id }));
+  sendText(res, 200, PAID_PAGE, 'text/html; charset=utf-8', { 'Cache-Control': 'no-store' });
+}
+
+// Runs the PayMe re-check as if it were `now`, for tests.
+async function handleDebugPaymeRecheck(req, res) {
+  if (!config.enableDebugEndpoints) {
+    sendJson(res, 404, { ok: false, error: 'Not found.' }, getCorsHeaders(req));
+    return;
+  }
+  let payload = {};
+  try {
+    payload = JSON.parse((await readRequestBody(req)) || '{}');
+  } catch {
+    sendJson(res, 400, { ok: false, error: 'Invalid JSON payload.' });
+    return;
+  }
+  const now = payload.now ? new Date(payload.now) : new Date();
+  while (paymeRecheckRunning) await new Promise((resolve) => setTimeout(resolve, 20));
+  sendJson(res, 200, { ok: true, summary: await runPaymeRecheck(now) });
+}
+
 async function handleRequest(req, res) {
   clearExpiredSessions();
   pruneRateLimits();
@@ -2333,6 +2450,21 @@ async function handleRequest(req, res) {
 
   if (url.pathname === '/api/debug/lesson-summaries' && req.method === 'POST') {
     await handleDebugLessonSummaries(req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/debug/payme-recheck' && req.method === 'POST') {
+    await handleDebugPaymeRecheck(req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/payme/callback' && req.method === 'POST') {
+    await handlePaymeCallback(req, res);
+    return;
+  }
+
+  if (url.pathname.startsWith('/paid/') && (req.method === 'GET' || req.method === 'HEAD')) {
+    handlePaidPage(req, res, url);
     return;
   }
 
@@ -2603,4 +2735,5 @@ server.listen(PORT, config.host, () => {
   });
   startAutoMessages();
   startLessonSummaries();
+  startPaymeRecheck();
 });

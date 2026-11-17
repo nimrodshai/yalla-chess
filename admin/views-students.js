@@ -85,6 +85,7 @@
       ),
       h('div', { class: 'row' },
         h('button', { class: 'btn btn-wa', type: 'button', onclick: () => composeMessage({ kind: 'progress', studentId: student.id, name: student.parentName || student.name, onSent: refresh }) }, t('sendMessage')),
+        admin ? window.UI.paymeButton({ ...payer, name: student.name || `${student.firstName} ${student.lastName}` }, refresh, { size: '' }) : null,
         admin ? h('button', { class: 'btn', type: 'button', onclick: () => paymentDialog({ student: payer, onSaved: refresh }) }, t('recordPayment')) : null,
         admin ? h('button', { class: 'btn btn-primary', type: 'button', onclick: () => studentForm({ student, onSaved: refresh }) }, t('edit')) : null
       )

@@ -166,6 +166,7 @@
       const [settingsResponse, groupsResponse, teachersResponse] = await Promise.all([api('/settings'), api('/groups'), api('/teachers')]);
       window.SETTINGS = settingsResponse.settings;
       window.VOCAB = settingsResponse.vocabulary || window.VOCAB;
+      window.PAYME = settingsResponse.payme || null;
       window.APP.groups = groupsResponse.groups;
       window.APP.teachers = teachersResponse.teachers;
       if (!window.APP.isAdmin) window.APP.me = teachersResponse.teachers[0] || null;

@@ -223,6 +223,7 @@
       ),
       h('div', { class: 'list-side' },
         h('button', { class: 'btn btn-sm btn-wa', type: 'button', onclick: () => composeMessage({ kind: 'payment_reminder', studentId: entry.studentId, name: entry.parentName || entry.name, onSent: refresh }) }, t('remind')),
+        window.UI.paymeButton(entry, refresh, { size: 'btn-sm' }),
         h('button', { class: 'btn btn-sm', type: 'button', onclick: () => window.UI.paymentDialog({ student: entry, onSaved: refresh }) }, t('markPaid'))
       )
     );
@@ -249,6 +250,8 @@
 
     return h('div', null,
       head,
+      // Until PayMe is connected, the steps to connect it come first.
+      window.UI.paymeSetupCard(data.payme, refresh),
       stats,
       window.UI.masonry([missingSummariesCard(data, refresh), todayCard, paymentsCard, groupsCard, leadsCard].filter(Boolean))
     );

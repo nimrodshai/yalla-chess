@@ -793,3 +793,10 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
 .tag-filter-label { font-size: 12px; font-weight: 600; color: var(--text-light); margin-inline-end: 2px; }
 .tag-filter-item { cursor: pointer; }
 .tag-count { font-size: 11px; font-weight: 700; opacity: .55; margin-inline-start: 4px; font-variant-numeric: tabular-nums; }
+
+/* PayMe setup card: numbered steps */
+.payme-setup { border: 1px solid var(--warn-soft); margin-bottom: 16px; }
+.payme-step { display: flex; gap: 12px; align-items: flex-start; }
+.payme-step-n { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--warn-soft); color: var(--warn-text); font-weight: 700; font-size: 14px; }
+.payme-step-body { flex: 1; min-width: 0; }
+.payme-step-body p { margin: 4px 0 8px; }

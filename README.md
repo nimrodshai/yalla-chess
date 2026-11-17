@@ -138,6 +138,28 @@ without a transcript yet less and less often, for up to 3 days
 3. Set `ZOOM_ACCOUNT_ID`, `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET` from the app
    and `ANTHROPIC_API_KEY` from console.anthropic.com.
 
+### Payments and receipts with PayMe
+
+The admin sends a parent a PayMe payment link (card, Bit, Apple Pay or Google
+Pay) from the payments page, the dashboard or a student's page. When the
+parent pays, the payment is recorded with method PayMe, and PayMe's receipt
+number and link are kept with it (`lib/payme.mjs`, the PayMe section of
+`lib/business.mjs`). The school is a direct seller, and its only credential is
+the seller key (MPL). A direct seller has nothing to sign callbacks with, so
+`/api/payme/callback` only says which link to look up. A payment is recorded
+only when PayMe's own `get-sales` reports that sale as paid, for our order id
+and the exact amount. Every unpaid link is also re-checked on a timer, because
+callbacks can be lost. Links stay payable for 30 days.
+
+Until PayMe is connected, the overview shows a setup card: sign up at
+paid.co.il, install the API service, and ask PayMe to turn on invoicing (that
+is what issues the receipts). Then paste the MPL from Admin → API &
+Integration. It is checked with PayMe and kept server-side only.
+`PAYME_SELLER_ID` in the environment overrides it. `PAYME_ENV` is `production`
+by default in production and `sandbox` otherwise. Callbacks and the parent's
+return page (`/paid/<id>`) need a public `PUBLIC_ORIGIN`; without one, the
+timer finds payments within minutes.
+
 ## Configuration
 
 Every setting is an environment variable; see [.env.example](.env.example) for

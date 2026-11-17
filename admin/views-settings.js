@@ -214,6 +214,7 @@
         card(t('matchingTitle'), matchingForm, { sub: t('matchingSub'), actions: [matchingStatus] }),
         card(t('defaultPricesTitle'), pricesForm, { sub: t('defaultPricesSub'), actions: [pricesStatus] }),
         card(t('autoTitle'), h('div', null, autoForm, autoRoster, autoSetup), { sub: t('autoSub'), actions: [autoStatus] }),
+        window.UI.paymeSettingsCard(window.PAYME, refresh),
         zoomSetup ? card(t('zoomSummariesTitle'), zoomSetup, { sub: t('zoomSummariesSub') }) : null,
         card(t('templates'), templatesForm, { sub: t('templatesSub'), actions: [templatesStatus] }),
         card(t('portalAccounts'), h('p', { class: 'small' }, t('portalAccountsNote'))),

@@ -6,8 +6,8 @@
 
   window.VIEWS.payments = async ({ query, refresh }) => {
     const month = /^\d{4}-\d{2}$/.test(query.month || '') ? query.month : todayIso(window.SETTINGS.businessTimezone).slice(0, 7);
-    const tab = query.tab === 'history' ? 'history' : 'overview';
-    const data = await api(`/payments?month=${month}`);
+    const tab = ['history', 'links'].includes(query.tab) ? query.tab : 'overview';
+    const [data, links] = await Promise.all([api(`/payments?month=${month}`), window.PAYME?.ready ? api('/payme/sales') : Promise.resolve(null)]);
     const settings = window.SETTINGS;
     const toIls = (amount, currency) => currency === 'USD' ? amount * settings.usdToIls : currency === 'EUR' ? amount * settings.eurToIls : amount;
 
@@ -33,7 +33,8 @@
 
     const tabs = h('div', { class: 'tabs' },
       h('a', { class: `tab ${tab === 'overview' ? 'active' : ''}`, href: `#/payments?tab=overview&month=${month}` }, t('overview')),
-      h('a', { class: `tab ${tab === 'history' ? 'active' : ''}`, href: `#/payments?tab=history&month=${month}` }, t('history'))
+      h('a', { class: `tab ${tab === 'history' ? 'active' : ''}`, href: `#/payments?tab=history&month=${month}` }, t('history')),
+      links ? h('a', { class: `tab ${tab === 'links' ? 'active' : ''}`, href: `#/payments?tab=links&month=${month}` }, t('paymeLinksTab')) : null
     );
 
     let body;
@@ -45,6 +46,7 @@
         h('td', null, window.UI.standingText(entry)),
         h('td', null, statusBadge(entry.state, 'pay')),
         h('td', null, h('div', { class: 'row', style: { gap: '4px', justifyContent: 'flex-end' } },
+          window.UI.paymeButton(entry, refresh),
           entry.state !== 'ok' ? h('button', { class: 'btn btn-xs btn-wa', type: 'button', onclick: () => composeMessage({ kind: 'payment_reminder', studentId: entry.studentId, name: entry.parentName || entry.name, onSent: refresh }) }, t('remind')) : null,
           h('button', { class: 'btn btn-xs', type: 'button', onclick: () => paymentDialog({ student: entry, onSaved: refresh }) }, t('markPaid'))
         ))
@@ -59,6 +61,8 @@
         dueSoon.length ? card(t('pay.due_soon'), table(dueSoon), { count: dueSoon.length }) : null,
         card(t('pay.ok'), ok.length ? table(ok) : empty(t('none')), { count: ok.length })
       );
+    } else if (tab === 'links' && links) {
+      body = window.UI.paymeSalesCard(links.sales, refresh);
     } else {
       body = card(fmtMonth(month), monthPayments.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
         h('thead', null, h('tr', null, h('th', null, t('date')), h('th', null, t('student')), h('th', { class: 'num' }, t('amount')), h('th', null, t('method')), h('th', null, t('periodLabel')), h('th', null, t('receipt')), h('th', null, t('notes')), h('th', null, ''))),
