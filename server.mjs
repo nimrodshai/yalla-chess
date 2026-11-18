@@ -40,6 +40,7 @@ import {
 import { withWriteLock } from './lib/mutex.mjs';
 import { isBusinessStoreEmpty, openBusinessStore, teachers as teacherRecords } from './lib/business-db.mjs';
 import { applyPaymeSaleState, fetchPaymeSaleState, findPaymeSaleByPaymeId, forgetGroup, getSettings, groupHasStudents, groupIdsOf, handleBusinessRequest, HttpError, migrateStudentPrices, paymeSalesToCheck, teacherForPhone, teacherGroupIds } from './lib/business.mjs';
+import { familyStudents, handleFamilyTournaments } from './lib/tournaments.mjs';
 import { seedBusinessDemo } from './lib/business-seed.mjs';
 import { answerInbound, recordDeliveryStatus, runAutoMessages } from './lib/auto-messages.mjs';
 import { getWhatsAppConfig, isValidTwilioSignature } from './lib/whatsapp.mjs';
@@ -1197,6 +1198,31 @@ async function readRequestBody(req, limitBytes = 16 * 1024) {
   return body;
 }
 
+// A parent's phone on a current student is enough to sign in: the account is
+// opened the first time they do, so the school has nothing to set up.
+async function openFamilyAccount(phone) {
+  const number = normalizePhone(phone);
+  const child = familyStudents(number)[0];
+  if (!child) return null;
+  return withWriteLock(async () => {
+    const users = await loadUsers();
+    const existing = getUserByPhone(users, number);
+    if (existing) return existing;
+    const account = normalizeUserRecord({
+      role: 'student',
+      username: number,
+      phone: number,
+      firstName: child.parentFirstName || '',
+      lastName: child.parentLastName || '',
+      contactEmail: child.parentEmail || ''
+    });
+    users.push(account);
+    await saveUsers(users);
+    logInfo('portal.family_account_opened', { student: child.id });
+    return account;
+  });
+}
+
 async function handleLogin(req, res) {
   let payload;
   try {
@@ -1243,7 +1269,7 @@ async function handleLogin(req, res) {
   }
 
   const users = await loadUsers();
-  const user = getUserByPhone(users, phone);
+  const user = getUserByPhone(users, phone) || await openFamilyAccount(phone);
 
   if (!user) {
     // No SMS goes out, so do not spend this number's budget; the per-IP cap
@@ -1642,10 +1668,12 @@ async function handleDashboard(req, res) {
   const groups = await loadGroups();
   // A teacher sees the groups they teach; a student the ones they are in.
   const taught = session.role === 'teacher' ? teacherGroupIds(teacherForPhone(session.phone)) : new Set();
+  // A parent signing in sees the groups of all their children.
+  const family = session.role === 'student' ? new Set(familyStudents(session.phone).flatMap(groupIdsOf)) : new Set();
   const visibleSource = canManageGroups(session)
     ? groups
     : groups.filter((group) => {
-      if (taught.has(group.id)) return true;
+      if (taught.has(group.id) || family.has(group.id)) return true;
       const members = normalizeGroupMembers(group.members);
       return members.some((member) => sameUserIdentifier(member, session.username) || sameUserIdentifier(member, session.phone));
     });
@@ -2347,8 +2375,8 @@ const PAID_PAGE = `<!doctype html>
   <img src="/logo.png" alt="">
   <h1>התשלום התקבל, תודה!</h1>
   <p>הקבלה תישלח אליכם מ-PayMe.</p>
-  <p>אפשר לסגור את החלון.</p>
-  <div class="en"><p><strong>Payment received, thank you!</strong></p><p>PayMe will send you the receipt. You can close this window.</p></div>
+  <p>אפשר לסגור את החלון, או <a href="/">לחזור לאתר</a>.</p>
+  <div class="en"><p><strong>Payment received, thank you!</strong></p><p>PayMe will send you the receipt. You can close this window or <a href="/">go back to the site</a>.</p></div>
 </main></body></html>`;
 
 // Where PayMe sends the parent after paying: /paid/<our order id>. The page
@@ -2490,6 +2518,25 @@ async function handleRequest(req, res) {
 
   if (url.pathname === '/api/business' || url.pathname.startsWith('/api/business/')) {
     await handleBusiness(req, res, url);
+    return;
+  }
+
+  if (url.pathname === '/api/tournaments' || url.pathname.startsWith('/api/tournaments/')) {
+    const session = getSessionFromRequest(req);
+    if (!session) {
+      sendJson(res, 401, { ok: false, error: 'Not authenticated.' }, getCorsHeaders(req));
+      return;
+    }
+    const readBody = async () => {
+      try {
+        const parsed = JSON.parse((await readRequestBody(req)) || '{}');
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+      } catch (error) {
+        throw Object.assign(new Error('invalid_request'), { statusCode: error.statusCode || 400 });
+      }
+    };
+    const result = await handleFamilyTournaments(req.method, url.pathname.slice('/api/tournaments'.length) || '/', session, readBody);
+    sendJson(res, result.status, result.payload, getCorsHeaders(req));
     return;
   }
 

@@ -800,3 +800,23 @@ html[dir="rtl"] .pipe-arrow { transform: scaleX(-1); }
 .payme-step-n { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--warn-soft); color: var(--warn-text); font-weight: 700; font-size: 14px; }
 .payme-step-body { flex: 1; min-width: 0; }
 .payme-step-body p { margin: 4px 0 8px; }
+
+/* Tournaments */
+.tour-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.tour-divisions { display: grid; gap: 10px; }
+.tour-division { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; }
+.tour-division-names { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.tour-division-ranges { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.tour-pick-list { display: grid; gap: 2px; max-height: 280px; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; padding: 6px; }
+.tour-pick { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
+.tour-pick:hover { background: var(--gold-soft); }
+.tour-pick .muted { margin-inline-start: auto; }
+.tour-row-off td { opacity: 0.55; }
+.tour-results td { vertical-align: middle; }
+.tour-results td.strong { min-width: 140px; }
+.tour-result-input { width: 68px; min-width: 68px; }
+.tour-result-link { min-width: 210px; }
+@media (max-width: 560px) {
+  .tour-division-names { grid-template-columns: minmax(0, 1fr); }
+  .tour-division-ranges { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

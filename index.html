@@ -4311,6 +4311,8 @@
       .theme-toggle, .theme-toggle *, .theme-toggle::before { transition: none !important; }
     }
   </style>
+  <link rel="stylesheet" href="/admin/portal-tournaments.css">
+  <script src="/admin/portal-tournaments.js"></script>
 </head>
 <body>
   <div id="loader"><div class="spinner"></div></div>
@@ -4537,6 +4539,7 @@
       </section>
       <section class="portal-body">
         <div class="portal-group-list" id="portalGroups"></div>
+        <div id="portalTournaments" hidden></div>
       </section>
     </div>
   </main>
@@ -6955,6 +6958,7 @@
       renderMemberPortalGroups();
       renderMemberPortalClock();
       syncAuthBodyLock();
+      window.PortalTournaments?.sync({ signedIn, lang: currentLang === 'he' ? 'he' : 'en' });
     }
 
     function startMemberPortalTimers() {
