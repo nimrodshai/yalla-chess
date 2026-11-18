@@ -67,6 +67,9 @@
     const tz = window.SETTINGS.businessTimezone;
     const groups = (student.groupIds || []).map((groupId) => window.APP.groups.find((entry) => entry.id === groupId)).filter(Boolean);
 
+    const payment = data.payment;
+    // A new payment starts at what the student owes, or the next month.
+    const payer = { ...student, balance: payment?.balance, nextChargeAmount: payment?.nextChargeAmount };
     const head = h('div', { class: 'card' }, h('div', { class: 'row-between' },
       h('div', { class: 'profile-head' },
         h('span', { class: 'avatar ink' }, initials(student.name)),
@@ -91,9 +94,6 @@
       )
     ));
 
-    const payment = data.payment;
-    // A new payment starts at what the student owes, or the next month.
-    const payer = { ...student, balance: payment?.balance, nextChargeAmount: payment?.nextChargeAmount };
     // A student who has left shows where they stand only while they owe.
     const paymentLine = admin && (student.status !== 'inactive' || data.payment.balance < 0)
       ? h('div', { class: `alert ${payment.state === 'overdue' ? 'alert-danger' : payment.state === 'due_soon' ? 'alert-warn' : 'alert-sage'}` },
@@ -114,7 +114,8 @@
         detail(t('timezone'), student.timezone),
         detail(t('whenFree'), availabilityText(student.availability)),
         detail(t('sex'), student.sex ? t(`sex.${student.sex}`) : ''),
-        detail(t('recordingsConsent'), t(`recordingsConsent.${student.recordingsConsent || 'none'}`)),
+        detail(t('videoConsent'), t(`recordingsConsent.${student.videoConsent || 'none'}`)),
+        detail(t('audioConsent'), t(`recordingsConsent.${student.audioConsent || 'none'}`)),
         detail(t('language'), t(`lang.${student.language}`)),
         detail(t('parentLanguage'), t(`lang.${student.parentLanguage || (student.language === 'en' ? 'en' : 'he')}`)),
         detail(t('chesscomUsername'), student.chesscomUsername),
@@ -372,7 +373,8 @@
           field(t('parentFirstName'), input('parentFirstName', s.parentFirstName || '', { autocomplete: 'off' })),
           field(t('parentLastName'), input('parentLastName', s.parentLastName || '', { autocomplete: 'off' })),
           field(t('parentPhone'), input('parentPhone', s.parentPhone || '', { dir: 'ltr', placeholder: '050-1234567', inputmode: 'tel' }), { hint: t('wizPhoneHint') }),
-          field(t('recordingsConsent'), enumSelect('recordingsConsent', window.VOCAB.recordingsConsents, 'recordingsConsent', s.recordingsConsent || '', { blank: t('recordingsConsent.none') }))
+          field(t('videoConsent'), enumSelect('videoConsent', window.VOCAB.recordingsConsents, 'recordingsConsent', s.videoConsent || '', { blank: t('recordingsConsent.none') })),
+          field(t('audioConsent'), enumSelect('audioConsent', window.VOCAB.recordingsConsents, 'recordingsConsent', s.audioConsent || '', { blank: t('recordingsConsent.none') }))
         );
 
         // ---- step 2: where

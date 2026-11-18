@@ -973,15 +973,21 @@ describe('business API', () => {
     await server.fetch(`/api/groups/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
   });
 
-  it('records whether a student\'s family approved recordings', async () => {
+  it('records separately whether a student\'s family approved video and audio recordings', async () => {
     const created = await (await server.fetch('/api/business/students', json(teacher.cookie, { firstName: 'Noa' }))).json();
-    assert.equal(created.student.recordingsConsent, '');
-    const approved = await (await server.fetch(`/api/business/students/${created.student.id}`, json(teacher.cookie, { recordingsConsent: 'approved' }, 'PATCH'))).json();
-    assert.equal(approved.student.recordingsConsent, 'approved');
-    const denied = await (await server.fetch(`/api/business/students/${created.student.id}`, json(teacher.cookie, { recordingsConsent: 'denied' }, 'PATCH'))).json();
-    assert.equal(denied.student.recordingsConsent, 'denied');
-    const cleared = await (await server.fetch(`/api/business/students/${created.student.id}`, json(teacher.cookie, { recordingsConsent: 'maybe' }, 'PATCH'))).json();
-    assert.equal(cleared.student.recordingsConsent, '');
+    assert.equal(created.student.videoConsent, '');
+    assert.equal(created.student.audioConsent, '');
+    const url = `/api/business/students/${created.student.id}`;
+    const audioOnly = await (await server.fetch(url, json(teacher.cookie, { videoConsent: 'denied', audioConsent: 'approved' }, 'PATCH'))).json();
+    assert.equal(audioOnly.student.videoConsent, 'denied');
+    assert.equal(audioOnly.student.audioConsent, 'approved');
+    // Changing one answer leaves the other as it was.
+    const videoToo = await (await server.fetch(url, json(teacher.cookie, { videoConsent: 'approved' }, 'PATCH'))).json();
+    assert.equal(videoToo.student.videoConsent, 'approved');
+    assert.equal(videoToo.student.audioConsent, 'approved');
+    const cleared = await (await server.fetch(url, json(teacher.cookie, { audioConsent: 'maybe' }, 'PATCH'))).json();
+    assert.equal(cleared.student.audioConsent, '');
+    assert.equal(cleared.student.videoConsent, 'approved');
   });
 
   it('records a student\'s sex and a group\'s, and flags a mismatch when matching', async () => {
