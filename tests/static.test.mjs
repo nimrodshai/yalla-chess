@@ -71,8 +71,8 @@ describe('static files', () => {
   });
 
   it('serves byte ranges so media can be scrubbed', async () => {
-    // Without this the whole 86MB video was re-sent for every seek.
-    const response = await server.fetch('/placeholder.mp4', { headers: { Range: 'bytes=100-199' } });
+    // Without this the whole video was re-sent for every seek.
+    const response = await server.fetch('/testimonial-1.mp4', { headers: { Range: 'bytes=100-199' } });
     assert.equal(response.status, 206);
     assert.equal(response.headers.get('content-length'), '100');
     assert.match(response.headers.get('content-range'), /^bytes 100-199\/\d+$/);
@@ -83,11 +83,11 @@ describe('static files', () => {
   });
 
   it('handles a suffix range and an unsatisfiable range', async () => {
-    const suffix = await server.fetch('/placeholder.mp4', { headers: { Range: 'bytes=-50' } });
+    const suffix = await server.fetch('/testimonial-1.mp4', { headers: { Range: 'bytes=-50' } });
     assert.equal(suffix.status, 206);
     assert.equal(suffix.headers.get('content-length'), '50');
 
-    const tooFar = await server.fetch('/placeholder.mp4', { headers: { Range: 'bytes=99999999999-' } });
+    const tooFar = await server.fetch('/testimonial-1.mp4', { headers: { Range: 'bytes=99999999999-' } });
     assert.equal(tooFar.status, 416);
     assert.match(tooFar.headers.get('content-range'), /^bytes \*\/\d+$/);
   });

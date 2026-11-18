@@ -1798,7 +1798,20 @@
     }
 
     /* ===== VIDEO PLAYER ===== */
+    /* Two to a row; an odd last video sits centred under them. */
+    .video-testimonials {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 28px;
+      margin-bottom: 40px;
+    }
+
+    /* Hebrew testimonials are only shown on the Hebrew site. */
+    html[lang="en"] .video-wrap[data-video-lang="he"] { display: none; }
+
     .video-wrap {
+      flex: 0 1 calc(50% - 14px);
       position: relative;
       border-radius: 20px;
       overflow: hidden;
@@ -1813,6 +1826,12 @@
       height: 100%;
       object-fit: cover;
       display: block;
+    }
+
+    /* A phone-shot (portrait) testimonial: show it whole instead of cropping to 16:9. */
+    .video-wrap video.portrait {
+      object-fit: contain;
+      background: #111;
     }
 
     .video-play-btn {
@@ -3578,7 +3597,7 @@
       .about-grid { grid-template-columns: 1fr; gap: 40px; }
       .services-grid { grid-template-columns: 1fr; }
       .testimonials-grid { grid-template-columns: 1fr; }
-      .video-testimonials { grid-template-columns: 1fr !important; }
+      .video-wrap { flex-basis: 100%; }
       .steps-grid { grid-template-columns: 1fr; gap: 20px; }
 
       .auth-dialog {
@@ -4862,13 +4881,17 @@
       <div class="section-subtitle reveal" style="text-align:center;" id="testimonialsSubtitle">Hear from our community.</div>
 
       <!-- Video testimonials -->
-      <div class="video-testimonials reveal" style="display:grid; grid-template-columns: repeat(2, 1fr); gap:28px; margin-bottom:40px;">
-        <div class="video-wrap">
-          <video id="video1" playsinline onclick="toggleVideo('video1')"><source src="placeholder.mp4" type="video/mp4"></video>
+      <div class="video-testimonials reveal">
+        <div class="video-wrap" data-video-lang="he">
+          <video id="video1" playsinline preload="metadata" poster="testimonial-1.jpg" onclick="toggleVideo('video1')"><source src="testimonial-1.mp4" type="video/mp4"></video>
           <button class="video-play-btn" onclick="toggleVideo('video1')">&#9654;</button>
         </div>
         <div class="video-wrap">
-          <video id="video2" playsinline onclick="toggleVideo('video2')"><source src="placeholder.mp4" type="video/mp4"></video>
+          <video id="video3" playsinline preload="metadata" poster="testimonial-3.jpg" onclick="toggleVideo('video3')"><source src="testimonial-3.mp4" type="video/mp4"></video>
+          <button class="video-play-btn" onclick="toggleVideo('video3')">&#9654;</button>
+        </div>
+        <div class="video-wrap">
+          <video id="video2" class="portrait" playsinline preload="metadata" poster="testimonial-2.jpg" onclick="toggleVideo('video2')"><source src="testimonial-2.mp4" type="video/mp4"></video>
           <button class="video-play-btn" onclick="toggleVideo('video2')">&#9654;</button>
         </div>
       </div>
@@ -5083,6 +5106,17 @@
         wrap.classList.remove('playing');
         wrap.querySelector('.video-play-btn').innerHTML = '&#9654;';
       }
+    }
+
+    // A video the new language hides must not keep playing out of sight.
+    function pauseHiddenVideos() {
+      document.querySelectorAll('.video-wrap').forEach(function(wrap) {
+        var video = wrap.querySelector('video');
+        if (wrap.offsetParent !== null || video.paused) return;
+        video.pause();
+        wrap.classList.remove('playing');
+        wrap.querySelector('.video-play-btn').innerHTML = '&#9654;';
+      });
     }
 
     // Reset play button when video ends
@@ -8186,6 +8220,7 @@
         body.setAttribute('dir', 'ltr');
         document.documentElement.setAttribute('dir', 'ltr');
         document.documentElement.setAttribute('lang', 'en');
+        pauseHiddenVideos();
         document.title = 'Yalla-Chess | Learn Chess Together';
 
         // logo is an image, no text to set

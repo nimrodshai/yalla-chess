@@ -15,7 +15,7 @@ COPY package.json ./
 COPY server.mjs ./
 COPY lib ./lib
 COPY admin ./admin
-COPY index.html logo.png dolev.jpeg placeholder.mp4 favicon-32.png apple-touch-icon.png ./
+COPY index.html logo.png dolev.jpeg testimonial-1.mp4 testimonial-2.mp4 testimonial-3.mp4 testimonial-1.jpg testimonial-2.jpg testimonial-3.jpg favicon-32.png apple-touch-icon.png ./
 COPY deploy/entrypoint.sh ./entrypoint.sh
 
 # The database lives on a mounted volume, not in the image layer. Without a
