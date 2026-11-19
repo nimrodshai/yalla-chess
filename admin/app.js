@@ -12,7 +12,7 @@
   window.VOCAB = {
     studentStatuses: ['trial', 'active', 'waitlist', 'inactive'],
     levels: ['basic', 'beginner', 'intermediate', 'advanced'],
-    lessonTypes: ['group', 'private', 'both'],
+    lessonTypes: ['group', 'private', 'both', 'spontaneous'],
     priceKinds: ['group', 'private', 'any'],
     priceModels: ['per_lesson', 'monthly', 'package'],
     currencies: ['ILS', 'USD'],

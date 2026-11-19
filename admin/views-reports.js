@@ -49,7 +49,7 @@
       h('dt', null, t('total')), h('dd', null, fmtMoney(current.expenses.total, 'ILS'))
     ) : empty(t('noExpenses')));
 
-    const groupsCard = card(t('groupsBreakdown'), h('dl', { class: 'kv' }, current.groups.flatMap((group) => [h('dt', null, link(`#/groups/${group.id}`, group.name)), h('dd', null, `${group.students}/${group.seatsTotal}`)])), { count: `${current.privateStudents} ${t('lessonType.private')} · ${current.groupStudents} ${t('lessonType.group')}` });
+    const groupsCard = card(t('groupsBreakdown'), h('dl', { class: 'kv' }, current.groups.flatMap((group) => [h('dt', null, link(`#/groups/${group.id}`, group.name)), h('dd', null, `${group.students}/${group.seatsTotal}`)])), { count: `${current.privateStudents} ${t('lessonType.private')} · ${current.groupStudents} ${t('lessonType.group')}${current.spontaneousStudents ? ` · ${current.spontaneousStudents} ${t('lessonType.spontaneous')}` : ''}` });
 
     const max = Math.max(1, ...report.trend.map((entry) => Math.max(entry.income, entry.expenses)));
     const trendCard = card(t('trend'), h('div', null,

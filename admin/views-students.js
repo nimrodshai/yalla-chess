@@ -51,7 +51,7 @@
       h('tbody', null, students.map((student) => h('tr', { class: 'clickable', onclick: () => { location.hash = `#/students/${student.id}`; } },
         h('td', null, h('div', { class: 'row', style: { gap: '8px' } }, h('span', { class: 'avatar', style: { width: '30px', height: '30px', fontSize: '12px', borderRadius: '9px' } }, initials(student.name)), h('a', { class: 'strong', href: `#/students/${student.id}` }, student.name))),
         h('td', null, student.age ?? ''),
-        h('td', null, student.groupName || (student.lessonType === 'private' ? t('lessonType.private') : h('span', { class: 'muted' }, t('noGroup')))),
+        h('td', null, student.groupName || (['private', 'spontaneous'].includes(student.lessonType) ? t(`lessonType.${student.lessonType}`) : h('span', { class: 'muted' }, t('noGroup')))),
         h('td', null, t(`level.${student.level}`), ratingsText(student) ? h('span', { class: 'muted small' }, ` · ${ratingsText(student)}`) : null),
         h('td', { class: 'small' }, student.parentName, h('div', { class: 'muted tiny', dir: 'ltr' }, student.parentPhone)),
         admin ? h('td', null, statusBadge(student.paymentState, 'pay')) : null
@@ -406,7 +406,7 @@
         const availability = availabilityEditor(s.availability || []);
         const groupField = field(t('groupsField'), groupPicker, { full: true, hint: t('groupsFieldHint') });
         const scheduleField = field(t('privateSchedule'), schedule, { full: true });
-        const lessonType = choice('lessonType', [['group', t('lessonType.group')], ['private', t('lessonType.private')], ['both', t('lessonType.both')]], s.lessonType);
+        const lessonType = choice('lessonType', [['group', t('lessonType.group')], ['private', t('lessonType.private')], ['both', t('lessonType.both')], ['spontaneous', t('lessonType.spontaneous')]], s.lessonType);
         const placement = h('div', { class: 'form' },
           field(t('lessonType'), lessonType, { full: true }),
           groupField,
@@ -419,8 +419,8 @@
         );
         const syncPlacement = () => {
           const type = form.elements.lessonType.value;
-          groupField.hidden = type === 'private';
-          scheduleField.hidden = type === 'group';
+          groupField.hidden = type === 'private' || type === 'spontaneous';
+          scheduleField.hidden = type === 'group' || type === 'spontaneous';
         };
 
         // ---- step 3: money
@@ -488,7 +488,7 @@
           const group = window.APP.groups.find((entry) => entry.id === chosenGroups[0]);
           const groupPrice = group?.profile.price ?? null;
           const groupCurrency = group?.profile.currency || 'ILS';
-          if (!again && type !== 'private' && groupPrice !== null) {
+          if (!again && ['group', 'both'].includes(type) && groupPrice !== null) {
             // A group still priced in a currency no longer offered brings it along.
             if (![...currencySelect.options].some((option) => option.value === groupCurrency)) currencySelect.append(h('option', { value: groupCurrency }, groupCurrency));
             currencySelect.value = groupCurrency;
@@ -496,10 +496,11 @@
           }
           const currency = currencySelect.value;
           const defaults = window.SETTINGS.defaultPrices?.[currency] || {};
-          if (type !== 'private') {
+          if (type === 'spontaneous') prices.add({ kind: 'private', model: 'per_lesson', durationMinutes: null, amount: defaults.private ?? null });
+          if (['group', 'both'].includes(type)) {
             for (const id of chosenGroups) prices.add({ kind: 'group', groupId: chosenGroups.length > 1 ? id : '', model: 'monthly', amount: groupDefault(id, currency) });
           }
-          if (type !== 'group') {
+          if (['private', 'both'].includes(type)) {
             for (const length of new Set(schedule.read().map((row) => row.durationMinutes))) {
               prices.add({ kind: 'private', model: 'per_lesson', durationMinutes: length, amount: defaults.private ?? null });
             }
@@ -586,9 +587,10 @@
           const typeChanged = isNew || lessonType !== s.lessonType;
           // Switching to group-only drops the private slots and switching to
           // private-only leaves the group; an edit that does not touch the
-          // lesson type leaves both exactly as they were.
-          values.privateSchedule = lessonType === 'group' && typeChanged ? [] : (lessonType === 'group' ? (s.privateSchedule || []) : schedule.read());
-          values.groupIds = lessonType === 'private' && typeChanged ? [] : chosenGroups;
+          // lesson type leaves both exactly as they were. An occasional
+          // student has neither.
+          values.privateSchedule = lessonType === 'spontaneous' ? [] : lessonType === 'group' && typeChanged ? [] : (lessonType === 'group' ? (s.privateSchedule || []) : schedule.read());
+          values.groupIds = lessonType === 'spontaneous' ? [] : lessonType === 'private' && typeChanged ? [] : chosenGroups;
           const problem = pricesProblem();
           if (problem) {
             go(steps.findIndex((step) => step.key === 'billing'));

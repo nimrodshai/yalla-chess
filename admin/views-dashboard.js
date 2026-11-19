@@ -190,7 +190,7 @@
     ) : null;
 
     const stats = h('div', { class: 'stats stats-widgets' },
-      stat(t('statActive'), s.activeStudents, { sub: t('statPrivateGroup', { private: s.privateStudents, group: s.groupStudents }) }),
+      stat(t('statActive'), s.activeStudents, { sub: [t('statPrivateGroup', { private: s.privateStudents, group: s.groupStudents }), s.spontaneousStudents ? t('statSpontaneous', { count: s.spontaneousStudents }) : ''].filter(Boolean).join(' · ') }),
       stat(t('statGroups'), groups.length),
       stat(t('statFreeSeats'), freeSeats, { tone: freeSeats ? 'gold' : '' }),
       stat(t('statLeads'), leads.length),

@@ -370,6 +370,7 @@
               const body = { groupIds: [...(student.groupIds || []), group.id] };
               if (student.status === 'waitlist') body.status = 'active';
               if (student.lessonType === 'private') body.lessonType = 'both';
+              if (student.lessonType === 'spontaneous') body.lessonType = 'group';
               await api(`/students/${student.id}`, { method: 'PATCH', body });
               chosen.delete(student);
               candidates = candidates.filter((entry) => entry !== student);

@@ -1857,7 +1857,7 @@ async function syncStudentPortal(student, previous, session) {
         firstName: student.firstName,
         lastName: student.lastName,
         contactEmail: student.parentEmail,
-        planName: student.lessonType === 'private' ? 'Private lessons' : 'Group lessons'
+        planName: student.lessonType === 'private' ? 'Private lessons' : student.lessonType === 'spontaneous' ? 'Occasional lessons' : 'Group lessons'
       }));
       await saveUsers(users);
       logInfo('business.portal_account_created', { phone: nextPhone, student: student.id });
