@@ -147,6 +147,9 @@
     open: {}
   };
   let root = null;
+  // Set when a parent arrives from the landing page's Register button: the
+  // first time the tournaments are drawn, the page scrolls to them.
+  let wantScroll = false;
   let pollTimer = null;
   let clockTimer = null;
 
@@ -527,6 +530,10 @@
       past.length ? el('div', { class: 'pt-list' }, past.map(pastCard)) : null
     ].filter(Boolean));
     if (focused) document.getElementById(focused)?.focus();
+    if (wantScroll) {
+      wantScroll = false;
+      requestAnimationFrame(() => root.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    }
   }
 
   function tickCountdowns() {
@@ -562,5 +569,10 @@
     }
   });
 
-  window.PortalTournaments = { sync };
+  function reveal() {
+    wantScroll = true;
+    if (state.data && root && !root.hidden) render();
+  }
+
+  window.PortalTournaments = { sync, reveal };
 })();

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tournament | Yalla-Chess</title>
+  <meta name="description" content="An online chess tournament for kids, played on Chess.com. Read about it and register.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Yalla Chess tournament">
+  <meta property="og:description" content="An online chess tournament for kids, played on Chess.com.">
+  <meta property="og:image" content="https://yallachessacademy.com/tournament/art/hero-desktop.jpg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <script>
+    // Hebrew or English before the first paint, the same way the home page
+    // chooses: a saved choice, else Israel by time zone or browser language.
+    (function () {
+      var lang = '';
+      try { lang = localStorage.getItem('yallaChessLanguage') || ''; } catch (e) {}
+      if (lang !== 'he' && lang !== 'en') {
+        lang = 'en';
+        try {
+          var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+          if (tz.indexOf('Jerusalem') !== -1 || (navigator.language || '').indexOf('he') === 0) lang = 'he';
+        } catch (e) {}
+      }
+      document.documentElement.lang = lang;
+      document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr';
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="preload" as="image" href="/tournament/art/hero-desktop.jpg" media="(min-width: 861px)">
+  <link rel="preload" as="image" href="/tournament/art/hero-mobile.jpg" media="(max-width: 860px)">
+  <link rel="stylesheet" href="/tournament/tournament.css">
+</head>
+<body>
+  <header class="tp-top">
+    <button class="tp-pill tp-lang" id="tpLang" type="button"></button>
+    <a class="tp-logo" href="/" id="tpHome"><img src="/logo.png" alt="Yalla-Chess" width="132" height="132"></a>
+    <a class="tp-pill" href="/?register=tournament" id="tpSignIn"></a>
+  </header>
+
+  <main id="tpMain" aria-busy="true">
+    <section class="tp-hero">
+      <div class="tp-hero-text">
+        <span class="tp-badge" id="tpBadge"></span>
+        <h1 class="tp-title"><span id="tpTitle"></span><span class="tp-gold" id="tpTitleGold"></span></h1>
+        <p class="tp-lead" id="tpLead"></p>
+        <p class="tp-facts" id="tpFacts"></p>
+        <div class="tp-actions">
+          <a class="tp-btn tp-btn-gold" id="tpRegister" href="/?register=tournament"></a>
+          <a class="tp-btn tp-btn-line" id="tpMore" href="#rules"></a>
+        </div>
+        <p class="tp-note" id="tpNote" hidden></p>
+      </div>
+      <picture class="tp-hero-art">
+        <source media="(max-width: 860px)" srcset="/tournament/art/hero-mobile.jpg">
+        <img src="/tournament/art/hero-desktop.jpg" alt="" width="1536" height="1024">
+      </picture>
+    </section>
+
+    <section class="tp-section" id="divisions" hidden>
+      <h2 class="tp-h2" id="tpDivisionsTitle"></h2>
+      <p class="tp-sub" id="tpDivisionsSub"></p>
+      <div class="tp-divisions" id="tpDivisions"></div>
+    </section>
+
+    <section class="tp-section" id="how">
+      <h2 class="tp-h2" id="tpHowTitle"></h2>
+      <ol class="tp-steps" id="tpSteps"></ol>
+    </section>
+
+    <section class="tp-section tp-narrow" id="details">
+      <h2 class="tp-h2" id="tpDetailsTitle"></h2>
+      <dl class="tp-card tp-rows" id="tpDetails"></dl>
+    </section>
+
+    <section class="tp-section tp-narrow" id="rules" hidden>
+      <h2 class="tp-h2" id="tpRulesTitle"></h2>
+      <div class="tp-card tp-rules" id="tpRules"></div>
+    </section>
+
+    <section class="tp-section">
+      <div class="tp-cta">
+        <h2 class="tp-cta-title" id="tpCtaTitle"></h2>
+        <p class="tp-sub" id="tpCtaSub"></p>
+        <a class="tp-btn tp-btn-gold" id="tpRegister2" href="/?register=tournament"></a>
+      </div>
+    </section>
+  </main>
+
+  <dialog class="tp-dialog" id="tpForm" aria-labelledby="tpFormTitle">
+    <div class="tp-dialog-head">
+      <h2 class="tp-dialog-title" id="tpFormTitle"></h2>
+      <button class="tp-close" id="tpFormClose" type="button" aria-label="×">×</button>
+    </div>
+    <form class="tp-form" id="tpFormBody" novalidate></form>
+  </dialog>
+
+  <footer class="tp-footer">
+    <a href="/" id="tpFooterHome"></a>
+    <span>© <span id="tpYear"></span> Yalla Chess</span>
+  </footer>
+
+  <script src="/tournament/tournament.js"></script>
+</body>
+</html>

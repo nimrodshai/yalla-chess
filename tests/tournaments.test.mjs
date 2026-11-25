@@ -76,7 +76,7 @@ describe('tournaments', () => {
 
   before(async () => {
     stub = await startStub();
-    server = await startServer({ ...devEnv, PAYME_ENV: 'sandbox', PAYME_API_BASE: stub.base });
+    server = await startServer({ ...devEnv, PAYME_ENV: 'sandbox', PAYME_API_BASE: stub.base, RATE_LIMIT_CONTACT_PER_IP: '100' });
     admin = await signIn(server, ADMIN);
     kids.noa = await addStudent({ firstName: 'Noa', lastName: 'Levi', country: 'IL', age: 9, chesscomRating: 700, chesscomUsername: 'noa_levi', parentFirstName: 'Dana', parentLastName: 'Levi', parentPhone: PARENT });
     kids.tom = await addStudent({ firstName: 'Tom', lastName: 'Levi', country: 'ישראל', age: 13, parentPhone: PARENT });
@@ -206,6 +206,23 @@ describe('tournaments', () => {
     assert.equal(entry.joinUrl, 'https://www.chess.com/play/tournament/2');
   });
 
+  it('leaves the pick to the school when the levels have no limits, and shows them on the page', async () => {
+    const tournament = await newTournament({ startDate: '2099-06-01', divisions: [
+      { name: 'מתחילים', nameEn: 'Beginners' }, { name: 'בינוניים', nameEn: 'Intermediate' }, { name: 'מתקדמים', nameEn: 'Advanced' }
+    ] });
+    await staff(`/tournaments/${tournament.id}/registrations`, json(admin.cookie, { studentIds: [kids.noa.id], settled: true, paymentMethod: 'waived' }));
+    const detail = await staff(`/tournaments/${tournament.id}`);
+    assert.equal(detail.registrations[0].divisionId, '', 'not everyone in beginners');
+    const page = await (await server.fetch(`/api/public/tournament?id=${tournament.id}`)).json();
+    assert.deepEqual(page.tournament.divisions.map((division) => division.nameEn), ['Beginners', 'Intermediate', 'Advanced']);
+
+    // A single division with no limits is everyone's.
+    const single = await newTournament({ divisions: [{ name: 'כולם' }] });
+    await staff(`/tournaments/${single.id}/registrations`, json(admin.cookie, { studentIds: [kids.noa.id], settled: true, paymentMethod: 'waived' }));
+    const one = await staff(`/tournaments/${single.id}`);
+    assert.equal(one.registrations[0].divisionId, one.divisions[0].id);
+  });
+
   it('places a child by age and rating, and the school can move them', async () => {
     const tournament = await newTournament({ divisions: [
       { name: 'עד 10', maxAge: 10, chesscomUrl: 'https://www.chess.com/play/tournament/young' },
@@ -259,6 +276,7 @@ describe('tournaments', () => {
     const teacherPhone = '+972521110077';
     await staff('/teachers', json(admin.cookie, { name: 'Coach Test', phone: teacherPhone }));
     const coach = await signIn(server, teacherPhone);
+    assert.equal((await server.fetch('/api/business/tournament-entries', { headers: { Cookie: coach.cookie } })).status, 403, 'the list of everyone has parents\' phones');
     const tournament = await newTournament();
     await staff(`/tournaments/${tournament.id}/registrations`, json(admin.cookie, { studentIds: [kids.noa.id], settled: true, paymentMethod: 'bit' }));
 
@@ -285,6 +303,103 @@ describe('tournaments', () => {
     } finally {
       await disconnectPayme();
     }
+  });
+
+  it('tells anyone what the next tournament is, but not who is in it', async () => {
+    const tournament = await newTournament({
+      startDate: '2098-01-10', capacity: 5, rules: 'משחקים בכבוד', chesscomUrl: 'https://www.chess.com/play/tournament/secret',
+      divisions: [{ name: 'עד גיל 10', maxAge: 10 }, { name: 'מתקדמים', minAge: 11, minRating: 900 }]
+    });
+    await newTournament({ startDate: '2098-01-05', status: 'draft' });
+    assert.equal((await portal(family, `/${tournament.id}/register`, { studentIds: [kids.noa.id] })).status, 200);
+
+    const response = await server.fetch('/api/public/tournament');
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.tournament.id, tournament.id, 'the soonest open one, never a draft');
+    assert.equal(body.tournament.spotsLeft, 4);
+    assert.equal(body.tournament.registrationOpen, true);
+    assert.deepEqual(body.tournament.divisions, [{ name: 'עד גיל 10', nameEn: '' }, { name: 'מתקדמים', nameEn: '' }], 'the names only, no ages or ratings');
+    const text = JSON.stringify(body);
+    for (const secret of ['Noa', 'Levi', PARENT, 'secret', 'noa_levi']) assert.ok(!text.includes(secret), secret);
+    assert.equal(body.tournament.participants, undefined);
+    assert.equal(body.tournament.feeIls, undefined, 'the page shows no prices');
+
+    const byId = await (await server.fetch(`/api/public/tournament?id=${tournament.id}`)).json();
+    assert.equal(byId.tournament.name, 'גביע יאללה');
+    const draft = await newTournament({ status: 'draft' });
+    assert.equal((await (await server.fetch(`/api/public/tournament?id=${draft.id}`)).json()).tournament, null);
+  });
+
+  it('serves the landing page at /tournament and /tournament/<id>', async () => {
+    for (const path of ['/tournament', '/tournament/', '/tournament/trn_0123abcd']) {
+      const response = await server.fetch(path);
+      assert.equal(response.status, 200, path);
+      assert.match(await response.text(), /tournament\.js/);
+    }
+    for (const path of ['/tournament/art/hero-desktop.jpg', '/tournament/art/piece-queen.jpg']) {
+      assert.equal((await server.fetch(path)).headers.get('content-type'), 'image/jpeg', path);
+    }
+  });
+
+  it('takes the page\'s form from anyone and shows it only to the admin', async () => {
+    const tournament = await newTournament({ startDate: '2098-02-01' });
+    const signup = (body) => server.fetch(`/api/public/tournament/${tournament.id}/signup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const error = async (body) => { const response = await signup(body); return [response.status, (await response.json()).error]; };
+
+    assert.deepEqual(await error({ phone: '123', children: ['Ori'] }), [400, 'phone']);
+    assert.deepEqual(await error({ phone: '052-111-0001', children: ['  ', ''] }), [400, 'children']);
+    assert.deepEqual(await error({ phone: '052-111-0001', children: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }), [400, 'too_many']);
+
+    // A stranger, typed the Israeli way, and a parent we know, twice.
+    assert.equal((await signup({ phone: '054 777 8899', children: ['Ori Ben David', 'Maya Ben David'] })).status, 200);
+    assert.equal((await signup({ phone: PARENT, children: ['Noa Levi'] })).status, 200);
+    assert.equal((await signup({ phone: PARENT.replace('+972', '0'), children: ['noa levi', 'Tom Levi'] })).status, 200);
+    // A bot fills the hidden field; it is told it worked and nothing is kept.
+    assert.equal((await signup({ phone: '0541231234', children: ['Spam'], website: 'http://spam.example' })).status, 200);
+
+    const detail = await staff(`/tournaments/${tournament.id}`);
+    assert.equal(detail.signups.length, 2);
+    const stranger = detail.signups.find((row) => row.phone === '+972547778899');
+    assert.deepEqual(stranger.children, ['Ori Ben David', 'Maya Ben David']);
+    assert.deepEqual(stranger.family, []);
+    const known = detail.signups.find((row) => row.phone === PARENT);
+    assert.deepEqual(known.children, ['Noa Levi', 'Tom Levi'], 'one sign-up per phone, no repeated names');
+    assert.deepEqual(known.family.map((student) => student.name).sort(), ['Noa Levi', 'Tom Levi']);
+    assert.equal(detail.tournament.newSignups, 2);
+    assert.equal(detail.registrations.length, 0, 'a sign-up registers nobody by itself');
+
+    const handled = await staff(`/tournaments/${tournament.id}/signups/${stranger.id}`, json(admin.cookie, { status: 'handled' }, 'PATCH'));
+    assert.equal(handled.tournament.newSignups, 1);
+
+    // The admin's list of everyone: the form's names and the registrations together.
+    await staff(`/tournaments/${tournament.id}/registrations`, json(admin.cookie, { studentIds: [kids.noa.id], settled: true, paymentMethod: 'waived' }));
+    const { entries, tournaments } = await staff('/tournament-entries');
+    assert.ok(tournaments.some((entry) => entry.id === tournament.id));
+    const mine = entries.filter((entry) => entry.tournamentId === tournament.id);
+    const pick = (source, name) => mine.find((entry) => entry.source === source && entry.childName === name);
+    assert.equal(mine.length, 5);
+    assert.equal(pick('signup', 'Ori Ben David').status, 'handled');
+    assert.equal(pick('signup', 'Ori Ben David').phone, '+972547778899');
+    assert.equal(pick('signup', 'Noa Levi').studentId, kids.noa.id, 'a name on the form links to the family\'s student');
+    assert.equal(pick('signup', 'Noa Levi').status, 'new');
+    assert.equal(pick('registration', 'Noa Levi').status, 'confirmed');
+    assert.equal(pick('registration', 'Noa Levi').phone, PARENT);
+
+    // Phones stay with the admin.
+    assert.equal((await server.fetch(`/api/business/tournaments/${tournament.id}`, { headers: { Cookie: family.cookie } })).status, 403);
+    assert.equal((await server.fetch('/api/business/tournament-entries', { headers: { Cookie: family.cookie } })).status, 403);
+    assert.doesNotMatch(JSON.stringify(await (await server.fetch('/api/public/tournament')).json()), /547778899/);
+  });
+
+  it('refuses the form for a draft or a closed tournament', async () => {
+    const send = (id) => server.fetch(`/api/public/tournament/${id}/signup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: '0547778899', children: ['Ori'] }) });
+    const draft = await newTournament({ status: 'draft' });
+    assert.equal((await send(draft.id)).status, 404);
+    const closed = await newTournament({ status: 'closed' });
+    const response = await send(closed.id);
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).error, 'closed');
   });
 
   it('keeps the school\'s screens away from families', async () => {

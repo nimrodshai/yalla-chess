@@ -40,7 +40,7 @@ import {
 import { withWriteLock } from './lib/mutex.mjs';
 import { isBusinessStoreEmpty, openBusinessStore, teachers as teacherRecords } from './lib/business-db.mjs';
 import { applyPaymeSaleState, fetchPaymeSaleState, findPaymeSaleByPaymeId, forgetGroup, getSettings, groupHasStudents, groupIdsOf, handleBusinessRequest, HttpError, migrateStudentPrices, paymeSalesToCheck, teacherForPhone, teacherGroupIds } from './lib/business.mjs';
-import { familyStudents, handleFamilyTournaments } from './lib/tournaments.mjs';
+import { familyStudents, handleFamilyTournaments, publicSignup, publicTournament } from './lib/tournaments.mjs';
 import { seedBusinessDemo } from './lib/business-seed.mjs';
 import { answerInbound, recordDeliveryStatus, runAutoMessages } from './lib/auto-messages.mjs';
 import { getWhatsAppConfig, isValidTwilioSignature } from './lib/whatsapp.mjs';
@@ -2436,7 +2436,7 @@ async function handleRequest(req, res) {
     if (url.pathname === '/robots.txt') {
       sendText(res, 200, `User-agent: *\nDisallow: /api/\nDisallow: /healthz\n\nSitemap: ${origin}/sitemap.xml\n`, 'text/plain; charset=utf-8', headers);
     } else {
-      sendText(res, 200, `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${origin}/</loc></url>\n</urlset>\n`, 'application/xml; charset=utf-8', headers);
+      sendText(res, 200, `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${origin}/</loc></url>\n  <url><loc>${origin}/tournament</loc></url>\n</urlset>\n`, 'application/xml; charset=utf-8', headers);
     }
     return;
   }
@@ -2521,6 +2521,42 @@ async function handleRequest(req, res) {
     return;
   }
 
+  // The public landing page's facts: no sign-in, nothing about who entered.
+  if (url.pathname === '/api/public/tournament' && (req.method === 'GET' || req.method === 'HEAD')) {
+    sendJson(res, 200, { ok: true, ...publicTournament(url.searchParams.get('id') || '') }, getCorsHeaders(req));
+    return;
+  }
+
+  // The landing page's sign-up form: anyone, no sign-in. The school reads
+  // each one in the admin app before anyone is registered.
+  const signupMatch = /^\/api\/public\/tournament\/([^/]+)\/signup$/.exec(url.pathname);
+  if (signupMatch && req.method === 'POST') {
+    const limit = checkRateLimit(`signup:ip:${getClientIp(req)}`, config.rateLimits.contactPerIp);
+    if (!limit.allowed) {
+      sendJson(res, 429, { ok: false, error: 'rate_limited' }, { ...getCorsHeaders(req), 'Retry-After': String(limit.retryAfterSeconds) });
+      return;
+    }
+    let payload;
+    try {
+      payload = JSON.parse((await readRequestBody(req, 8 * 1024)) || '{}');
+    } catch (error) {
+      sendJson(res, error.statusCode || 400, { ok: false, error: 'invalid_request' }, getCorsHeaders(req));
+      return;
+    }
+    // A field people never see: a bot that fills it is told it worked.
+    if (payload?.website) {
+      sendJson(res, 200, { ok: true }, getCorsHeaders(req));
+      return;
+    }
+    try {
+      sendJson(res, 200, { ok: true, ...(await publicSignup(decodeURIComponent(signupMatch[1]), payload)) }, getCorsHeaders(req));
+    } catch (error) {
+      if (!Number.isInteger(error?.statusCode)) throw error;
+      sendJson(res, error.statusCode, { ok: false, error: error.message }, getCorsHeaders(req));
+    }
+    return;
+  }
+
   if (url.pathname === '/api/tournaments' || url.pathname.startsWith('/api/tournaments/')) {
     const session = getSessionFromRequest(req);
     if (!session) {
@@ -2586,6 +2622,11 @@ async function handleRequest(req, res) {
     // both open it, and its assets resolve next to it.
     if (url.pathname === '/admin' || url.pathname === '/admin/') {
       await serveStatic(req, res, '/admin/index.html');
+      return;
+    }
+    // The tournament landing page, shared as /tournament or /tournament/<id>.
+    if (url.pathname === '/tournament' || url.pathname === '/tournament/' || /^\/tournament\/trn_[\w-]+\/?$/.test(url.pathname)) {
+      await serveStatic(req, res, '/tournament/index.html');
       return;
     }
     await serveStatic(req, res, url.pathname);

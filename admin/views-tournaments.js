@@ -9,6 +9,8 @@
   const STATUSES = ['draft', 'open', 'closed', 'active', 'finished'];
   const STATUS_TONES = { draft: '', open: 'badge-sage', closed: 'badge-warn', active: 'badge-gold', finished: 'badge-info' };
   const REG_TONES = { pending: 'badge-warn', confirmed: 'badge-sage', cancelled: '' };
+  const SIGNUP_TONES = { new: 'badge-gold', handled: 'badge-sage', dismissed: '' };
+  const DEFAULT_DIVISIONS = [{ name: 'מתחילים', nameEn: 'Beginners' }, { name: 'בינוניים', nameEn: 'Intermediate' }, { name: 'מתקדמים', nameEn: 'Advanced' }];
 
   const statusBadge = (status) => h('span', { class: `badge ${STATUS_TONES[status] || ''}` }, t(`tourStatus.${status}`));
   const regBadge = (status) => h('span', { class: `badge ${REG_TONES[status] || ''}` }, t(`tourRegOne.${status}`));
@@ -17,6 +19,7 @@
 
   // ------------------------------------------------------------- the list
   window.VIEWS.tournaments = async ({ id, refresh }) => {
+    if (id === 'entries' && window.APP.isAdmin) return entriesPage();
     if (id) return detailPage(id, refresh);
     const { tournaments } = await api('/tournaments');
     const admin = window.APP.isAdmin;
@@ -41,6 +44,87 @@
         : h('div', { class: 'card' }, empty(t('tourEmpty')))
     );
   };
+
+  // ------------------------------------------------------------ all entries
+  // Every child across the tournaments in one list, for the admin: who to
+  // invite on Chess.com, who to call back, who still owes. A sign-up the school
+  // has handled is already a registration, so by default it is left out.
+  async function entriesPage() {
+    const { tournaments, entries, timezone } = await api('/tournament-entries');
+    const state = { tournamentId: '', show: 'current', q: '' };
+    const names = new Map(tournaments.map((tournament) => [tournament.id, tournament.name]));
+    const english = () => document.documentElement.lang === 'en';
+    const isCurrent = (entry) => entry.source === 'signup' ? entry.status === 'new' : entry.status !== 'cancelled';
+    const statusText = (entry) => entry.source === 'signup'
+      ? t(`tourSignupStatus.${entry.status}`)
+      : t(`tourRegOne.${entry.status}`) + (entry.paid && entry.status === 'confirmed' ? ` · ${t('tourEntriesPaid')}` : '');
+    const tone = (entry) => entry.source === 'signup' ? SIGNUP_TONES[entry.status] : REG_TONES[entry.status];
+    const divisionText = (entry) => (english() && entry.divisionEn) || entry.division;
+
+    const visible = () => {
+      const q = state.q.trim().toLowerCase();
+      const digits = q.replace(/\D/g, '');
+      return entries.filter((entry) =>
+        (!state.tournamentId || entry.tournamentId === state.tournamentId)
+        && (state.show === 'all' || isCurrent(entry))
+        && (!q || entry.childName.toLowerCase().includes(q) || entry.parentName.toLowerCase().includes(q)
+          || (digits.length >= 3 && entry.phone.replace(/\D/g, '').includes(digits))));
+    };
+
+    const statsNode = h('div', { class: 'stats' });
+    const listNode = h('div');
+    const draw = () => {
+      const rows = visible();
+      window.UI.clear(statsNode).append(
+        stat(t('tourEntriesKids'), rows.length),
+        stat(t('tourReg.confirmed'), rows.filter((entry) => entry.source === 'registration' && entry.status === 'confirmed').length, { tone: 'sage' }),
+        stat(t('tourReg.pending'), rows.filter((entry) => entry.source === 'registration' && entry.status === 'pending').length),
+        stat(t('tourEntriesFromForm'), rows.filter((entry) => entry.source === 'signup' && entry.status === 'new').length, { tone: 'gold' }));
+      window.UI.clear(listNode).append(rows.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
+        h('thead', null, h('tr', null,
+          h('th', null, t('tourEntriesChild')), h('th', null, t('tourEntriesParent')), h('th', null, t('phone')),
+          state.tournamentId ? null : h('th', null, t('tourEntriesTournament')),
+          h('th', null, t('tourDivision')), h('th', null, t('tourEntriesSource')), h('th', null, t('status')), h('th', null, t('tourWhen')))),
+        h('tbody', null, rows.map((entry) => h('tr', { class: isCurrent(entry) ? '' : 'tour-row-off' },
+          h('td', { class: 'strong' }, entry.studentId ? link(`#/students/${entry.studentId}`, entry.childName) : entry.childName),
+          h('td', null, entry.parentName),
+          h('td', { dir: 'ltr' }, entry.phone ? h('a', { href: `tel:${entry.phone}` }, entry.phone) : ''),
+          state.tournamentId ? null : h('td', null, link(`#/tournaments/${entry.tournamentId}`, names.get(entry.tournamentId) || '')),
+          h('td', null, divisionText(entry)),
+          h('td', { class: 'small' }, t(`tourEntriesSource.${entry.source}`)),
+          h('td', null, h('span', { class: `badge ${tone(entry) || ''}` }, statusText(entry))),
+          h('td', { class: 'small' }, fmtDateTime(entry.createdAt, timezone))
+        )))))
+        : empty(t('tourEntriesEmpty')));
+    };
+
+    // A CSV with a byte-order mark, so Excel reads the Hebrew names.
+    const download = () => {
+      const cell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const head = [t('tourEntriesChild'), t('tourEntriesParent'), t('phone'), t('tourEntriesTournament'), t('tourDivision'), t('tourEntriesSource'), t('status'), t('tourWhen')];
+      const lines = visible().map((entry) => [entry.childName, entry.parentName, entry.phone, names.get(entry.tournamentId) || '', divisionText(entry),
+        t(`tourEntriesSource.${entry.source}`), statusText(entry), fmtDateTime(entry.createdAt, timezone)]);
+      const csv = '﻿' + [head, ...lines].map((line) => line.map(cell).join(',')).join('\r\n');
+      const anchor = h('a', { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })), download: 'tournament-entries.csv' });
+      document.body.append(anchor);
+      anchor.click();
+      setTimeout(() => { URL.revokeObjectURL(anchor.href); anchor.remove(); }, 1000);
+    };
+
+    const searchBox = h('input', { type: 'search', placeholder: t('search'), 'aria-label': t('search'), oninput: (event) => { state.q = event.target.value; draw(); } });
+    const tournamentSelect = select('tournamentId', [['', t('tourEntriesAll')], ...tournaments.map((tournament) => [tournament.id, `${tournament.name} · ${whenText(tournament)}`])], '', { 'aria-label': t('tourEntriesTournament') });
+    tournamentSelect.addEventListener('change', () => { state.tournamentId = tournamentSelect.value; draw(); });
+    const showSelect = select('show', ['current', 'all'].map((key) => [key, t(`tourEntriesShow.${key}`)]), state.show, { 'aria-label': t('status') });
+    showSelect.addEventListener('change', () => { state.show = showSelect.value; draw(); });
+    draw();
+    return h('div', null,
+      h('div', { style: { marginBottom: '8px' } }, link('#/tournaments', `‹ ${t('tourTitle')}`)),
+      window.UI.pageHead(t('tourEntries'), t('tourEntriesSub'), [h('button', { class: 'btn', type: 'button', onclick: download }, t('tourEntriesExport'))]),
+      h('div', { class: 'filters' }, searchBox, tournamentSelect, showSelect),
+      statsNode,
+      h('div', { class: 'card' }, listNode)
+    );
+  }
 
   // ------------------------------------------------------------- the form
   function divisionEditor(divisions) {
@@ -80,7 +164,8 @@
     modal({
       title: tournament ? t('tourEdit') : t('tourNew'),
       body: (dialog) => {
-        const divisions = divisionEditor(detail?.divisions || []);
+        // A new tournament starts with the three levels the landing page shows.
+        const divisions = divisionEditor(detail?.divisions || DEFAULT_DIVISIONS);
         const pair = (...children) => h('div', { class: 'tour-pair' }, children);
         const form = h('form', { class: 'form' },
           field(t('tourName'), input('name', tournament?.name || '', { required: true, maxlength: 120, placeholder: 'YALLA CHESS CUP #1' })),
@@ -169,6 +254,7 @@
       stat(t('tourReg.pending'), tournament.counts.pending),
       stat(t('tourReg.cancelled'), tournament.counts.cancelled),
       tournament.spotsLeft !== null ? stat(t('tourSpotsLeft'), tournament.spotsLeft) : null,
+      admin && tournament.newSignups ? stat(t('tourNewSignups'), tournament.newSignups, { tone: 'gold' }) : null,
       admin ? stat(t('tourIncome'), incomeText(tournament.income)) : null
     );
 
@@ -182,6 +268,7 @@
     return h('div', null,
       h('div', { style: { marginBottom: '8px' } }, link('#/tournaments', `‹ ${t('tourTitle')}`)),
       head, stats, paymeNotice, noLink,
+      admin ? signupsCard(detail, run) : null,
       registrationsCard(detail, run),
       resultsCard(detail, run)
     );
@@ -257,6 +344,34 @@
         return form;
       }
     });
+  }
+
+  // The landing page's form: a phone and children's names from anyone. The
+  // school registers the children itself and then marks the sign-up handled.
+  function signupsCard(detail, run) {
+    const { tournament, signups } = detail;
+    const order = { new: 0, handled: 1, dismissed: 2 };
+    const sorted = [...signups].sort((a, b) => (order[a.status] - order[b.status]) || b.createdAt.localeCompare(a.createdAt));
+    const setStatus = (row, status) => run(() => api(`/tournaments/${tournament.id}/signups/${row.id}`, { method: 'PATCH', body: { status } }), t('saved'));
+    const rows = sorted.map((row) => h('tr', { class: row.status === 'new' ? '' : 'tour-row-off' },
+      h('td', { class: 'small' }, fmtDateTime(row.createdAt, window.SETTINGS.businessTimezone)),
+      h('td', { dir: 'ltr' }, h('a', { href: `tel:${row.phone}` }, row.phone)),
+      h('td', null, row.children.join(', ')),
+      h('td', { class: 'small' }, row.family.length
+        ? row.family.map((student, index) => [index ? ', ' : '', link(`#/students/${student.id}`, student.name), student.registered ? ` (${t('tourSignupRegistered')})` : ''])
+        : h('span', { class: 'muted' }, t('tourSignupNewFamily'))),
+      h('td', null, h('span', { class: `badge ${SIGNUP_TONES[row.status] || ''}` }, t(`tourSignupStatus.${row.status}`))),
+      h('td', null, h('div', { class: 'row', style: { gap: '4px', justifyContent: 'flex-end', flexWrap: 'nowrap' } },
+        row.status === 'new'
+          ? [h('button', { class: 'btn btn-xs', type: 'button', onclick: () => setStatus(row, 'handled') }, t('tourSignupDone')),
+            h('button', { class: 'btn btn-xs btn-ghost', type: 'button', onclick: () => setStatus(row, 'dismissed') }, t('tourSignupDismiss'))]
+          : h('button', { class: 'btn btn-xs btn-ghost', type: 'button', onclick: () => setStatus(row, 'new') }, t('tourRestore'))))
+    ));
+    return card(t('tourSignups'), signups.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
+      h('thead', null, h('tr', null,
+        h('th', null, t('tourWhen')), h('th', null, t('phone')), h('th', null, t('tourSignupChildren')),
+        h('th', null, t('tourSignupFamily')), h('th', null, t('status')), h('th', null, ''))),
+      h('tbody', null, rows))) : empty(t('tourNoSignups')), { count: signups.filter((row) => row.status === 'new').length, sub: t('tourSignupsSub') });
   }
 
   function registrationsCard(detail, run) {

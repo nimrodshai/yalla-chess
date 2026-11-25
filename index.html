@@ -8346,7 +8346,16 @@
     }
 
     syncThemeToggles();
-    restoreAuthSession();
+    // The tournament page's Register button lands here: sign in if needed,
+    // then the portal scrolls to the tournaments.
+    const arrivedToRegister = new URLSearchParams(window.location.search).get('register') === 'tournament';
+    if (arrivedToRegister) {
+      history.replaceState(null, '', window.location.pathname + window.location.hash);
+      window.PortalTournaments?.reveal();
+    }
+    restoreAuthSession().then(function() {
+      if (arrivedToRegister && !currentAuthUser) openLogin();
+    });
 
     function revealPage() {
       var loader = document.getElementById('loader');
