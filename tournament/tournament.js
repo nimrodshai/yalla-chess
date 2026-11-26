@@ -13,7 +13,6 @@
   const COPY = {
     he: {
       langToggle: 'English',
-      signIn: 'התחברות',
       badge: { open: 'טורניר', closed: 'ההרשמה נסגרה', active: 'הטורניר התחיל', finished: 'הטורניר הסתיים' },
       lead: 'טורניר שחמט אונליין לילדים, משחקים ב\u2011Chess.com.',
       online: 'אונליין ב-Chess.com',
@@ -82,7 +81,6 @@
     },
     en: {
       langToggle: 'עברית',
-      signIn: 'Sign in',
       badge: { open: 'Tournament', closed: 'Registration closed', active: 'Happening now', finished: 'Finished' },
       lead: 'An online chess tournament for kids, played on Chess.com.',
       online: 'Online on Chess.com',
@@ -211,7 +209,6 @@
     document.documentElement.dir = state.lang === 'he' ? 'rtl' : 'ltr';
     $('tpLang').textContent = copy.langToggle;
     $('tpLang').lang = state.lang === 'he' ? 'en' : 'he';
-    $('tpSignIn').textContent = copy.signIn;
     $('tpFormClose').setAttribute('aria-label', copy.form.close);
     $('tpFooterHome').textContent = copy.home;
     $('tpYear').textContent = String(new Date().getFullYear());

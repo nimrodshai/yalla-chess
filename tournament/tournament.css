@@ -32,6 +32,9 @@ body {
 
 a { color: inherit; }
 
+/* Classes set display on buttons and badges; hidden must still win. */
+[hidden] { display: none !important; }
+
 img { display: block; max-width: 100%; height: auto; }
 
 /* ------------------------------------------------------------ header */
@@ -46,7 +49,6 @@ img { display: block; max-width: 100%; height: auto; }
 }
 
 .tp-lang { justify-self: start; }
-#tpSignIn { justify-self: end; }
 
 .tp-logo img {
   width: 132px;
