@@ -59,6 +59,58 @@
     ));
   }
 
+  // What is still owed, one line per charge, as the message to the family
+  // lists it.
+  function owedText(item, currency) {
+    const money = fmtMoney(item.amount, currency) + (item.full - item.amount > 0.005 ? ` (${t('owed.rest', { amount: fmtMoney(item.full, currency) })})` : '');
+    if (item.kind === 'opening') return `${t('owed.opening')}: ${money}`;
+    if (item.kind === 'month') {
+      const dayName = (date) => new Intl.DateTimeFormat(document.documentElement.lang === 'en' ? 'en-US' : 'he-IL', { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`));
+      return [h('div', { class: 'strong' }, `${window.UI.fmtMonth(item.month)} · ${t('owed.month')}: ${money}`),
+        ...(item.lessonDates || []).map((date) => h('div', { class: 'muted small' }, `${dayName(date)} ${fmtDate(date)}`))];
+    }
+    return `${fmtDate(item.date, { year: 'numeric' })} · ${t(`owed.${item.lessonKind || 'private'}`)}${item.topic ? ` (${item.topic})` : ''}: ${money}`;
+  }
+
+  // One payment of everything owed, closing every open charge.
+  function settleDebtDialog(student, total, owed, onSaved) {
+    modal({
+      title: t('settleDebtTitle', { name: student.name }),
+      size: 'modal-sm',
+      body: (dialog) => {
+        const form = h('form', { class: 'form' },
+          h('div', { class: 'full stack' },
+            h('div', null, t('settleDebtBody', { amount: fmtMoney(total, student.currency) })),
+            h('ul', { class: 'small', style: { margin: 0, paddingInlineStart: '18px' } }, owed.map((item) => h('li', null, owedText(item, student.currency))))),
+          field(t('paidAt'), h('input', { name: 'paidAt', type: 'date', value: window.UI.todayIso() })),
+          field(t('method'), enumSelect('method', window.VOCAB.paymentMethods, 'method', 'bit')),
+          checkbox('receiptIssued', false, t('receiptIssued')),
+          h('div', { class: 'form-actions' },
+            h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, t('cancel')),
+            h('button', { class: 'btn btn-primary', type: 'submit' }, t('settleDebtSave'))
+          )
+        );
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const values = formValues(form);
+          try {
+            await api('/payments', { method: 'POST', body: {
+              ...values, studentId: student.id, amount: total, currency: student.currency,
+              periodLabel: (values.paidAt || window.UI.todayIso()).slice(0, 7), notes: t('settleDebtNote')
+            } });
+            toast(t('saved'), 'success');
+            dialog.close();
+            onSaved();
+          } catch (error) {
+            form.querySelector('.form-error')?.remove();
+            form.prepend(errorBox(error.message));
+          }
+        });
+        return form;
+      }
+    });
+  }
+
   // ----------------------------------------------------------- detail
   async function studentDetail(id, refresh) {
     const data = await api(`/students/${id}`);
@@ -148,16 +200,27 @@
 
     // Lessons that took place but were never logged sit in the history by
     // date, waiting for a summary.
+    // Whether each lesson is paid, as the account counts it: payments cover
+    // the oldest charges first. The admin's only.
+    const PAID_TONES = { paid: 'badge-sage', partial: 'badge-warn', unpaid: 'badge-danger', upcoming: '', unpriced: 'badge-warn' };
+    // A lesson under a monthly price, logged or not, goes with its month.
+    const paidBadge = (lesson) => {
+      if (!admin) return null;
+      const month = lesson.date.slice(0, 7);
+      const kind = lesson.groupId ? 'group' : 'private';
+      const state = (lesson.id && data.lessonPaid?.[lesson.id]) || data.monthPaid?.[kind]?.[month] || data.monthPaid?.any?.[month];
+      return state ? h('span', { class: `badge ${PAID_TONES[state] || ''}` }, t(`lessonPaid.${state}`)) : null;
+    };
     const loggedRow = (lesson) => h('div', { class: 'list-item clickable', onclick: () => { location.hash = `#/lessons/${lesson.id}`; } },
       h('div', { class: 'list-main' },
-        h('div', { class: 'list-title' }, fmtDate(lesson.date, { year: 'numeric' }), h('span', { class: 'strong' }, lesson.topic || '—'), lesson.myAttendance ? statusBadge(lesson.myAttendance, 'attendance') : null, lesson.status === 'cancelled' ? statusBadge('cancelled', 'lessonStatus') : null),
+        h('div', { class: 'list-title' }, fmtDate(lesson.date, { year: 'numeric' }), h('span', { class: 'strong' }, lesson.topic || '—'), lesson.myAttendance ? statusBadge(lesson.myAttendance, 'attendance') : null, lesson.status === 'cancelled' ? statusBadge('cancelled', 'lessonStatus') : null, paidBadge(lesson)),
         h('div', { class: 'list-sub' }, [lesson.homework ? `${t('homework')}: ${lesson.homework}` : '', lesson.nextSteps ? `${t('nextSteps')}: ${lesson.nextSteps}` : ''].filter(Boolean).join(' · ')),
         window.UI.gameChips(lesson) ? h('div', { style: { marginTop: '4px' } }, window.UI.gameChips(lesson)) : null
       )
     );
     const awaitingRow = (occurrence) => h('div', { class: 'list-item' },
       h('div', { class: 'list-main' },
-        h('div', { class: 'list-title' }, fmtDate(occurrence.date, { year: 'numeric' }), h('span', { class: 'strong' }, occurrence.groupId ? occurrence.title : t(`kind.${occurrence.kind}`)), h('span', { class: 'badge badge-warn' }, t('awaitingSummary')))
+        h('div', { class: 'list-title' }, fmtDate(occurrence.date, { year: 'numeric' }), h('span', { class: 'strong' }, occurrence.groupId ? occurrence.title : t(`kind.${occurrence.kind}`)), h('span', { class: 'badge badge-warn' }, t('awaitingSummary')), paidBadge({ date: occurrence.date, groupId: occurrence.groupId }))
       ),
       h('div', { class: 'list-side' },
         h('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => window.VIEWS.logLesson({ occurrence: occurrence.key, slot: occurrence, durationMinutes: occurrence.durationMinutes, onSaved: refresh }) }, t('writeSummary')))
@@ -165,7 +228,14 @@
     const awaiting = data.awaitingSummary || [];
     const history = [...data.lessons.map((lesson) => ({ date: lesson.date, row: () => loggedRow(lesson) })), ...awaiting.map((occurrence) => ({ date: occurrence.date, row: () => awaitingRow(occurrence) }))]
       .sort((a, b) => b.date.localeCompare(a.date));
-    const lessons = card(t('lessonHistory'), history.length ? h('div', { class: 'list' }, history.map((entry) => entry.row())) : empty(t('noLessonsYet')), { count: history.length, sub: t('attendanceSummary', { attended: data.attendance.attended, absent: data.attendance.absent }), actions: [h('button', { class: 'btn btn-sm', type: 'button', onclick: () => window.VIEWS.logLesson({ studentId: student.id, onSaved: refresh }) }, `+ ${t('logLesson')}`)] });
+    // While the family owes: a WhatsApp message listing what is unpaid, and
+    // one payment that closes all of it.
+    const owing = admin && payment && payment.balance < 0 && (data.owed || []).length;
+    const debtActions = owing ? [
+      h('button', { class: 'btn btn-sm btn-wa', type: 'button', onclick: () => composeMessage({ kind: 'debt_details', studentId: student.id, name: student.parentName || student.name, onSent: refresh }) }, t('debtMessage')),
+      h('button', { class: 'btn btn-sm', type: 'button', onclick: () => settleDebtDialog(student, -payment.balance, data.owed, refresh) }, t('settleDebt'))
+    ] : [];
+    const lessons = card(t('lessonHistory'), history.length ? h('div', { class: 'list' }, history.map((entry) => entry.row())) : empty(t('noLessonsYet')), { count: history.length, sub: t('attendanceSummary', { attended: data.attendance.attended, absent: data.attendance.absent }), actions: [...debtActions, h('button', { class: 'btn btn-sm', type: 'button', onclick: () => window.VIEWS.logLesson({ studentId: student.id, onSaved: refresh }) }, `+ ${t('logLesson')}`)] });
 
     const payments = admin ? card(t('paymentHistory'), data.payments.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
       h('thead', null, h('tr', null, h('th', null, t('date')), h('th', { class: 'num' }, t('amount')), h('th', null, t('method')), h('th', null, t('periodLabel')), h('th', null, t('receipt')), h('th', null, ''))),

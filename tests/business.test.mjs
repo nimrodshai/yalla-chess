@@ -284,6 +284,67 @@ describe('business API', () => {
     assert.equal(account.pending, null);
   });
 
+  it('tells which lessons are paid, oldest first, and lists what is still owed', async () => {
+    const { studentAccount, owedLines } = await import('../lib/business.mjs');
+    const settings = { usdToIls: 3.7 };
+    const lessonOn = (id, date, extra = {}) => ({ id, date, status: 'held', studentIds: ['s1'], attendance: {}, groupId: '', topic: '', ...extra });
+
+    // Per lesson, charged at each month's end: 150 pays the first lesson and
+    // half the second; February is unpaid; March's is still to be charged.
+    const perLesson = { id: 's1', currency: 'ILS', joinedAt: '2026-01-01', prices: [{ id: 'p1', kind: 'any', model: 'per_lesson', amount: 100 }] };
+    const lessons = [lessonOn('a', '2026-01-05'), lessonOn('b', '2026-01-12', { topic: 'Pins' }), lessonOn('c', '2026-02-03'), lessonOn('d', '2026-03-02')];
+    let account = studentAccount(perLesson, [{ id: 'pay1', paidAt: '2026-01-20', amount: 150, currency: 'ILS', method: 'bit' }], lessons, settings, '2026-03-10');
+    assert.deepEqual(account.lessonPaid, { a: 'paid', b: 'partial', c: 'unpaid', d: 'upcoming' });
+    assert.deepEqual(account.owed.map(({ lessonId, amount, full }) => ({ lessonId, amount, full })), [{ lessonId: 'b', amount: 50, full: 100 }, { lessonId: 'c', amount: 100, full: 100 }]);
+    assert.equal(account.owed.reduce((sum, item) => sum + item.amount, 0), -account.balance);
+    assert.equal(owedLines(account.owed, 'ILS', 'he'), '• 12.1.2026 · שיעור פרטי (Pins): ₪50 (יתרה מתוך ₪100)\n• 3.2.2026 · שיעור פרטי: ₪100');
+
+    // Credit left over pays this month's lesson before it is charged.
+    account = studentAccount(perLesson, [{ id: 'pay1', paidAt: '2026-01-20', amount: 400, currency: 'ILS', method: 'bit' }], lessons, settings, '2026-03-10');
+    assert.deepEqual(account.lessonPaid, { a: 'paid', b: 'paid', c: 'paid', d: 'paid' });
+    assert.deepEqual(account.owed, []);
+
+    // Monthly: a lesson goes with its month's charge.
+    const monthly = { id: 's1', currency: 'ILS', joinedAt: '2026-01-01', prices: [{ id: 'm1', kind: 'any', model: 'monthly', amount: 250 }] };
+    account = studentAccount(monthly, [{ id: 'pay1', paidAt: '2026-01-02', amount: 300, currency: 'ILS', method: 'bit' }], [lessonOn('j', '2026-01-08'), lessonOn('f', '2026-02-09')], settings, '2026-03-10');
+    assert.deepEqual(account.lessonPaid, { j: 'paid', f: 'partial' });
+    assert.deepEqual(account.monthPaid, { any: { '2026-01': 'paid', '2026-02': 'partial', '2026-03': 'unpaid' } }, 'a lesson not logged yet goes with its month');
+    assert.deepEqual(account.owed.map(({ kind, month, amount }) => ({ kind, month, amount })), [{ kind: 'month', month: '2026-02', amount: 200 }, { kind: 'month', month: '2026-03', amount: 250 }]);
+    assert.match(owedLines(account.owed, 'ILS', 'en'), /^February 2026 · Monthly fee: ₪200 \(remaining of ₪250\)\n\nMarch 2026 · Monthly fee: ₪250$/);
+    // With two lessons a week, the month says which lessons it stands for.
+    const withDates = account.owed.map((item) => ({ ...item, lessonDates: item.month === '2026-03' ? ['2026-03-02', '2026-03-05', '2026-03-09'] : [] }));
+    assert.match(owedLines(withDates, 'ILS', 'he'), /\n\nמרץ 2026 · תשלום חודשי: ₪250\n• יום ב׳ 2\.3\n• יום ה׳ 5\.3\n• יום ב׳ 9\.3$/, 'one line a lesson');
+  });
+
+  it('writes the family a message listing the unpaid lessons, and one payment settles them', async () => {
+    const get = async (path) => (await server.fetch(path, { headers: { Cookie: teacher.cookie } })).json();
+    const { student } = await (await server.fetch('/api/business/students', json(teacher.cookie, {
+      firstName: 'Debby', lastName: 'Owes', parentName: 'Dana Owes', parentPhone: '+972501112233', language: 'he', lessonType: 'private', joinedAt: '2026-01-01', currency: 'ILS',
+      prices: [{ kind: 'private', model: 'per_lesson', amount: 120 }]
+    }))).json();
+    const lessonIds = [];
+    for (const date of ['2026-01-05', '2026-01-19']) {
+      lessonIds.push((await (await server.fetch('/api/business/lessons', json(teacher.cookie, { date, durationMinutes: 60, kind: 'private', studentIds: [student.id], topic: 'Forks' }))).json()).lesson.id);
+    }
+    let detail = await get(`/api/business/students/${student.id}`);
+    assert.deepEqual(lessonIds.map((id) => detail.lessonPaid[id]), ['unpaid', 'unpaid']);
+    assert.equal(detail.owed.length, 2);
+
+    const { message } = await (await server.fetch('/api/business/messages/compose', json(teacher.cookie, { kind: 'debt_details', studentId: student.id }))).json();
+    assert.match(message.body, /5\.1\.2026 · שיעור פרטי \(Forks\): ₪120/);
+    assert.match(message.body, /19\.1\.2026/);
+    assert.match(message.body, /סה״כ לתשלום: ₪240/);
+
+    await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: student.id, amount: 240, currency: 'ILS', method: 'bit', paidAt: '2026-11-01' }));
+    detail = await get(`/api/business/students/${student.id}`);
+    assert.equal(detail.payment.balance, 0);
+    assert.deepEqual(lessonIds.map((id) => detail.lessonPaid[id]), ['paid', 'paid']);
+    assert.deepEqual(detail.owed, []);
+
+    for (const id of lessonIds) await server.fetch(`/api/business/lessons/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+    await server.fetch(`/api/business/students/${student.id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
+  });
+
   it('keeps what a lesson cost one student when another is given a different price', async () => {
     const get = async (path) => (await server.fetch(path, { headers: { Cookie: teacher.cookie } })).json();
     const make = async (firstName) => (await (await server.fetch('/api/business/students', json(teacher.cookie, {
