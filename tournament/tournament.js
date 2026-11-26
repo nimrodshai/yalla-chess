@@ -74,7 +74,6 @@
           other: 'משהו השתבש. נסו שוב בעוד רגע.'
         }
       },
-      home: 'חזרה לאתר',
       noneTitle: 'אין כרגע טורניר פתוח',
       noneLead: 'הטורניר הבא יפורסם כאן בקרוב. בינתיים, ממשיכים להתאמן!',
       errorLead: 'לא הצלחנו לטעון את פרטי הטורניר. נסו שוב בעוד רגע.'
@@ -142,7 +141,6 @@
           other: 'Something went wrong. Please try again in a moment.'
         }
       },
-      home: 'Back to Yalla-Chess',
       noneTitle: 'No tournament open right now',
       noneLead: 'The next tournament will be announced here soon. Until then, keep practising!',
       errorLead: "We couldn't load the tournament. Please try again in a moment."
@@ -210,7 +208,6 @@
     $('tpLang').textContent = copy.langToggle;
     $('tpLang').lang = state.lang === 'he' ? 'en' : 'he';
     $('tpFormClose').setAttribute('aria-label', copy.form.close);
-    $('tpFooterHome').textContent = copy.home;
     $('tpYear').textContent = String(new Date().getFullYear());
     $('tpHowTitle').textContent = copy.howTitle;
     $('tpSteps').replaceChildren(...copy.steps.map(([title, body]) => el('li', {}, el('strong', {}, title), el('span', {}, body))));
@@ -225,7 +222,7 @@
     $('tpLead').textContent = state.failed ? copy.errorLead : copy.noneLead;
     $('tpFacts').replaceChildren();
     $('tpNote').hidden = true;
-    setButton($('tpRegister'), copy.home, '/');
+    $('tpRegister').hidden = true;
     $('tpMore').hidden = true;
     for (const id of ['divisions', 'how', 'details', 'rules']) $(id).hidden = true;
     $('tpRegister2').closest('.tp-section').hidden = true;
@@ -258,6 +255,7 @@
     // The button follows the tournament: the form, then the way in, then the
     // results, which live in the portal.
     const full = tour.spotsLeft === 0;
+    $('tpRegister').hidden = false;
     if (tour.registrationOpen && !full) setButton($('tpRegister'), copy.register, '#register');
     else if (tour.status === 'finished') setButton($('tpRegister'), copy.seeResults, PORTAL);
     else if (tour.status === 'active') setButton($('tpRegister'), copy.goToTournament, PORTAL);
