@@ -15,6 +15,7 @@ COPY package.json ./
 COPY server.mjs ./
 COPY lib ./lib
 COPY admin ./admin
+COPY tournament ./tournament
 COPY index.html logo.png dolev.jpeg placeholder.mp4 favicon-32.png apple-touch-icon.png ./
 COPY deploy/entrypoint.sh ./entrypoint.sh
 
