@@ -287,7 +287,7 @@
     .portal-brand-logo {
       width: auto;
       height: 54px;
-      filter: brightness(1.25) saturate(0.15) contrast(1.08);
+      filter: invert(1) hue-rotate(180deg) brightness(0.95);
       flex: none;
     }
 
@@ -530,7 +530,7 @@
 
     .portal-brand-logo {
       height: 44px;
-      filter: brightness(1.18) saturate(0) contrast(1.05);
+      filter: invert(1) hue-rotate(180deg) brightness(0.95);
     }
 
     .portal-brand-kicker {
@@ -917,7 +917,6 @@
       height: 200px;
       width: auto;
       transition: height 0.3s;
-      filter: grayscale(1) sepia(0.18) saturate(0.6) brightness(0.72) contrast(1.2);
     }
 
     .nav-links {
@@ -1765,8 +1764,8 @@
     .footer-logo-img {
       height: 60px;
       width: auto;
-      filter: grayscale(1) brightness(1.7) contrast(0.9);
-      opacity: 0.9;
+      /* On the dark footer: lightness flipped, the logo's blues kept. */
+      filter: invert(1) hue-rotate(180deg) brightness(0.95);
     }
 
     body.rtl .footer-logo {
@@ -4248,7 +4247,7 @@
       .theme-toggle.nav-theme-toggle { top: 17px; right: 16px; }
       body.rtl .theme-toggle.nav-theme-toggle { right: auto; left: 16px; }
     }
-    /* The logo is drawn in black: flip its lightness, keep its colors. */
+    /* The logo is drawn in dark blue: flip its lightness, keep its colors. */
     :root[data-theme="dark"] .nav-logo-img,
     :root[data-theme="dark"] .portal-brand-logo { filter: invert(1) hue-rotate(180deg) brightness(0.95); }
     /* Switching themes fades the colors instead of flashing them. The class is
