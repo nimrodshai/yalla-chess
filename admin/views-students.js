@@ -230,10 +230,12 @@
       .sort((a, b) => b.date.localeCompare(a.date));
     // While the family owes: a WhatsApp message listing what is unpaid, and
     // one payment that closes all of it.
-    const owing = admin && payment && payment.balance < 0 && (data.owed || []).length;
+    // This month's lessons count too, though they are charged at its end.
+    const owedTotal = Math.round((data.owed || []).reduce((sum, item) => sum + item.amount, 0) * 100) / 100;
+    const owing = admin && payment && owedTotal > 0;
     const debtActions = owing ? [
       h('button', { class: 'btn btn-sm btn-wa', type: 'button', onclick: () => composeMessage({ kind: 'debt_details', studentId: student.id, name: student.parentName || student.name, onSent: refresh }) }, t('debtMessage')),
-      h('button', { class: 'btn btn-sm', type: 'button', onclick: () => settleDebtDialog(student, -payment.balance, data.owed, refresh) }, t('settleDebt'))
+      h('button', { class: 'btn btn-sm', type: 'button', onclick: () => settleDebtDialog(student, owedTotal, data.owed, refresh) }, t('settleDebt'))
     ] : [];
     const lessons = card(t('lessonHistory'), history.length ? h('div', { class: 'list' }, history.map((entry) => entry.row())) : empty(t('noLessonsYet')), { count: history.length, sub: t('attendanceSummary', { attended: data.attendance.attended, absent: data.attendance.absent }), actions: [...debtActions, h('button', { class: 'btn btn-sm', type: 'button', onclick: () => window.VIEWS.logLesson({ studentId: student.id, onSaved: refresh }) }, `+ ${t('logLesson')}`)] });
 

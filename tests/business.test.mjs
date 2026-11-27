@@ -290,14 +290,20 @@ describe('business API', () => {
     const lessonOn = (id, date, extra = {}) => ({ id, date, status: 'held', studentIds: ['s1'], attendance: {}, groupId: '', topic: '', ...extra });
 
     // Per lesson, charged at each month's end: 150 pays the first lesson and
-    // half the second; February is unpaid; March's is still to be charged.
+    // half the second; February is unpaid; March's is charged at its end but
+    // already listed as open.
     const perLesson = { id: 's1', currency: 'ILS', joinedAt: '2026-01-01', prices: [{ id: 'p1', kind: 'any', model: 'per_lesson', amount: 100 }] };
     const lessons = [lessonOn('a', '2026-01-05'), lessonOn('b', '2026-01-12', { topic: 'Pins' }), lessonOn('c', '2026-02-03'), lessonOn('d', '2026-03-02')];
     let account = studentAccount(perLesson, [{ id: 'pay1', paidAt: '2026-01-20', amount: 150, currency: 'ILS', method: 'bit' }], lessons, settings, '2026-03-10');
     assert.deepEqual(account.lessonPaid, { a: 'paid', b: 'partial', c: 'unpaid', d: 'upcoming' });
-    assert.deepEqual(account.owed.map(({ lessonId, amount, full }) => ({ lessonId, amount, full })), [{ lessonId: 'b', amount: 50, full: 100 }, { lessonId: 'c', amount: 100, full: 100 }]);
-    assert.equal(account.owed.reduce((sum, item) => sum + item.amount, 0), -account.balance);
-    assert.equal(owedLines(account.owed, 'ILS', 'he'), '• 12.1.2026 · שיעור פרטי (Pins): ₪50 (יתרה מתוך ₪100)\n• 3.2.2026 · שיעור פרטי: ₪100');
+    assert.deepEqual(account.owed.map(({ lessonId, amount, full }) => ({ lessonId, amount, full })), [{ lessonId: 'b', amount: 50, full: 100 }, { lessonId: 'c', amount: 100, full: 100 }, { lessonId: 'd', amount: 100, full: 100 }]);
+    assert.equal(account.owed.reduce((sum, item) => sum + item.amount, 0), -account.balance + account.pending.amount);
+    assert.equal(owedLines(account.owed, 'ILS', 'he'), '• 12.1.2026 · שיעור פרטי (Pins): ₪50 (יתרה מתוך ₪100)\n• 3.2.2026 · שיעור פרטי: ₪100\n• 2.3.2026 · שיעור פרטי: ₪100');
+
+    // Only this month's lessons open, nothing charged yet: still listed.
+    account = studentAccount(perLesson, [], [lessonOn('d', '2026-03-02')], settings, '2026-03-10');
+    assert.equal(account.balance, 0);
+    assert.deepEqual(account.owed.map(({ lessonId, amount }) => ({ lessonId, amount })), [{ lessonId: 'd', amount: 100 }]);
 
     // Credit left over pays this month's lesson before it is charged.
     account = studentAccount(perLesson, [{ id: 'pay1', paidAt: '2026-01-20', amount: 400, currency: 'ILS', method: 'bit' }], lessons, settings, '2026-03-10');
@@ -323,22 +329,24 @@ describe('business API', () => {
       prices: [{ kind: 'private', model: 'per_lesson', amount: 120 }]
     }))).json();
     const lessonIds = [];
-    for (const date of ['2026-01-05', '2026-01-19']) {
+    // This month's lesson is charged at its end, but is listed and asked for.
+    const thisMonth = `${new Date().toISOString().slice(0, 7)}-01`;
+    for (const date of ['2026-01-05', '2026-01-19', thisMonth]) {
       lessonIds.push((await (await server.fetch('/api/business/lessons', json(teacher.cookie, { date, durationMinutes: 60, kind: 'private', studentIds: [student.id], topic: 'Forks' }))).json()).lesson.id);
     }
     let detail = await get(`/api/business/students/${student.id}`);
-    assert.deepEqual(lessonIds.map((id) => detail.lessonPaid[id]), ['unpaid', 'unpaid']);
-    assert.equal(detail.owed.length, 2);
+    assert.deepEqual(lessonIds.map((id) => detail.lessonPaid[id]), ['unpaid', 'unpaid', 'upcoming']);
+    assert.equal(detail.owed.length, 3);
 
     const { message } = await (await server.fetch('/api/business/messages/compose', json(teacher.cookie, { kind: 'debt_details', studentId: student.id }))).json();
     assert.match(message.body, /5\.1\.2026 · שיעור פרטי \(Forks\): ₪120/);
     assert.match(message.body, /19\.1\.2026/);
-    assert.match(message.body, /סה״כ לתשלום: ₪240/);
+    assert.match(message.body, /סה״כ לתשלום: ₪360/);
 
-    await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: student.id, amount: 240, currency: 'ILS', method: 'bit', paidAt: '2026-11-01' }));
+    await server.fetch('/api/business/payments', json(teacher.cookie, { studentId: student.id, amount: 360, currency: 'ILS', method: 'bit', paidAt: thisMonth }));
     detail = await get(`/api/business/students/${student.id}`);
-    assert.equal(detail.payment.balance, 0);
-    assert.deepEqual(lessonIds.map((id) => detail.lessonPaid[id]), ['paid', 'paid']);
+    assert.equal(detail.payment.balance, 120, 'this month\'s lesson is paid ahead of its charge');
+    assert.deepEqual(lessonIds.map((id) => detail.lessonPaid[id]), ['paid', 'paid', 'paid']);
     assert.deepEqual(detail.owed, []);
 
     for (const id of lessonIds) await server.fetch(`/api/business/lessons/${id}`, { method: 'DELETE', headers: { Cookie: teacher.cookie } });
