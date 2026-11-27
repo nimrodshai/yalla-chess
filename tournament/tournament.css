@@ -53,8 +53,7 @@ img { display: block; max-width: 100%; height: auto; }
 .tp-logo img {
   width: 132px;
   height: 132px;
-  /* The home page's light-mode treatment of the same logo. */
-  filter: grayscale(1) sepia(0.18) saturate(0.6) brightness(0.72) contrast(1.2);
+  /* The logo in its own blue and white, as the school uses it. */
 }
 
 .tp-pill {
