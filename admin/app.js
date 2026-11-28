@@ -30,7 +30,7 @@
     eventKinds: ['cancel', 'reschedule', 'makeup', 'trial', 'private', 'other'],
     groupStatuses: ['active', 'forming', 'full', 'closed'],
     messageKinds: ['lesson_reminder', 'payment_reminder', 'lesson_summary', 'homework', 'progress', 'trial_invite', 'followup', 'schedule_change', 'new_group', 'review_request', 'tournament', 'custom'],
-    paymentMethods: ['bit', 'paybox', 'bank', 'paypal', 'credit', 'cash', 'other']
+    paymentMethods: ['bit', 'paybox', 'bank', 'paypal', 'zelle', 'credit', 'cash', 'other']
   };
   window.SETTINGS = {};
   // isAdmin: the owner, who runs everything. Otherwise the signed-in user is
